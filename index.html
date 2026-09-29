@@ -64,6 +64,7 @@ async function call(method, path, body) {
 
 let current = null, detail = null, settings = null;
 const drafts = {}; // finding id -> {body, fix, tab}, kept across re-renders while you edit
+let commitDraft = null; // edited commit message, kept across re-renders until you commit
 
 async function loadReviews() {
   const list = await call("GET", "/api/reviews");
@@ -76,11 +77,13 @@ async function loadReviews() {
 $("#reviews").onclick = (e) => { const el = e.target.closest(".rv"); if (el) show(Number(el.dataset.id)); };
 
 async function show(id) {
-  if (current !== id) for (const k in drafts) delete drafts[k];
+  if (current !== id) { for (const k in drafts) delete drafts[k]; commitDraft = null; }
   current = id;
   detail = await call("GET", `/api/reviews/${id}`);
   settings ??= await call("GET", "/api/settings");
-  render();
+  // A live update must not rebuild the textarea you are typing in; Save / Cancel render the latest data.
+  const typing = Object.keys(drafts).length || (document.activeElement?.tagName === "TEXTAREA" && $("#main").contains(document.activeElement));
+  if (!typing) render();
   renderLog();
   loadReviews();
 }
@@ -99,7 +102,7 @@ function render() {
     ${findings.length ? `<div class="row"><button id="all">Select all</button><button id="none">Select none</button></div>` : ""}
     ${mine ? `<div class="row"><button class="primary" id="fix" ${running ? "disabled" : ""}>Fix selected</button><button id="push" ${running ? "disabled" : ""}>Push</button></div>` : ""}
     ${mine && fix ? `<h3>Fix</h3><pre>${esc(fix.diff || "(no changes)")}</pre>
-      <textarea id="commitmsg" rows="4">${esc(fix.message)}</textarea>
+      <textarea id="commitmsg" rows="4">${esc(commitDraft ?? fix.message)}</textarea>
       <div class="row"><button class="primary" id="commit">Commit</button></div>` : ""}
     ${posting ? `<div class="row"><button class="primary" id="post" ${running ? "disabled" : ""}>Post selected</button>
       <select id="event"><option>COMMENT</option><option>REQUEST_CHANGES</option><option>APPROVE</option></select>
@@ -123,12 +126,13 @@ function card(f) {
 }
 
 $("#main").addEventListener("input", (e) => {
+  if (e.target.id === "commitmsg") return void (commitDraft = e.target.value);
   const c = e.target.closest(".card"); if (!c || !e.target.dataset.k) return;
   drafts[c.dataset.fid][e.target.dataset.k] = e.target.value;
 });
 $("#main").addEventListener("click", async (e) => {
   const t = e.target, id = current, c = t.closest(".card");
-  if (c) {
+  if (c && (t.dataset.act || t.dataset.tab)) { // other clicks (e.g. into a textarea) must not re-render
     const fid = Number(c.dataset.fid), f = detail.findings.find((x) => x.id === fid);
     if (t.dataset.act === "sel") { f.selected = t.checked ? 1 : 0; return call("PATCH", `/api/reviews/${id}/findings/${fid}`, { selected: t.checked }); }
     if (t.dataset.act === "edit") drafts[fid] = { body: f.body, fix: f.suggested_fix ?? "", tab: "write" };
@@ -146,7 +150,7 @@ $("#main").addEventListener("click", async (e) => {
     return show(id);
   }
   if (t.id === "fix") await call("POST", `/api/reviews/${id}/fix`);
-  if (t.id === "commit") { await call("POST", `/api/reviews/${id}/commit`, { message: $("#commitmsg").value }); show(id); }
+  if (t.id === "commit") { await call("POST", `/api/reviews/${id}/commit`, { message: $("#commitmsg").value }); commitDraft = null; show(id); }
   if (t.id === "push" && confirm("git push this worktree's branch?")) { await call("POST", `/api/reviews/${id}/push`); alert("Pushed."); }
   if (t.id === "post") {
     const ev = $("#event").value;
