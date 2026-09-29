@@ -22,6 +22,8 @@ test("validFindings drops incomplete", () => {
   const f = validFindings([{ id: 1, file: "a", line: 2, severity: "HIGH", body: "x" }, { id: 2, file: "a", severity: "low", body: "x" }]);
   expect(f.map((x) => x.id)).toEqual([1]);
   expect(f[0]!.severity).toBe("high");
+  const d = validFindings([{ id: 2, file: "a", line: 1, severity: "low", body: "x" }, { file: "a", line: 1, severity: "low", body: "y" }, { id: 2, file: "a", line: 1, severity: "low", body: "z" }]);
+  expect(d.map((x) => x.id)).toEqual([2, 3, 4]);
 });
 
 test("mergeFindings keeps selected and edited body", () => {

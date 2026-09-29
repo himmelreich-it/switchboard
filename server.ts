@@ -264,7 +264,8 @@ async function chat(reviewId: number, text: string) {
   const r = review(reviewId);
   log(reviewId, "user", text);
   await withBusy(reviewId, async () => {
-    const out = await runClaude(reviewId, text, readOnlyOptions(r.worktree_path, r.session_id));
+    const prompt = `${text}\n\n(If the findings list changes, end with the full findings JSON block again, same format as before.)`;
+    const out = await runClaude(reviewId, prompt, readOnlyOptions(r.worktree_path, r.session_id));
     const j = extractJson(out.text).value;
     if (!j) return;
     saveFindings(reviewId, mergeFindings(findings(reviewId), validFindings(j.findings)));
