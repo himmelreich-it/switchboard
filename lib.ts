@@ -52,18 +52,26 @@ export function extractJson(text: string): { value?: any; error?: string } {
 }
 
 // Drops findings missing file, line, severity or body.
+// Repeated or missing ids get the next free number, because (review_id, id) is the primary key.
 export function validFindings(list: any[]): Finding[] {
+  const seen = new Set<number>();
+  let next = Math.max(0, ...list.map((f) => Number(f?.id)).filter(Number.isInteger)) + 1;
   return list
     .filter((f) => f && typeof f.file === "string" && f.file && Number.isInteger(Number(f.line)) && Number(f.line) > 0
       && typeof f.severity === "string" && f.severity && typeof f.body === "string" && f.body)
-    .map((f, i) => ({
-      id: Number.isInteger(Number(f.id)) ? Number(f.id) : i + 1,
+    .map((f) => {
+      let id = Number(f.id);
+      if (!Number.isInteger(id) || seen.has(id)) id = next++;
+      seen.add(id);
+      return {
+      id,
       file: f.file,
       line: Number(f.line),
       severity: f.severity.toLowerCase(),
       body: f.body,
       suggested_fix: typeof f.suggested_fix === "string" && f.suggested_fix ? f.suggested_fix : null,
-    }));
+      };
+    });
 }
 
 // New list wins; a finding with the same id keeps selected, posted, and the body if the user edited it.
@@ -115,7 +123,9 @@ export function buildReview(findings: Finding[], lines: Map<string, Set<number>>
     if (lines.get(f.file)?.has(f.line)) comments.push({ path: f.file, line: f.line, side: "RIGHT", body: commentBody(f) });
     else outside.push(`**${f.file}:${f.line}** (${f.severity})\n\n${commentBody(f)}`);
   }
-  return { event, body: outside.join("\n\n---\n\n"), comments };
+  // GitHub refuses REQUEST_CHANGES with an empty body.
+  const body = outside.join("\n\n---\n\n") || (event === "REQUEST_CHANGES" ? "See inline comments." : "");
+  return { event, body, comments };
 }
 
 const READ_ONLY_BASH = ["git diff", "git log", "gh pr view", "gh pr diff", "gh api"];
