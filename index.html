@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>auto-coder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#6e7781; --line:#d0d7de; --panel:#f6f8fa; --accent:#0969da; --high:#cf222e; --medium:#bf8700; --low:#1a7f37; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --panel:#161b22; --accent:#4493f8; --high:#f85149; --medium:#d29922; --low:#3fb950; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); height:100vh; display:grid; grid-template-columns:220px 1fr 380px; }
+  aside, main, section { overflow:auto; padding:12px; }
+  aside { border-right:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; gap:8px; }
+  section { border-left:1px solid var(--line); display:flex; flex-direction:column; padding:0; }
+  button, select, input, textarea { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
+  button { cursor:pointer; } button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  textarea { width:100%; font-family:ui-monospace, monospace; font-size:13px; }
+  .rv { padding:4px 6px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between; }
+  .rv.on { background:var(--line); }
+  .muted { color:var(--muted); }
+  .card { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:8px 0; }
+  .card .head { display:flex; gap:8px; align-items:center; }
+  .sev { font-weight:700; font-size:12px; text-transform:uppercase; }
+  .sev.high { color:var(--high); } .sev.medium { color:var(--medium); } .sev.low { color:var(--low); }
+  .tabs button.on { background:var(--line); }
+  pre { background:var(--panel); padding:8px; overflow:auto; border-radius:6px; font-size:12px; }
+  #log { flex:1; overflow:auto; padding:12px; }
+  #log .tool { color:var(--muted); font-family:ui-monospace, monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; }
+  #log .user { background:var(--panel); border-radius:6px; padding:4px 8px; margin:6px 0; white-space:pre-wrap; }
+  #log .error { color:var(--high); white-space:pre-wrap; }
+  #chatform { display:flex; gap:6px; padding:8px; border-top:1px solid var(--line); }
+  #chatform textarea { flex:1; font-family:inherit; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+  .err { color:var(--high); }
+</style>
+</head>
+<body>
+<aside>
+  <strong>Reviews</strong>
+  <form id="newform" class="row" style="margin:0"><input id="newurl" placeholder="+ New PR URL" style="width:100%"></form>
+  <div id="reviews" style="flex:1"></div>
+  <button id="settingsbtn">⚙ Settings</button>
+</aside>
+<main id="main"><p class="muted">Paste a PR URL to start a review.</p></main>
+<section>
+  <div id="log"></div>
+  <form id="chatform"><textarea id="chatin" rows="2" placeholder="type..."></textarea><button class="primary">Send</button></form>
+</section>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const md = (s) => DOMPurify.sanitize(marked.parse(String(s ?? "")));
+const suggestion = (f) => f.suggested_fix ? `${f.body}\n\n\`\`\`suggestion\n${f.suggested_fix}\n\`\`\`` : f.body;
+
+async function call(method, path, body) {
+  const r = await fetch(path, { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) { alert(j.error); throw new Error(j.error); }
+  return j;
+}
+
+let current = null, detail = null, settings = null;
+const drafts = {}; // finding id -> {body, fix, tab}, kept across re-renders while you edit
+
+async function loadReviews() {
+  const list = await call("GET", "/api/reviews");
+  $("#reviews").innerHTML = list.map((r) => {
+    const m = r.pr_url.match(/github\.com\/[^/]+\/([^/]+)\/pull\/(\d+)/);
+    const mark = r.status === "running" ? "●" : r.status === "error" ? "✗" : "✓";
+    return `<div class="rv ${r.id === current ? "on" : ""}" data-id="${r.id}"><span>${esc(m ? `${m[1]} #${m[2]}` : r.pr_url)}</span><span>${mark}</span></div>`;
+  }).join("");
+}
+$("#reviews").onclick = (e) => { const el = e.target.closest(".rv"); if (el) show(Number(el.dataset.id)); };
+
+async function show(id) {
+  if (current !== id) for (const k in drafts) delete drafts[k];
+  current = id;
+  detail = await call("GET", `/api/reviews/${id}`);
+  settings ??= await call("GET", "/api/settings");
+  render();
+  renderLog();
+  loadReviews();
+}
+
+function render() {
+  const { review: r, findings, fix, running } = detail;
+  const m = r.pr_url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+  const mine = r.is_mine === 1;
+  const posting = !mine && r.is_mine !== null;
+  $("#main").innerHTML = `
+    <h2 style="margin:0 0 4px"><a href="${esc(r.pr_url)}" target="_blank">${esc(m[1])} #${m[2]}</a>
+      <span class="muted">${r.is_mine === null ? "" : mine ? "(yours)" : "(theirs)"} ${running ? "● running" : ""}</span></h2>
+    <div class="muted">${esc(r.worktree_path ?? "no worktree")}</div>
+    <div>${md(r.summary ?? (running ? "_Review running…_" : ""))}</div>
+    <div id="findings">${findings.map(card).join("")}</div>
+    ${findings.length ? `<div class="row"><button id="all">Select all</button><button id="none">Select none</button></div>` : ""}
+    ${mine ? `<div class="row"><button class="primary" id="fix" ${running ? "disabled" : ""}>Fix selected</button><button id="push" ${running ? "disabled" : ""}>Push</button></div>` : ""}
+    ${mine && fix ? `<h3>Fix</h3><pre>${esc(fix.diff || "(no changes)")}</pre>
+      <textarea id="commitmsg" rows="4">${esc(fix.message)}</textarea>
+      <div class="row"><button class="primary" id="commit">Commit</button></div>` : ""}
+    ${posting ? `<div class="row"><button class="primary" id="post" ${running ? "disabled" : ""}>Post selected</button>
+      <select id="event"><option>COMMENT</option><option>REQUEST_CHANGES</option><option>APPROVE</option></select>
+      <span class="muted">posting as ${esc(settings.login ?? "?")}</span></div>` : ""}
+    ${r.worktree_path ? `<div class="row"><button id="rmwt" ${running ? "disabled" : ""}>Remove worktree</button></div>` : ""}`;
+}
+
+function card(f) {
+  const d = drafts[f.id];
+  const editor = d && `
+    <div class="tabs row"><button data-tab="write" class="${d.tab === "write" ? "on" : ""}">Write</button><button data-tab="preview" class="${d.tab === "preview" ? "on" : ""}">Preview</button></div>
+    ${d.tab === "write"
+      ? `<textarea data-k="body" rows="5">${esc(d.body)}</textarea><div class="muted">suggested fix (replaces line ${f.line})</div><textarea data-k="fix" rows="2">${esc(d.fix)}</textarea>`
+      : `<div>${md(suggestion({ body: d.body, suggested_fix: d.fix }))}</div>`}
+    <div class="row"><button class="primary" data-act="save">Save</button><button data-act="cancel">Cancel</button></div>`;
+  return `<div class="card" data-fid="${f.id}">
+    <div class="head"><input type="checkbox" data-act="sel" ${f.selected ? "checked" : ""}>
+      <span class="sev ${esc(f.severity)}">${esc(f.severity)}</span><code>${esc(f.file)}:${f.line}</code>
+      ${f.posted ? `<span class="muted">posted</span>` : ""}<span style="flex:1"></span>${d ? "" : `<button data-act="edit">edit</button>`}</div>
+    ${editor || `<div>${md(suggestion(f))}</div>`}</div>`;
+}
+
+$("#main").addEventListener("input", (e) => {
+  const c = e.target.closest(".card"); if (!c || !e.target.dataset.k) return;
+  drafts[c.dataset.fid][e.target.dataset.k] = e.target.value;
+});
+$("#main").addEventListener("click", async (e) => {
+  const t = e.target, id = current, c = t.closest(".card");
+  if (c) {
+    const fid = Number(c.dataset.fid), f = detail.findings.find((x) => x.id === fid);
+    if (t.dataset.act === "sel") { f.selected = t.checked ? 1 : 0; return call("PATCH", `/api/reviews/${id}/findings/${fid}`, { selected: t.checked }); }
+    if (t.dataset.act === "edit") drafts[fid] = { body: f.body, fix: f.suggested_fix ?? "", tab: "write" };
+    if (t.dataset.tab) drafts[fid].tab = t.dataset.tab;
+    if (t.dataset.act === "cancel") delete drafts[fid];
+    if (t.dataset.act === "save") {
+      await call("PATCH", `/api/reviews/${id}/findings/${fid}`, { body: drafts[fid].body, suggested_fix: drafts[fid].fix });
+      delete drafts[fid];
+      return show(id);
+    }
+    return render();
+  }
+  if (t.id === "all" || t.id === "none") {
+    await Promise.all(detail.findings.map((f) => call("PATCH", `/api/reviews/${id}/findings/${f.id}`, { selected: t.id === "all" })));
+    return show(id);
+  }
+  if (t.id === "fix") await call("POST", `/api/reviews/${id}/fix`);
+  if (t.id === "commit") { await call("POST", `/api/reviews/${id}/commit`, { message: $("#commitmsg").value }); show(id); }
+  if (t.id === "push" && confirm("git push this worktree's branch?")) { await call("POST", `/api/reviews/${id}/push`); alert("Pushed."); }
+  if (t.id === "post") {
+    const ev = $("#event").value;
+    if (!confirm(`Post selected findings as ${ev}, as ${settings.login}?`)) return;
+    t.disabled = true;
+    try { await call("POST", `/api/reviews/${id}/post`, { event: ev }); } finally { t.disabled = false; }
+    show(id);
+  }
+  if (t.id === "rmwt" && confirm(`Remove worktree ${detail.review.worktree_path}?`)) await call("POST", `/api/reviews/${id}/remove-worktree`);
+});
+
+function line(m) {
+  if (m.role === "tool") return `<div class="tool">${esc(m.content)}</div>`;
+  if (m.role === "user") return `<div class="user">${esc(m.content)}</div>`;
+  if (m.role === "error") return `<div class="error">${esc(m.content)}</div>`;
+  return `<div>${md(m.content)}</div>`;
+}
+function renderLog() {
+  const log = $("#log");
+  log.innerHTML = detail.messages.map(line).join("");
+  log.scrollTop = log.scrollHeight;
+}
+function appendLog(m) {
+  const log = $("#log"), atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  log.insertAdjacentHTML("beforeend", line(m));
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+$("#chatform").onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $("#chatin").value.trim();
+  if (!text || !current) return;
+  await call("POST", `/api/reviews/${current}/chat`, { text });
+  $("#chatin").value = "";
+};
+$("#chatin").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chatform").requestSubmit(); } };
+
+$("#newform").onsubmit = async (e) => {
+  e.preventDefault();
+  const { id } = await call("POST", "/api/reviews", { url: $("#newurl").value });
+  $("#newurl").value = "";
+  show(id);
+};
+
+// ---------- settings ----------
+
+$("#settingsbtn").onclick = openSettings;
+async function openSettings() {
+  current = null;
+  loadReviews();
+  settings = await call("GET", "/api/settings");
+  $("#log").innerHTML = "";
+  $("#main").innerHTML = `<h2>Settings</h2>
+    <div class="muted">Review prompt (the app appends the findings JSON instruction)</div>
+    <textarea id="sprompt" rows="12">${esc(settings.prompt)}</textarea>
+    <div class="row">Model <input id="smodel" value="${esc(settings.model)}"><button class="primary" id="ssave">Save</button></div>
+    <h3>Projects</h3>
+    ${settings.projects.map((p) => `<div class="row" data-pid="${p.id}"><input data-k="name" value="${esc(p.name)}"><input data-k="path" value="${esc(p.path)}" style="flex:1">
+      <button data-act="upd">Save</button><button data-act="del">Remove</button></div>`).join("")}
+    <div class="row"><input id="pname" placeholder="name"><input id="ppath" placeholder="/abs/path/to/repo" style="flex:1"><button id="padd">Add</button></div>
+    <div class="muted">gh account: ${esc(settings.login ?? "not logged in")}</div>`;
+  $("#ssave").onclick = async () => { await call("PUT", "/api/settings", { prompt: $("#sprompt").value, model: $("#smodel").value }); alert("Saved."); };
+  $("#padd").onclick = async () => { await call("POST", "/api/projects", { name: $("#pname").value, path: $("#ppath").value }); openSettings(); };
+  $("#main").querySelectorAll("[data-pid]").forEach((row) => row.onclick = async (e) => {
+    const act = e.target.dataset.act; if (!act) return;
+    const path = `/api/projects/${row.dataset.pid}`;
+    if (act === "del") await call("DELETE", path);
+    else await call("PUT", path, { name: row.querySelector("[data-k=name]").value, path: row.querySelector("[data-k=path]").value });
+    openSettings();
+  });
+}
+
+// ---------- live updates ----------
+
+new EventSource("/api/events").onmessage = (e) => {
+  const ev = JSON.parse(e.data);
+  if (ev.type === "review") { loadReviews(); if (ev.review_id === current) show(current); }
+  if (ev.type === "message" && ev.review_id === current) { detail.messages.push(ev); appendLog(ev); }
+};
+loadReviews();
+</script>
+</body>
+</html>
