@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY, review_id INTEGER, role TEXT, content TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 UPDATE reviews SET status = 'error' WHERE status = 'running';
 `);
+for (const col of ["author", "branch"]) try { db.exec(`ALTER TABLE reviews ADD COLUMN ${col} TEXT`); } catch {} // already there
 
 const DEFAULT_PROMPT = `Review this pull request. Read the PR description and its existing review comments first
 (gh pr view, gh api repos/{owner}/{repo}/pulls/{n}/comments) and do not repeat points already raised.
@@ -83,7 +84,8 @@ async function must(cmd: string[], opts?: { cwd?: string; stdin?: string }) {
   if (!r.ok) throw new Error(`${cmd.join(" ")}: ${r.err}`);
   return r.out;
 }
-const ghLogin = async () => (await sh(["gh", "api", "user", "--jq", ".login"])).out || null;
+// gh prints the error JSON on stdout when not logged in, so only a zero exit counts.
+const ghLogin = async () => { const r = await sh(["gh", "api", "user", "--jq", ".login"]); return (r.ok && r.out) || null; };
 
 // ---------- Claude runs ----------
 
@@ -158,8 +160,10 @@ const SETUP_SCHEMA = {
     pr_number: { type: "integer" },
     worktree_path: { type: "string", description: "absolute path" },
     is_mine: { type: "boolean" },
+    author: { type: "string", description: "PR author login" },
+    branch: { type: "string", description: "PR head branch" },
   },
-  required: ["project", "pr_number", "worktree_path", "is_mine"],
+  required: ["project", "pr_number", "worktree_path", "is_mine", "author", "branch"],
 };
 
 async function setup(reviewId: number, url: string) {
@@ -183,7 +187,10 @@ async function setup(reviewId: number, url: string) {
     hint.push(`existing worktree: ${wt}`);
     log(reviewId, "tool", `git -C ${wt} pull`);
     await must(["git", "-C", wt, "pull"]);
-    return { project_id: project.id, pr_number: pr.number, worktree_path: wt, is_mine: view.author.login === (await ghLogin()) };
+    return {
+      project_id: project.id, pr_number: pr.number, worktree_path: wt, is_mine: view.author.login === (await ghLogin()),
+      author: view.author.login, branch: view.headRefName,
+    };
   } catch (e: any) {
     hint.push(`failed: ${e.message}`);
     log(reviewId, "tool", `setup check failed (${e.message}), starting setup agent`);
@@ -218,7 +225,10 @@ Never push, merge, or comment on the PR.`;
   if (!structured?.worktree_path || !existsSync(structured.worktree_path))
     throw new Error(`setup agent returned a worktree that does not exist: ${structured?.worktree_path}`);
   const p = projects.find((x) => x.name === structured.project || x.path === structured.project) ?? project;
-  return { project_id: p?.id ?? null, pr_number: structured.pr_number, worktree_path: structured.worktree_path, is_mine: !!structured.is_mine };
+  return {
+    project_id: p?.id ?? null, pr_number: structured.pr_number, worktree_path: structured.worktree_path, is_mine: !!structured.is_mine,
+    author: structured.author ?? null, branch: structured.branch ?? null,
+  };
 }
 
 // ---------- review ----------
@@ -252,9 +262,14 @@ async function startReview(reviewId: number, url: string) {
       text = retry.text;
       parsed = extractJson(text);
     }
-    if (!parsed.value) return setReview(reviewId, { summary: text });
+    if (!parsed.value) {
+      setReview(reviewId, { summary: text });
+      throw new Error(`The findings JSON failed to parse twice: ${parsed.error}`);
+    }
     setReview(reviewId, { summary: String(parsed.value.summary ?? "") });
-    saveFindings(reviewId, mergeFindings([], validFindings(parsed.value.findings)));
+    const list = mergeFindings([], validFindings(parsed.value.findings));
+    saveFindings(reviewId, list);
+    log(reviewId, "event", `REVIEW DONE · ${list.length} FINDING${list.length === 1 ? "" : "S"}`);
   });
 }
 
@@ -268,7 +283,9 @@ async function chat(reviewId: number, text: string) {
     const out = await runClaude(reviewId, prompt, readOnlyOptions(r.worktree_path, r.session_id));
     const j = extractJson(out.text).value;
     if (!j) return;
-    saveFindings(reviewId, mergeFindings(findings(reviewId), validFindings(j.findings)));
+    const list = mergeFindings(findings(reviewId), validFindings(j.findings));
+    saveFindings(reviewId, list);
+    log(reviewId, "event", `FINDINGS UPDATED · ${list.length}`);
     if (typeof j.summary === "string") setReview(reviewId, { summary: j.summary });
   });
 }
@@ -283,6 +300,7 @@ async function fix(reviewId: number) {
 ${chosen.map((f) => `#${f.id} ${f.file}:${f.line} (${f.severity}): ${f.body}${f.suggested_fix ? `\nSuggested fix: ${f.suggested_fix}` : ""}`).join("\n\n")}
 
 Do not commit or push. When done, end your reply with a commit message in a \`\`\`commit fence.`;
+  log(reviewId, "event", `FIX · ${chosen.length} SELECTED`);
   await withBusy(reviewId, async () => {
     const out = await runClaude(reviewId, prompt, {
       cwd: r.worktree_path, model: model(), resume: r.session_id, settingSources: ["project"],
@@ -312,7 +330,7 @@ async function post(reviewId: number, event: string) {
   const payload = buildReview(chosen, diffLines(await must(["gh", "pr", "diff", r.pr_url])), event);
   await must(["gh", "api", `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}/reviews`, "--method", "POST", "--input", "-"], { stdin: JSON.stringify(payload) });
   for (const f of chosen) db.run("UPDATE findings SET posted = 1 WHERE review_id = ? AND id = ?", [reviewId, f.id]);
-  log(reviewId, "tool", `posted ${event} review: ${payload.comments.length} inline, ${chosen.length - payload.comments.length} in body`);
+  log(reviewId, "event", `POSTED ${event.replace("_", " ")} · ${payload.comments.length} INLINE, ${chosen.length - payload.comments.length} IN BODY`);
   emit({ type: "review", review_id: reviewId });
 }
 
@@ -345,7 +363,10 @@ async function api(req: Request, path: string): Promise<Response> {
   if (path === "/api/settings" && method === "GET")
     return json({
       prompt: getSetting("prompt", DEFAULT_PROMPT), model: model(), login: await ghLogin(),
-      projects: db.query("SELECT * FROM projects ORDER BY name").all(),
+      projects: await Promise.all((db.query("SELECT * FROM projects ORDER BY name").all() as any[]).map(async (p) => {
+        const r = await sh(["git", "-C", p.path, "remote", "get-url", "origin"]);
+        return { ...p, origin: r.ok ? r.out.match(/[:/]([^/:]+\/[^/]+?)(\.git)?\/?$/)?.[1] ?? r.out : null };
+      })),
     });
   if (path === "/api/settings" && method === "PUT") {
     for (const k of ["prompt", "model"]) if (typeof body[k] === "string")
@@ -364,7 +385,7 @@ async function api(req: Request, path: string): Promise<Response> {
   }
 
   if (path === "/api/reviews" && method === "GET")
-    return json(db.query("SELECT id, pr_url, pr_number, is_mine, status, created_at FROM reviews ORDER BY id DESC").all());
+    return json(db.query("SELECT id, pr_url, pr_number, is_mine, status, created_at, (SELECT COUNT(*) FROM findings WHERE review_id = reviews.id) AS findings FROM reviews ORDER BY id DESC").all());
   if (path === "/api/reviews" && method === "POST") {
     if (!parsePrUrl(body.url ?? "")) return fail("paste a github.com/<owner>/<repo>/pull/<n> URL");
     const id = Number(db.run("INSERT INTO reviews (pr_url, status) VALUES (?, 'running')", [body.url.trim()]).lastInsertRowid);
@@ -379,7 +400,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!r) return fail("no such review", 404);
     const msg = pendingCommit.get(id);
     return json({
-      review: r, findings: findings(id), running: busy.has(id),
+      review: r, findings: findings(id), running: busy.has(id), model: model(),
       messages: db.query("SELECT role, content FROM messages WHERE review_id = ? ORDER BY id").all(id),
       fix: msg !== undefined && r.worktree_path ? { message: msg, diff: await worktreeDiff(r.worktree_path) } : null,
     });
@@ -409,19 +430,20 @@ async function api(req: Request, path: string): Promise<Response> {
     } else if (action === "commit") {
       if (!body.message?.trim()) return fail("empty commit message");
       await must(["git", "-C", r.worktree_path, "add", "-A"]);
-      log(id, "tool", (await must(["git", "-C", r.worktree_path, "commit", "-m", body.message])).split("\n")[0]!);
+      await must(["git", "-C", r.worktree_path, "commit", "-m", body.message]);
+      log(id, "event", `COMMITTED ${await must(["git", "-C", r.worktree_path, "rev-parse", "--short", "HEAD"])}`);
       pendingCommit.delete(id);
       emit({ type: "review", review_id: id });
     } else if (action === "push") {
       await must(["git", "-C", r.worktree_path, "push"]);
-      log(id, "tool", "git push: done");
+      log(id, "event", `PUSHED ${r.branch ?? "branch"} → origin`);
     } else if (action === "post") {
       if (!["COMMENT", "REQUEST_CHANGES", "APPROVE"].includes(body.event)) return fail("bad event");
       await post(id, body.event);
     } else if (action === "remove-worktree") {
       const common = await must(["git", "-C", r.worktree_path, "rev-parse", "--path-format=absolute", "--git-common-dir"]);
       await must(["git", "--git-dir", common, "worktree", "remove", r.worktree_path]);
-      log(id, "tool", `removed worktree ${r.worktree_path}`);
+      log(id, "event", "WORKTREE REMOVED");
       pendingCommit.delete(id);
       setReview(id, { worktree_path: null });
     }
