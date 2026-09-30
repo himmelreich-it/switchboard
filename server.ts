@@ -464,6 +464,7 @@ Bun.serve({
     // Cross-site forms can only send simple content types; requiring JSON forces a CORS preflight, which this server never answers.
     if (req.method !== "GET" && !req.headers.get("content-type")?.startsWith("application/json")) return fail("JSON body required", 415);
     if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")));
+    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "favicon.svg")));
     try {
       return await api(req, url.pathname);
     } catch (e: any) {
