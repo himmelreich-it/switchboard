@@ -1,154 +1,56 @@
 // Pure helpers. No I/O here, so lib.test.ts can cover them.
+import { isAbsolute, relative } from "node:path";
 
-export type Finding = {
-  id: number;
-  file: string;
-  line: number;
-  severity: string;
-  body: string;
-  suggested_fix?: string | null;
-  selected?: number;
-  posted?: number;
-  edited?: number;
-};
+export type Status = "not_started" | "running" | "waiting" | "idle";
 
-// github.com/<owner>/<repo>/pull/<n>, ignoring a trailing /files, /commits, ?query or #anchor.
-export function parsePrUrl(url: string) {
-  const m = url.trim().match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#].*)?$/);
-  if (!m) return null;
-  return { owner: m[1]!, repo: m[2]!, number: Number(m[3]) };
+// "Billing API!" -> "billing-api". Used once, when a project is created; the slug names its artifact folder.
+export function slugify(name: string): string {
+  return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "project";
 }
 
-// Finds the worktree path whose porcelain block has exactly "branch refs/heads/<branch>".
-export function findWorktree(porcelain: string, branch: string): string | null {
-  for (const block of porcelain.split(/\n\n+/)) {
-    const lines = block.split("\n");
-    if (lines.includes(`branch refs/heads/${branch}`)) {
-      const wt = lines.find((l) => l.startsWith("worktree "));
-      if (wt) return wt.slice("worktree ".length);
-    }
-  }
-  return null;
+// The slug itself if free, else slug-2, slug-3, ...
+export function uniqueSlug(slug: string, taken: Set<string>): string {
+  let s = slug;
+  for (let n = 2; taken.has(s); n++) s = `${slug}-${n}`;
+  return s;
 }
 
-// Returns the last JSON object in the text that has a "findings" array (fenced ```json first, then bare braces).
-export function extractJson(text: string): { value?: any; error?: string } {
-  const fences = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/g)].map((m) => m[1]!);
-  const first = text.indexOf("{");
-  const last = text.lastIndexOf("}");
-  const candidates = [...fences.reverse(), first >= 0 && last > first ? text.slice(first, last + 1) : ""];
-  let error = "no JSON object found";
-  for (const c of candidates) {
-    if (!c.trim()) continue;
-    try {
-      const value = JSON.parse(c);
-      if (value && typeof value === "object" && Array.isArray(value.findings)) return { value };
-      error = 'JSON has no "findings" array';
-    } catch (e: any) {
-      error = e.message;
-    }
-  }
-  return { error };
+// A turn's final text shown as a chat message: at most two lines and 280 characters,
+// because one long paragraph is a single line too.
+export function cutToTwoLines(text: string): string {
+  const lines = text.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+  let out = lines.slice(0, 2).join("\n");
+  if (out.length > 280) out = out.slice(0, 279).trimEnd();
+  return out.length < lines.join("\n").length ? `${out}…` : out;
 }
 
-// Drops findings missing file, line, severity or body.
-// Repeated or missing ids get the next free number, because (review_id, id) is the primary key.
-export function validFindings(list: any[]): Finding[] {
-  const seen = new Set<number>();
-  let next = Math.max(0, ...list.map((f) => Number(f?.id)).filter(Number.isInteger)) + 1;
-  return list
-    .filter((f) => f && typeof f.file === "string" && f.file && Number.isInteger(Number(f.line)) && Number(f.line) > 0
-      && typeof f.severity === "string" && f.severity && typeof f.body === "string" && f.body)
-    .map((f) => {
-      let id = Number(f.id);
-      if (!Number.isInteger(id) || seen.has(id)) id = next++;
-      seen.add(id);
-      return {
-      id,
-      file: f.file,
-      line: Number(f.line),
-      severity: f.severity.toLowerCase(),
-      body: f.body,
-      suggested_fix: typeof f.suggested_fix === "string" && f.suggested_fix ? f.suggested_fix : null,
-      };
-    });
+export const lineCount = (text: string) => text.trim().split("\n").filter((l) => l.trim()).length;
+
+// The prompt for one turn: the worktree line (while one is registered), then every delivered message.
+// With no messages, as on a restore with nothing queued and no draft, the prompt is "continue".
+export function deliveryPrompt(worktree: string | null, bodies: string[]): string {
+  const text = bodies.map((b) => b.trim()).filter(Boolean).join("\n\n") || "continue";
+  return worktree ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
 }
 
-// New list wins; a finding with the same id keeps selected, posted, and the body if the user edited it.
-export function mergeFindings(old: Finding[], next: Finding[]): Finding[] {
-  const byId = new Map(old.map((f) => [f.id, f]));
-  return next.map((f) => {
-    const o = byId.get(f.id);
-    if (!o) return { ...f, selected: 0, posted: 0, edited: 0 };
-    return {
-      ...f,
-      selected: o.selected ?? 0,
-      posted: o.posted ?? 0,
-      edited: o.edited ?? 0,
-      body: o.edited ? o.body : f.body,
-      suggested_fix: o.edited ? o.suggested_fix : f.suggested_fix,
-    };
-  });
+// What a committed message does, by the TODO's status:
+// not started -> stored until start; running -> queued until the run ends; idle or waiting -> sent now.
+export function deliveryAction(status: Status): "pending" | "queue" | "send" {
+  return status === "not_started" ? "pending" : status === "running" ? "queue" : "send";
 }
 
-// Maps each file in a unified diff to the new-side line numbers GitHub accepts for inline comments.
-export function diffLines(diff: string): Map<string, Set<number>> {
-  const files = new Map<string, Set<number>>();
-  let cur: Set<number> | null = null;
-  let line = 0;
-  for (const l of diff.split("\n")) {
-    if (l.startsWith("+++ ")) {
-      const path = l.slice(4).replace(/^b\//, "");
-      cur = path === "/dev/null" ? null : new Set();
-      if (cur) files.set(path, cur);
-      continue;
-    }
-    const h = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-    if (h) { line = Number(h[1]); continue; }
-    if (!cur || l.startsWith("--- ") || l.startsWith("diff ") || l.startsWith("\\")) continue;
-    if (l.startsWith("+") || l.startsWith(" ")) cur.add(line++);
-  }
-  return files;
+// A run that ended (normally, with an error, or by interrupt) leaves the TODO waiting while the flag is raised.
+export const statusAfterRun = (attention: boolean | number): Status => (attention ? "waiting" : "idle");
+
+// True when `path` is inside `dir` (not `dir` itself). Both must already be absolute and resolved.
+export function isInside(path: string, dir: string): boolean {
+  const rel = relative(dir, path);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
-export function commentBody(f: Finding): string {
-  return f.suggested_fix ? `${f.body}\n\n\`\`\`suggestion\n${f.suggested_fix}\n\`\`\`` : f.body;
-}
+// The interesting argument of a tool call: the Bash command, the file path, the search pattern...
+export const toolArg = (input: any): string =>
+  String(input?.command ?? input?.file_path ?? input?.pattern ?? input?.skill ?? input?.path ?? input?.url ?? "").slice(0, 300);
 
-// Splits findings into inline comments (line is in the diff) and body lines (line is not).
-export function buildReview(findings: Finding[], lines: Map<string, Set<number>>, event: string) {
-  const comments: { path: string; line: number; side: "RIGHT"; body: string }[] = [];
-  const outside: string[] = [];
-  for (const f of findings) {
-    if (lines.get(f.file)?.has(f.line)) comments.push({ path: f.file, line: f.line, side: "RIGHT", body: commentBody(f) });
-    else outside.push(`**${f.file}:${f.line}** (${f.severity})\n\n${commentBody(f)}`);
-  }
-  // GitHub refuses REQUEST_CHANGES with an empty body.
-  const body = outside.join("\n\n---\n\n") || (event === "REQUEST_CHANGES" ? "See inline comments." : "");
-  return { event, body, comments };
-}
-
-const READ_ONLY_BASH = ["git diff", "git log", "gh pr view", "gh pr diff", "gh api"];
-const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
-
-// Why a review/chat tool call is refused, or null when allowed.
-// Runs as a PreToolUse hook, because allow rules skip canUseTool entirely.
-export function readOnlyDenyReason(tool: string, input: any): string | null {
-  if (READ_ONLY_TOOLS.includes(tool)) return null;
-  if (tool !== "Bash") return `${tool} is not allowed in a read-only review`;
-  const cmd = String(input?.command ?? "");
-  if (/[`$<>]/.test(cmd)) return "command substitution and redirects are not allowed";
-  // ponytail: splits on shell operators with a regex; quoted "&&" inside an argument is refused too, which is the safe side.
-  for (const part of cmd.split(/&&|\|\||[;|\n]/).map((p) => p.trim()).filter(Boolean)) {
-    if (!READ_ONLY_BASH.some((p) => part === p || part.startsWith(p + " "))) return `only ${READ_ONLY_BASH.join(", ")} are allowed`;
-    if (part.startsWith("gh api") && /(^|\s)(-[XfF]|--method|--field|--raw-field|--input)/.test(part))
-      return "gh api with -X, --method, -f, -F or --input writes to GitHub";
-  }
-  return null;
-}
-
-// Text between ```commit fences, used as the fix commit message.
-export function extractCommitMessage(text: string): string | null {
-  const m = [...text.matchAll(/```commit\s*\n([\s\S]*?)```/g)].pop();
-  return m ? m[1]!.trim() : null;
-}
+// "Bash git status", "Read /a/b.ts": one line per tool call for the events list.
+export const toolLine = (name: string, input: any) => `${name} ${toolArg(input)}`.trim();

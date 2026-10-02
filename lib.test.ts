@@ -1,63 +1,49 @@
 import { expect, test } from "bun:test";
-import { buildReview, diffLines, extractCommitMessage, extractJson, findWorktree, mergeFindings, parsePrUrl, readOnlyDenyReason, validFindings } from "./lib";
+import { cutToTwoLines, deliveryAction, deliveryPrompt, isInside, lineCount, slugify, statusAfterRun, toolArg, toolLine, uniqueSlug } from "./lib";
 
-test("parsePrUrl", () => {
-  expect(parsePrUrl("https://github.com/acme/api/pull/42/files#diff-1")).toEqual({ owner: "acme", repo: "api", number: 42 });
-  expect(parsePrUrl("https://github.com/acme/api/issues/42")).toBeNull();
+test("slugify and uniqueSlug", () => {
+  expect(slugify("Billing API!")).toBe("billing-api");
+  expect(slugify("  Café / Web  ")).toBe("cafe-web");
+  expect(slugify("!!!")).toBe("project");
+  expect(uniqueSlug("api", new Set())).toBe("api");
+  expect(uniqueSlug("api", new Set(["api", "api-2"]))).toBe("api-3");
 });
 
-test("findWorktree matches whole branch line", () => {
-  const p = "worktree /r\nHEAD a\nbranch refs/heads/main\n\nworktree /w/feature-2\nHEAD b\nbranch refs/heads/feature-2\n\nworktree /w/feature\nHEAD c\nbranch refs/heads/feature\n";
-  expect(findWorktree(p, "feature")).toBe("/w/feature");
-  expect(findWorktree(p, "nope")).toBeNull();
+test("cutToTwoLines", () => {
+  expect(cutToTwoLines("  one\n\ntwo  ")).toBe("one\ntwo");
+  expect(cutToTwoLines("one\ntwo\nthree")).toBe("one\ntwo…");
+  const long = cutToTwoLines("x".repeat(500));
+  expect(long.length).toBe(280);
+  expect(long.endsWith("…")).toBe(true);
+  expect(lineCount("a\n\nb\n")).toBe(2);
 });
 
-test("extractJson picks fenced findings JSON, reports errors", () => {
-  expect(extractJson('text\n```json\n{"summary":"s","findings":[]}\n```').value.summary).toBe("s");
-  expect(extractJson('{"summary":"s","findings":[]}').value.findings).toEqual([]);
-  expect(extractJson("```json\n{bad\n```").error).toBeTruthy();
+test("deliveryPrompt", () => {
+  expect(deliveryPrompt(null, ["fix it", " also tests "])).toBe("fix it\n\nalso tests");
+  expect(deliveryPrompt("/w/feat", ["go"])).toBe("Your worktree: /w/feat. Work there.\n\ngo");
+  expect(deliveryPrompt(null, [])).toBe("continue");
+  expect(deliveryPrompt("/w/feat", ["", " "])).toBe("Your worktree: /w/feat. Work there.\n\ncontinue");
 });
 
-test("validFindings drops incomplete", () => {
-  const f = validFindings([{ id: 1, file: "a", line: 2, severity: "HIGH", body: "x" }, { id: 2, file: "a", severity: "low", body: "x" }]);
-  expect(f.map((x) => x.id)).toEqual([1]);
-  expect(f[0]!.severity).toBe("high");
-  const d = validFindings([{ id: 2, file: "a", line: 1, severity: "low", body: "x" }, { file: "a", line: 1, severity: "low", body: "y" }, { id: 2, file: "a", line: 1, severity: "low", body: "z" }]);
-  expect(d.map((x) => x.id)).toEqual([2, 3, 4]);
+test("deliveryAction and statusAfterRun", () => {
+  expect(deliveryAction("not_started")).toBe("pending");
+  expect(deliveryAction("running")).toBe("queue");
+  expect(deliveryAction("idle")).toBe("send");
+  expect(deliveryAction("waiting")).toBe("send");
+  expect(statusAfterRun(1)).toBe("waiting");
+  expect(statusAfterRun(false)).toBe("idle");
 });
 
-test("mergeFindings keeps selected and edited body", () => {
-  const old = [{ id: 1, file: "a", line: 1, severity: "high", body: "mine", selected: 1, edited: 1 },
-               { id: 2, file: "b", line: 1, severity: "low", body: "old", selected: 1, edited: 0 }];
-  const next = validFindings([{ id: 2, file: "b", line: 1, severity: "low", body: "new" }, { id: 1, file: "a", line: 1, severity: "high", body: "claude" }]);
-  const m = mergeFindings(old, next);
-  expect(m.find((f) => f.id === 1)).toMatchObject({ body: "mine", selected: 1 });
-  expect(m.find((f) => f.id === 2)).toMatchObject({ body: "new", selected: 1 });
+test("isInside", () => {
+  expect(isInside("/h/data/p/1/plan.md", "/h/data/p/1")).toBe(true);
+  expect(isInside("/h/data/p/1/sub/x.md", "/h/data/p/1")).toBe(true);
+  expect(isInside("/h/data/p/1", "/h/data/p/1")).toBe(false);
+  expect(isInside("/h/data/p/12/x.md", "/h/data/p/1")).toBe(false);
+  expect(isInside("/h/data/p/1/../2/x.md", "/h/data/p/1")).toBe(false);
 });
 
-test("diffLines + buildReview", () => {
-  const diff = "diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -10,3 +10,4 @@ fn\n ctx\n-old\n+new\n+new2\n ctx\n";
-  const lines = diffLines(diff);
-  expect([...lines.get("x.ts")!]).toEqual([10, 11, 12, 13]);
-  const r = buildReview([
-    { id: 1, file: "x.ts", line: 11, severity: "high", body: "b", suggested_fix: "fix()" },
-    { id: 2, file: "x.ts", line: 99, severity: "low", body: "far" },
-  ], lines, "COMMENT");
-  expect(r.comments).toEqual([{ path: "x.ts", line: 11, side: "RIGHT", body: "b\n\n```suggestion\nfix()\n```" }]);
-  expect(r.body).toContain("x.ts:99");
-});
-
-test("readOnlyDenyReason", () => {
-  expect(readOnlyDenyReason("Read", {})).toBeNull();
-  expect(readOnlyDenyReason("Edit", {})).toBeTruthy();
-  expect(readOnlyDenyReason("Bash", { command: "git diff main...HEAD" })).toBeNull();
-  expect(readOnlyDenyReason("Bash", { command: "gh api repos/a/b/pulls/1/comments --paginate" })).toBeNull();
-  expect(readOnlyDenyReason("Bash", { command: "gh api -X POST repos/a/b/issues/1/comments" })).toBeTruthy();
-  expect(readOnlyDenyReason("Bash", { command: "gh api repos/a/b/issues/1/comments -f body=hi" })).toBeTruthy();
-  expect(readOnlyDenyReason("Bash", { command: "git diff && git commit -m x" })).toBeTruthy();
-  expect(readOnlyDenyReason("Bash", { command: "git log > out.txt" })).toBeTruthy();
-});
-
-test("extractCommitMessage", () => {
-  expect(extractCommitMessage("done\n```commit\nfix: x\n\nbody\n```")).toBe("fix: x\n\nbody");
+test("toolArg and toolLine", () => {
+  expect(toolArg({ command: "git push --force origin main", description: "x" })).toBe("git push --force origin main");
+  expect(toolLine("Bash", { command: "git status" })).toBe("Bash git status");
+  expect(toolLine("mcp__app__set_title", { title: "x" })).toBe("mcp__app__set_title");
 });
