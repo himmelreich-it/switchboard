@@ -4,7 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>switchboard</title>
-<script>try { if (localStorage.getItem("switchboard-theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}</script>
+<script>
+// Theme pick in localStorage: "dark" or "light" overrides the OS setting; anything else ("auto", unset) follows it.
+function applyTheme() {
+  let pick = "auto"; try { pick = localStorage.getItem("switchboard-theme"); } catch (e) {}
+  if (pick !== "dark" && pick !== "light") pick = "auto";
+  const light = pick === "light" || (pick === "auto" && matchMedia("(prefers-color-scheme: light)").matches);
+  if (light) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
+  document.querySelectorAll('[data-act="theme"]').forEach((b) => b.setAttribute("aria-pressed", b.dataset.id === pick));
+}
+applyTheme();
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
+</script>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
@@ -158,13 +169,6 @@ a { color: var(--accent-lime); }
   content: ''; position: absolute; right: 12px; top: 50%; width: 8px; height: 8px; margin-top: -6px; pointer-events: none;
   border-right: 1.5px solid var(--text-secondary); border-bottom: 1.5px solid var(--text-secondary); transform: rotate(45deg);
 }
-.mb-switch { display: inline-flex; align-items: center; cursor: pointer; }
-.mb-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
-.mb-switch__track { width: 36px; height: 20px; padding: 2px; background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--radius-1); transition: background var(--fast); }
-.mb-switch__knob { display: block; width: 14px; height: 14px; background: var(--text-secondary); border-radius: var(--radius-1); transition: transform var(--fast) var(--ease-out), background var(--fast); }
-.mb-switch input:checked + .mb-switch__track { background: var(--interactive-primary); border-color: var(--interactive-primary); }
-.mb-switch input:checked + .mb-switch__track .mb-switch__knob { transform: translateX(16px); background: var(--text-on-primary); }
-.mb-switch input:focus-visible + .mb-switch__track { outline: var(--focus-ring); outline-offset: 2px; }
 .mb-badge {
   display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px;
   font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
@@ -215,9 +219,9 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
   font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
 }
 .navbtn:hover { color: var(--text-primary); }
-.navbtn[aria-current="page"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-primary); }
+.navbtn[aria-current="page"], .navbtn[aria-pressed="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-primary); }
 .navbtn span { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.theme { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); flex: none; }
+.theme { margin-left: auto; display: flex; gap: 4px; flex: none; }
 
 /* ---------- views ---------- */
 #app { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -377,10 +381,10 @@ a.file-chip { text-decoration: none; }
     <button type="button" class="navbtn" data-act="nav" data-id="removed">Removed<span id="cRemoved">0</span></button>
     <button type="button" class="navbtn" data-act="nav" data-id="projects">Projects<span id="cProjects">0</span></button>
   </nav>
-  <div class="theme">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-    <label class="mb-switch"><input type="checkbox" id="themeSwitch" aria-label="Light theme"><span class="mb-switch__track"><span class="mb-switch__knob"></span></span></label>
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-17.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+  <div class="theme" role="group" aria-label="Theme">
+    <button type="button" class="navbtn" data-act="theme" data-id="auto" title="Follow the system setting">Auto</button>
+    <button type="button" class="navbtn" data-act="theme" data-id="dark">Dark</button>
+    <button type="button" class="navbtn" data-act="theme" data-id="light">Light</button>
   </div>
 </header>
 
@@ -967,7 +971,7 @@ function renderHeader() {
   $("cTodos").textContent = lv.length;
   $("cRemoved").textContent = S.todos.length - lv.length;
   $("cProjects").textContent = S.projects.length;
-  document.querySelectorAll(".navbtn").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.view ? "page" : "false"));
+  document.querySelectorAll("nav.views .navbtn").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.view ? "page" : "false"));
   const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
   document.title = (n ? `(${n}) ` : "") + "switchboard";
 }
@@ -1221,6 +1225,7 @@ const ACTIONS = {
   "file-mode": (id) => setFileMode(id),
   "pick-project": (id) => { S.projSel = Number(id); fillProjForm(); render(); },
   "new-project": () => { S.projSel = "new"; fillProjForm(); render(); pName.focus(); },
+  theme: (id) => { try { localStorage.setItem("switchboard-theme", id); } catch (e) {} applyTheme(); },
   dlg: (id) => { const b = S.dlg?.buttons[Number(id)]; closeDialog(); b?.[2]?.(); },
 };
 document.addEventListener("click", (e) => {
@@ -1263,13 +1268,7 @@ newProject.addEventListener("change", () => { S.newProject = Number(newProject.v
 fileText.addEventListener("input", () => { const f = S.file; if (!f) return; f.text = fileText.value; syncEdit(f); renderFile(cur()); });
 [pName, pPath, pPrompt].forEach((el) => el.addEventListener("input", renderProjects));
 
-const themeSwitch = $("themeSwitch");
-themeSwitch.checked = document.documentElement.dataset.theme === "light";
-themeSwitch.addEventListener("change", () => {
-  const light = themeSwitch.checked;
-  if (light) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
-  try { localStorage.setItem("switchboard-theme", light ? "light" : "dark"); } catch (e) {}
-});
+applyTheme();   // the head script ran before the theme buttons existed; mark the active one
 
 // ---------- live updates (R61): one SSE stream; each event refetches only what is on screen ----------
 function onEvent(ev) {
