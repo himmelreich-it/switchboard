@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileS
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { slugify, statusAfterRun, uniqueSlug, type Status } from "./lib";
-import { CONTRACT, commitCoordinatorMessage, commitMessage, deliver, interrupt, isRunning, start, stopAll } from "./runner";
+import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, start, stopAll } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 const HOST = "127.0.0.1";
@@ -13,8 +13,8 @@ const PORT = Number(process.env.PORT ?? 4477);
 // ---------- storage ----------
 
 // Resolved once (macOS /tmp is /private/tmp), so attach_file can compare real paths against it.
-mkdirSync(process.env.AGENT_COORDINATOR_HOME ?? join(homedir(), ".agent-coordinator"), { recursive: true });
-export const HOME = realpathSync(process.env.AGENT_COORDINATOR_HOME ?? join(homedir(), ".agent-coordinator"));
+mkdirSync(process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard"), { recursive: true });
+export const HOME = realpathSync(process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard"));
 const dbPath = join(HOME, "db.sqlite");
 const fresh = !existsSync(dbPath);
 export const db = new Database(dbPath);
@@ -29,13 +29,13 @@ CREATE TABLE IF NOT EXISTS todos (
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY, todo_id INTEGER,
-  author TEXT NOT NULL CHECK (author IN ('user','agent','user via coordinator','coordinator','app')), body TEXT NOT NULL,
+  author TEXT NOT NULL CHECK (author IN ('user','agent','user via operator','operator','app')), body TEXT NOT NULL,
   state TEXT NOT NULL CHECK (state IN ('pending','queued','delivered')), file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT);
 CREATE TABLE IF NOT EXISTS drafts (key TEXT PRIMARY KEY, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL,
-  actor TEXT NOT NULL CHECK (actor IN ('user','agent','app','coordinator')), detail TEXT, at TEXT NOT NULL);
+  actor TEXT NOT NULL CHECK (actor IN ('user','agent','app','operator')), detail TEXT, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
 CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
@@ -78,7 +78,7 @@ export function emit(ev: object) {
     outbox.clear();
   }, 50);
 }
-const changed = (todoId: number | null) => emit(todoId === null ? { type: "coordinator" } : { type: "todo", id: todoId });
+const changed = (todoId: number | null) => emit(todoId === null ? { type: "operator" } : { type: "todo", id: todoId });
 
 // `touch` = false for changes that must not move the TODO up its lane (last tool, read marker).
 export function setTodo(id: number, fields: Partial<Todo>, touch = true) {
@@ -167,13 +167,13 @@ async function projectOut(p: Project) {
 
 // ---------- writes shared with runner.ts ----------
 
-export function createTodo(projectId: number, instruction: string, actor: "user" | "coordinator") {
+export function createTodo(projectId: number, instruction: string, actor: "user" | "operator") {
   const at = now();
   const id = Number(db.run(
     "INSERT INTO todos (project_id, title, status, created_at, updated_at) VALUES (?, ?, 'not_started', ?, ?)",
     [projectId, instruction, at, at],
   ).lastInsertRowid);
-  addMessage(id, actor === "user" ? "user" : "user via coordinator", instruction, "pending");
+  addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending");
   addEvent(id, "created", actor, "not started yet");
   emit({ type: "todos" });
   return id;
@@ -398,35 +398,35 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({});
   }
 
-  // ----- coordinator -----
+  // ----- operator -----
 
-  if (path === "/api/coordinator" && method === "GET") {
-    const since = getMeta("coordinator_since") ?? "";
+  if (path === "/api/operator" && method === "GET") {
+    const since = getMeta("operator_since") ?? "";
     return json({
-      status: isRunning("coordinator") ? "running" : "idle",
-      session_id: getMeta("coordinator_session_id") ?? null,
+      status: isRunning("operator") ? "running" : "idle",
+      session_id: getMeta("operator_session_id") ?? null,
       messages: db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE todo_id IS NULL AND committed_at >= ? ORDER BY id").all(since),
-      draft: getDraft("coordinator"),
+      draft: getDraft("operator"),
     });
   }
-  if (path === "/api/coordinator/messages" && method === "POST") {
+  if (path === "/api/operator/messages" && method === "POST") {
     const text = String(body.body ?? "").trim();
     if (!text) return fail("empty message");
-    const id = commitCoordinatorMessage(text);
-    setDraft("coordinator", "");
+    const id = commitOperatorMessage(text);
+    setDraft("operator", "");
     return json(db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE id = ?").get(id));
   }
-  if (path === "/api/coordinator/draft" && method === "PUT") {
-    setDraft("coordinator", String(body.body ?? ""));
+  if (path === "/api/operator/draft" && method === "PUT") {
+    setDraft("operator", String(body.body ?? ""));
     changed(null);
     return json({});
   }
-  if (path === "/api/coordinator/new-session" && method === "POST") {
-    if (isRunning("coordinator")) return fail("the coordinator is running; wait for its reply", 409);
+  if (path === "/api/operator/new-session" && method === "POST") {
+    if (isRunning("operator")) return fail("the operator is running; wait for its reply", 409);
     // The next message starts a new session id. Older messages stay in the database but are hidden.
-    setMeta("coordinator_session_id", null);
-    setMeta("coordinator_since", now());
-    addEvent(null, "new coordinator session", "user");
+    setMeta("operator_session_id", null);
+    setMeta("operator_since", now());
+    addEvent(null, "new operator session", "user");
     return json({});
   }
 
@@ -452,7 +452,7 @@ Bun.serve({
     }
   },
 });
-console.log(`agent-coordinator on http://${HOST}:${PORT} (data in ${HOME})`);
+console.log(`switchboard on http://${HOST}:${PORT} (data in ${HOME})`);
 
 // A run cannot survive a restart. Queued messages stay queued until the user presses Deliver.
 // Only after Bun.serve has bound the port: a second copy that fails with EADDRINUSE must not touch the live app's TODOs.

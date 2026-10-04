@@ -1,14 +1,14 @@
-# Feature: Agent-coordinator TODO Sessions
+# Feature: Switchboard TODO Sessions
 
-> **auto-coder becomes agent-coordinator.** The existing auto-coder project is renamed and reworked into the app described below.
+> **auto-coder became agent-coordinator, then switchboard.** The existing auto-coder project was renamed and reworked into the app described below.
 
 ## Overview
 
-Agent-coordinator is a local web app where every TODO is a Claude Code session. The user creates TODOs across multiple projects on one page, starts each one when ready, steers it with short one-line chat messages, and stops or restores it by removing or restoring the TODO. Anything substantial an agent produces (plans, reviews, questions with context, designs) goes into markdown files the user can open and edit inline, so the chat stays small. A pinned coordinator session answers questions about all sessions and acts only when told. The existing review functionality in auto-coder is reworked into this model: a review is just a TODO. Guiding principle: **streamline the user's work, don't delegate their control.**
+Switchboard is a local web app where every TODO is a Claude Code session. The user creates TODOs across multiple projects on one page, starts each one when ready, steers it with short one-line chat messages, and stops or restores it by removing or restoring the TODO. Anything substantial an agent produces (plans, reviews, questions with context, designs) goes into markdown files the user can open and edit inline, so the chat stays small. A pinned operator session answers questions about all sessions and acts only when told. The existing review functionality in auto-coder is reworked into this model: a review is just a TODO. Guiding principle: **streamline the user's work, don't delegate their control.**
 
 **This is an organizer, not an auto-builder.** Worker agents run exactly as the user's normal Claude Code sessions do: same user, project and local settings, same global `CLAUDE.md`, skills, plugins, hooks and MCP servers. The app adds a way to see, start, steer and stop them. It does not add restrictions, tool allowlists or safety layers beyond what the user's normal sessions have.
 
-Requirement numbers 1–42 match the references in `designs/Agent Coordinator.html`. Requirements 43 and up were added in the design review on 2026-10-02.
+Requirement numbers 1–42 match the references in `designs/Switchboard.html`. Requirements 43 and up were added in the design review on 2026-10-02.
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Requirement numbers 1–42 match the references in `designs/Agent Coordinator.ht
     - When the agent is `idle` or `waiting on you`, the message is delivered immediately by resuming the session.
     - When the TODO is `not started yet`, the message is stored and delivered at start.
     - Several messages waiting for the same delivery are sent as one prompt.
-21. All messages must be stored permanently with author (`user`, `agent`, `user via coordinator`, `coordinator`, or `app`) and timestamp. `coordinator` is used for the coordinator's replies in its own chat. `app` is used for messages the app itself writes into a TODO's chat (requirements 48, 49, 50).
+21. All messages must be stored permanently with author (`user`, `agent`, `user via operator`, `operator`, or `app`) and timestamp. `operator` is used for the operator's replies in its own chat. `app` is used for messages the app itself writes into a TODO's chat (requirements 48, 49, 50).
 48. If a turn ends and the agent posted no message in it, the app must show the turn's final result text as the agent's message, cut to two lines. The full text is kept in the TODO's events.
 49. If a run fails (the Claude Code process exits with an error, for example a usage limit), the app must post an `app` message naming the error, e.g. `claude exited 1: usage limit`, and set the TODO to `idle`. A run the app interrupted itself (removal, shutdown) produces no error message.
 50. When a tool call is denied by the permission system, the app must post an `app` message such as `Auto mode blocked Bash: git push --force origin main` and raise the TODO's attention flag with actor `app`. The agent may clear the flag after the user's reply, as with any other attention.
@@ -57,10 +57,10 @@ Requirement numbers 1–42 match the references in `designs/Agent Coordinator.ht
 
 ### Markdown files
 
-22. Agents must write plans, reviews, questions with context, and designs as markdown files in the TODO's artifact folder, `~/.agent-coordinator/data/<project-slug>/<todo-id>/`. The folder's absolute path is provided in the app contract, so files survive worktree cleanup and stay out of git.
+22. Agents must write plans, reviews, questions with context, and designs as markdown files in the TODO's artifact folder, `~/.switchboard/data/<project-slug>/<todo-id>/`. The folder's absolute path is provided in the app contract, so files survive worktree cleanup and stay out of git.
 23. Agents must register each file they create against their TODO via `attach_file`. The TODO view lists its files. `attach_file` must reject a path outside the TODO's artifact folder.
 24. The user must be able to open a file in the web app, edit it inline, save, and close it. Saving must not notify the agent. The user hands work back with a chat message such as "updated the review, post it but drop point 3".
-25. A file must be read-only in the UI while its TODO's agent is `running`, and editable in any other status. If the TODO starts running while the user has unsaved edits (for example a coordinator message or a queued delivery resumes it), the edits must be kept in the browser and the editor locked. Saving is allowed again once the TODO stops running. If the agent changed the file on disk in the meantime, saving must warn that the file changed and offer Overwrite or Discard.
+25. A file must be read-only in the UI while its TODO's agent is `running`, and editable in any other status. If the TODO starts running while the user has unsaved edits (for example an operator message or a queued delivery resumes it), the edits must be kept in the browser and the editor locked. Saving is allowed again once the TODO stops running. If the agent changed the file on disk in the meantime, saving must warn that the file changed and offer Overwrite or Discard.
 26. Files must be stored on disk. The database stores only the mapping between files and TODOs.
 52. The file editor must show a plain text editor and a rendered markdown preview side by side. The read view shows the rendered markdown only.
 
@@ -90,32 +90,32 @@ Requirement numbers 1–42 match the references in `designs/Agent Coordinator.ht
 32. The system must not have a dispatcher or orchestrator pass. A started agent interprets its own TODO.
 53. The app has no model setting. Agents use the model from the user's Claude Code settings.
 
-### Coordinator
+### Operator
 
-33. The page must show a pinned coordinator session above the TODO list, using the same chat UI.
-34. The coordinator must have these tools: `list_sessions` (titles, projects, statuses, latest messages, optionally removed TODOs), `read_session` (a TODO's messages and file list), `read_file` (a TODO's markdown file by name), `create_todo`, and `send_message`, plus Claude Code's Read, Grep, Glob, WebSearch and WebFetch. It must not have Edit, Write, Bash, other MCP servers, or a tool to start TODOs. It runs with `~/.agent-coordinator` as its working directory.
-35. The coordinator must act only on the user's explicit instruction. It never polls, never answers a worker's question on its own, and never starts TODOs.
-36. TODOs created by the coordinator must start as `not started yet`. The user starts them.
-37. A message the coordinator sends on the user's behalf must appear in the target TODO's chat as a user message with a "via coordinator" marker.
-38. The coordinator must get session state through its tools rather than accumulated conversation, so the user can start a fresh coordinator session at any time without losing anything.
-39. Brainstorming, such as thinking through a future feature, must be possible in the coordinator or in a TODO the agent treats as thinking only.
-54. Coordinator replies are shown in full, rendered as markdown. The one-or-two-line rule (requirement 18) does not apply to the coordinator.
+33. The page must show a pinned operator session above the TODO list, using the same chat UI.
+34. The operator must have these tools: `list_sessions` (titles, projects, statuses, latest messages, optionally removed TODOs), `read_session` (a TODO's messages and file list), `read_file` (a TODO's markdown file by name), `create_todo`, and `send_message`, plus Claude Code's Read, Grep, Glob, WebSearch and WebFetch. It must not have Edit, Write, Bash, other MCP servers, or a tool to start TODOs. It runs with `~/.switchboard` as its working directory.
+35. The operator must act only on the user's explicit instruction. It never polls, never answers a worker's question on its own, and never starts TODOs.
+36. TODOs created by the operator must start as `not started yet`. The user starts them.
+37. A message the operator sends on the user's behalf must appear in the target TODO's chat as a user message with a "via operator" marker.
+38. The operator must get session state through its tools rather than accumulated conversation, so the user can start a fresh operator session at any time without losing anything.
+39. Brainstorming, such as thinking through a future feature, must be possible in the operator or in a TODO the agent treats as thinking only.
+54. Operator replies are shown in full, rendered as markdown. The one-or-two-line rule (requirement 18) does not apply to the operator.
 
 ### Attention
 
 40. The main list must sort `waiting on you` TODOs to the top. Below them, TODOs are grouped in lanes in this order: `running`, `not started yet`, `idle`. Within each lane, the most recently updated TODO comes first.
-41. The browser tab title must show the number of TODOs in `waiting on you`, e.g. `(2) agent-coordinator`. Only `waiting on you` counts.
+41. The browser tab title must show the number of TODOs in `waiting on you`, e.g. `(2) switchboard`. Only `waiting on you` counts.
 55. A TODO must show an Unread badge when an agent message arrived after the user last opened that TODO. Unread TODOs are not counted in the tab title and do not move to the waiting lane.
 
 ### Persistence
 
-42. A local SQLite database must store projects, TODOs and their sessions, messages, drafts, attention changes, file mappings, and removals (`removed_by`, `removed_at`). This history must stay available for the coordinator to look up after a TODO is removed.
+42. A local SQLite database must store projects, TODOs and their sessions, messages, drafts, attention changes, file mappings, and removals (`removed_by`, `removed_at`). This history must stay available for the operator to look up after a TODO is removed.
 56. On shutdown, the app must interrupt all running agents. On startup, any TODO still marked `running` must be set to `idle` with an `app restarted` event. Messages still queued stay queued and are shown with a Deliver button. Nothing is delivered automatically on startup.
-57. On first start, the app must import the projects (name, local path) from `~/.auto-coder/db.sqlite`, drop the old reviews and findings, and write the old stored review prompt to `~/.agent-coordinator/old-review-prompt.md`, so the user can paste it into project prompts.
+57. On first start, the app must import the projects (name, local path) from `~/.auto-coder/db.sqlite`, drop the old reviews and findings, and write the old stored review prompt to `~/.switchboard/old-review-prompt.md`, so the user can paste it into project prompts.
 
 ### UI
 
-58. The UI follows `designs/Agent Coordinator.html`: the overview with the New TODO card, the pinned coordinator card and the status lanes; the Focus view of a TODO with Chat, Files and Events tabs and its "1 of 2 waiting" counter; the Removed view; the Projects page, which shows the fixed contract text read-only; and the light/dark switch.
+58. The UI follows `designs/Switchboard.html`: the overview with the New TODO card, the pinned operator card and the status lanes; the Focus view of a TODO with Chat, Files and Events tabs and its "1 of 2 waiting" counter; the Removed view; the Projects page, which shows the fixed contract text read-only; and the light/dark switch.
 59. Keyboard shortcuts: `N` focuses the new TODO input, `⌘J` opens the next TODO waiting on you, `⌘E` toggles file edit mode, `⌘S` saves the open file, `⌘↵` commits the draft, `Esc` closes the open file or goes back to the overview.
 60. The design's "Show flow" panel (scenarios, lifecycle trace, live event feed) and the launch command preview on the Projects page are not built.
 61. The UI gets live updates from the backend over SSE.
@@ -147,17 +147,17 @@ Requirement numbers 1–42 match the references in `designs/Agent Coordinator.ht
 - [ ] Messages committed before start are delivered when the TODO starts.
 - [ ] An uncommitted draft survives navigating away and back, and reloading the page, and is marked as a draft.
 - [ ] Stopping the app while a TODO runs, then starting it again, shows that TODO as `idle` with an `app restarted` event. A message queued before the stop is still queued and shows a Deliver button.
-- [ ] A file attached by an agent appears in the TODO's file list, is stored on disk in `~/.agent-coordinator/data/<project-slug>/<todo-id>/`, and can be edited and saved inline. `attach_file` with a path outside that folder is rejected.
+- [ ] A file attached by an agent appears in the TODO's file list, is stored on disk in `~/.switchboard/data/<project-slug>/<todo-id>/`, and can be edited and saved inline. `attach_file` with a path outside that folder is rejected.
 - [ ] A file's editor is read-only while its TODO is `running` and becomes editable once the TODO leaves `running`.
 - [ ] Unsaved file edits survive the TODO starting to run. Saving after the agent changed the file warns and offers Overwrite or Discard.
 - [ ] Saving a file sends nothing to the agent.
 - [ ] A PR review request entered as a TODO produces its findings as a markdown file and only a short message in the chat.
-- [ ] Asking the coordinator to create a TODO produces a TODO in `not started yet` under the right project, and nothing starts.
-- [ ] Asking the coordinator to send an instruction to a TODO puts a user message marked "via coordinator" in that TODO's chat.
-- [ ] Starting a fresh coordinator session and asking about existing TODOs returns the same information as before.
-- [ ] When a worker raises a question, the coordinator does not respond to it unless the user asks it to.
-- [ ] The coordinator can report on a removed TODO's history.
-- [ ] On first start, projects from `~/.auto-coder/db.sqlite` appear in the Projects page and the old review prompt is in `~/.agent-coordinator/old-review-prompt.md`.
+- [ ] Asking the operator to create a TODO produces a TODO in `not started yet` under the right project, and nothing starts.
+- [ ] Asking the operator to send an instruction to a TODO puts a user message marked "via operator" in that TODO's chat.
+- [ ] Starting a fresh operator session and asking about existing TODOs returns the same information as before.
+- [ ] When a worker raises a question, the operator does not respond to it unless the user asks it to.
+- [ ] The operator can report on a removed TODO's history.
+- [ ] On first start, projects from `~/.auto-coder/db.sqlite` appear in the Projects page and the old review prompt is in `~/.switchboard/old-review-prompt.md`.
 - [ ] Each UI flow above has been checked in Chrome against the running app on localhost.
 
 ## Architecture Notes
@@ -167,10 +167,10 @@ Requirement numbers 1–42 match the references in `designs/Agent Coordinator.ht
 - **Prompt layering (verified in the spike).** The contract and project prompt go in `systemPrompt: { type: 'preset', preset: 'claude_code', append: <contract + project prompt> }`. The SDK has no `appendSystemPrompt` option; passing one is silently ignored. By default Claude Code records the system prompt on a session's first request and reuses it on every resume, so a changed project prompt would never reach a resumed agent. Passing `extraArgs: { 'system-prompt-snapshot': 'off' }` renders it fresh on every launch. The contract is versioned with the app. The project prompt is user content.
 - **Denials (verified in the spike).** A denied tool call arrives as an SDK message `{type: 'system', subtype: 'permission_denied', tool_name, message}` and in `result.permission_denials`, and the agent receives the denial as an error tool result. The `PermissionDenied` hook did not fire, so requirement 50 uses the SDK message.
 - **Interrupt (verified in the spike).** `interrupt()` during a Bash call kills the command, gives the agent the tool result "The user doesn't want to proceed with this tool use…", and makes the `for await` loop throw with result subtype `error_during_execution`. `Stop` does not fire. The transcript is kept, and resuming the same session id works: the agent knows its last command was stopped.
-- **Attention is deterministic.** "What needs me" comes from run status, attention flags and denials, not from an LLM. The coordinator plays no part in signaling. This is deliberate: a Paperclip-style CEO agent watching all sessions would cost usage continuously, could paraphrase or miss things, and would rebuild the long-thread problem this design avoids. Here the user is the CEO, and the coordinator is a chief of staff that only acts when asked.
-- **Data sketch.** `projects(id, name, slug, local_path, agent_prompt)`; `todos(id, project_id, title, status, attention, session_id, worktree_path, last_read_at, created_at, updated_at, removed_at, removed_by)`; `messages(id, todo_id, author, body, state, committed_at, delivered_at, file_id)` where `state` is `pending`, `queued` or `delivered`; `drafts(todo_id, body)`; `files(id, todo_id, path)`; `events(todo_id, kind, actor, detail, at)` for run, hook, attention, denial and removal history, where `actor` is `user`, `agent`, `app` or `coordinator`. The coordinator uses `todo_id = NULL` for its own messages; a fresh coordinator session starts a new session id and hides older coordinator messages.
-- **Data folder.** `~/.agent-coordinator/` holds the database, `data/<project-slug>/<todo-id>/` for artifact files, and `old-review-prompt.md` from the migration.
-- **Rename.** The folder, `package.json` name, UI title and GitHub repository are renamed to agent-coordinator. The GitHub rename is done by the user. The folder rename happens last, after the code work.
+- **Attention is deterministic.** "What needs me" comes from run status, attention flags and denials, not from an LLM. The operator plays no part in signaling. This is deliberate: a Paperclip-style CEO agent watching all sessions would cost usage continuously, could paraphrase or miss things, and would rebuild the long-thread problem this design avoids. Here the user is the CEO, and the operator is a chief of staff that only acts when asked.
+- **Data sketch.** `projects(id, name, slug, local_path, agent_prompt)`; `todos(id, project_id, title, status, attention, session_id, worktree_path, last_read_at, created_at, updated_at, removed_at, removed_by)`; `messages(id, todo_id, author, body, state, committed_at, delivered_at, file_id)` where `state` is `pending`, `queued` or `delivered`; `drafts(todo_id, body)`; `files(id, todo_id, path)`; `events(todo_id, kind, actor, detail, at)` for run, hook, attention, denial and removal history, where `actor` is `user`, `agent`, `app` or `operator`. The operator uses `todo_id = NULL` for its own messages; a fresh operator session starts a new session id and hides older operator messages.
+- **Data folder.** `~/.switchboard/` holds the database, `data/<project-slug>/<todo-id>/` for artifact files, and `old-review-prompt.md` from the migration.
+- **Rename.** The folder, `package.json` name, UI title and GitHub repository are renamed to switchboard (earlier: agent-coordinator). The GitHub rename is done by the user. The folder rename happens last, after the code work.
 - **Build order.** Spike (done, see below), then this spec, then the build on branch `feature/agent-coordinator` with local commits only, verified in Chrome against the app on localhost.
 
 ## Spike Findings (2026-10-02)
@@ -202,7 +202,7 @@ Throwaway script run against a test repository in the session scratchpad, on `cl
 - Guarding against two TODOs sharing a worktree or branch. Overlap is sometimes intentional; showing the branch on each row is the only aid.
 - Pausing a running TODO.
 - Routing permission prompts to the UI.
-- Coordinator autonomy: answering workers, starting TODOs, or acting without an instruction.
+- Operator autonomy: answering workers, starting TODOs, or acting without an instruction.
 - Projects spanning multiple repositories.
 - A dispatcher or orchestrator pass.
 - Restricting worker agents beyond the user's normal Claude Code config.

@@ -1,4 +1,4 @@
-// Agent SDK runs: one query() per turn for each TODO's worker, plus the coordinator.
+// Agent SDK runs: one query() per turn for each TODO's worker, plus the operator.
 import { createSdkMcpServer, query, tool, type Options, type Query } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -13,7 +13,7 @@ import {
 
 // The fixed app contract (R31), appended to the claude_code system prompt before the project prompt.
 // GET /api/meta shows it with the placeholder; each run fills in the TODO's own folder.
-export const CONTRACT = `You are running inside agent-coordinator, a local app where the user tracks this Claude Code session as a TODO and steers it with short chat messages.
+export const CONTRACT = `You are running inside switchboard, a local app where the user tracks this Claude Code session as a TODO and steers it with short chat messages.
 
 - Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file and mcp__app__set_worktree. On your first turn, call mcp__app__set_title with a short title for this TODO.
 - Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
@@ -24,19 +24,19 @@ export const CONTRACT = `You are running inside agent-coordinator, a local app w
 - When auto mode blocks an action, or you are unsure how to proceed, post a message and raise attention instead of routing around the block.
 - Clear your attention flag (mcp__app__set_attention with raised false) once the user's reply resolves it.`;
 
-const COORDINATOR_PROMPT = (home: string) => `You are the coordinator of agent-coordinator, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
+const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
 
 - Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, and never start TODOs: the user starts them.
-- Get session state from your tools every time (mcp__app__list_sessions, mcp__app__read_session, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh coordinator session at any time.
-- mcp__app__create_todo creates a TODO in "not started yet". mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via coordinator". Use them only when the user asks.
+- Get session state from your tools every time (mcp__app__list_sessions, mcp__app__read_session, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh operator session at any time.
+- mcp__app__create_todo creates a TODO in "not started yet". mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". Use them only when the user asks.
 - TODO artifact files live under ${home}/data/<project-slug>/<todo-id>/. You can also read them with Read, Grep and Glob.
 - Your replies are shown in full and rendered as markdown. Brainstorming with the user here is fine.`;
 
 const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree"].map((n) => `mcp__app__${n}`);
-const COORDINATOR_TOOLS = ["list_sessions", "read_session", "read_file", "create_todo", "send_message"].map((n) => `mcp__app__${n}`);
-const COORDINATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
+const OPERATOR_TOOLS = ["list_sessions", "read_session", "read_file", "create_todo", "send_message"].map((n) => `mcp__app__${n}`);
+const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
 
-type Key = number | "coordinator"; // a TODO id, or the coordinator
+type Key = number | "operator"; // a TODO id, or the operator
 type Run = { q: Query; abort: AbortController; done: Promise<void> };
 const running = new Map<Key, Run>();
 const interrupting = new Set<Key>(); // runs the app stopped itself (remove, shutdown): no error message for those
@@ -92,7 +92,7 @@ async function drain(q: Query, onMessage: (m: any) => void) {
 // ---------- workers ----------
 
 // A committed message: stored until start, queued while running, or sent now (R20).
-export function commitMessage(todoId: number, author: "user" | "user via coordinator", body: string) {
+export function commitMessage(todoId: number, author: "user" | "user via operator", body: string) {
   const action = deliveryAction(todoRow(todoId)!.status);
   const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued");
   if (action === "send") deliver(todoId);
@@ -260,26 +260,26 @@ function setupWorker(todoId: number, takeBodies: () => string[], session: { sess
   })();
 }
 
-// ---------- coordinator ----------
+// ---------- operator ----------
 
-export function commitCoordinatorMessage(body: string) {
+export function commitOperatorMessage(body: string) {
   const id = addMessage(null, "user", body, "queued");
-  deliverCoordinator();
+  deliverOperator();
   return id;
 }
 
-function deliverCoordinator() {
-  if (running.has("coordinator")) return;
+function deliverOperator() {
+  if (running.has("operator")) return;
   const bodies = take(null, "queued");
-  if (bodies.length) runCoordinator(bodies);
+  if (bodies.length) runOperator(bodies);
 }
 
 const json = (v: unknown) => ok(JSON.stringify(v, null, 1));
 const latest = (todoId: number, n: number) =>
   db.query("SELECT author, body, committed_at AS at FROM messages WHERE todo_id = ? ORDER BY id DESC LIMIT ?").all(todoId, n).reverse();
 
-function coordinatorServer() {
-  const used = (name: string, detail: string | null = null) => addEvent(null, name, "coordinator", detail);
+function operatorServer() {
+  const used = (name: string, detail: string | null = null) => addEvent(null, name, "operator", detail);
   return createSdkMcpServer({
     name: "app",
     version: "1.0.0",
@@ -321,7 +321,7 @@ function coordinatorServer() {
           const p = all.find((x) => x.name === project) ?? all.find((x) => x.name.toLowerCase() === project.trim().toLowerCase());
           if (!p) return err(`Unknown project "${project}". Projects: ${all.map((x) => x.name).join(", ") || "none"}`);
           if (!instruction.trim()) return err("instruction is empty");
-          const id = createTodo(p.id, instruction.trim(), "coordinator");
+          const id = createTodo(p.id, instruction.trim(), "operator");
           used("create_todo", `#${id} in ${p.name}`);
           return ok(`Created TODO #${id} in ${p.name}, not started yet.`);
         }),
@@ -331,7 +331,7 @@ function coordinatorServer() {
           if (!t || t.removed_at) return err(`no live TODO #${todo_id}`);
           if (!body.trim()) return err("body is empty");
           const outcome = { pending: "stored; it is delivered when the user starts the TODO", queue: "queued; it is delivered when the agent's current run ends", send: "delivered now" }[deliveryAction(t.status)];
-          commitMessage(todo_id, "user via coordinator", body.trim());
+          commitMessage(todo_id, "user via operator", body.trim());
           used("send_message", `#${todo_id}`);
           return ok(`Message ${outcome}.`);
         }),
@@ -339,38 +339,38 @@ function coordinatorServer() {
   });
 }
 
-function runCoordinator(bodies: string[]) {
-  // The stored id is set on a session's first turn and cleared by POST /api/coordinator/new-session.
-  const stored = getMeta("coordinator_session_id");
+function runOperator(bodies: string[]) {
+  // The stored id is set on a session's first turn and cleared by POST /api/operator/new-session.
+  const stored = getMeta("operator_session_id");
   const sessionId = stored ?? crypto.randomUUID();
-  if (!stored) setMeta("coordinator_session_id", sessionId);
+  if (!stored) setMeta("operator_session_id", sessionId);
   const abort = new AbortController();
   const q = query({
     prompt: bodies.join("\n\n"),
     options: {
       ...(stored ? { resume: stored } : { sessionId }),
       cwd: HOME,
-      tools: COORDINATOR_BUILTINS, // no Edit, Write or Bash
-      allowedTools: [...COORDINATOR_BUILTINS, ...COORDINATOR_TOOLS],
+      tools: OPERATOR_BUILTINS, // no Edit, Write or Bash
+      allowedTools: [...OPERATOR_BUILTINS, ...OPERATOR_TOOLS],
       strictMcpConfig: true, // only its own app server, none of the user's MCP servers
-      mcpServers: { app: coordinatorServer() },
+      mcpServers: { app: operatorServer() },
       permissionMode: "dontAsk", // anything not listed above is refused instead of asked about
-      systemPrompt: { type: "preset", preset: "claude_code", append: COORDINATOR_PROMPT(HOME) },
+      systemPrompt: { type: "preset", preset: "claude_code", append: OPERATOR_PROMPT(HOME) },
       extraArgs: { "system-prompt-snapshot": "off" },
       abortController: abort,
     },
   });
   const run: Run = { q, abort, done: Promise.resolve() };
-  running.set("coordinator", run);
-  emit({ type: "coordinator" });
+  running.set("operator", run);
+  emit({ type: "operator" });
 
   run.done = (async () => {
     const { text, error } = await drain(q, () => {});
-    running.delete("coordinator");
-    const stopped = interrupting.delete("coordinator");
+    running.delete("operator");
+    const stopped = interrupting.delete("operator");
     if (!stopped && error) addMessage(null, "app", cutToTwoLines(error));
-    else if (!stopped && text.trim()) addMessage(null, "coordinator", text.trim());
-    emit({ type: "coordinator" });
-    if (!shuttingDown) deliverCoordinator();
+    else if (!stopped && text.trim()) addMessage(null, "operator", text.trim());
+    emit({ type: "operator" });
+    if (!shuttingDown) deliverOperator();
   })();
 }

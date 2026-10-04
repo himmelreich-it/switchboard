@@ -1,5 +1,5 @@
 {
-  "name": "agent-coordinator",
+  "name": "switchboard",
   "module": "server.ts",
   "type": "module",
   "private": true,
