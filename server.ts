@@ -375,17 +375,21 @@ async function api(req: Request, path: string): Promise<Response> {
           return json({ warning: `The Claude Code session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
         if (t.worktree_path && !existsSync(t.worktree_path))
           return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+        const folder = projectRow(t.project_id)!.local_path;
+        if (!existsSync(folder)) return json({ warning: `The project folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
       }
       setTodo(id, { removed_at: null, removed_by: null });
       addEvent(id, "restored", "user");
       emit({ type: "todos" });
       // A never-started TODO goes back to not started with its pending messages; nothing launches.
       if (t.session_id) {
-        // Queued messages plus the draft go out as one prompt; with neither, the prompt is "continue".
+        // Queued messages plus the draft go out as one prompt; with neither, the prompt is "continue". "continue" is
+        // queued like any message, so a restore while the interrupted run is still ending goes out when that run ends.
         const draft = getDraft(`todo:${id}`).trim();
-        if (draft) addMessage(id, "user", draft, "queued");
+        const queued = (db.query("SELECT COUNT(*) AS n FROM messages WHERE todo_id = ? AND state = 'queued'").get(id) as { n: number }).n;
+        if (draft || !queued) addMessage(id, "user", draft || "continue", "queued");
         setDraft(`todo:${id}`, "");
-        deliver(id, "restore", true);
+        deliver(id, "restore");
       }
     } else if (action === "deliver") {
       if (isRunning(liveTodo(id).id)) return fail("the agent is running; queued messages go out when it stops", 409);

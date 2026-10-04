@@ -107,12 +107,12 @@ export function start(todoId: number) {
 }
 
 // Resumes the session with every queued message as one prompt. Does nothing while the TODO runs (the run's end calls
-// this again), when it is removed or not started, or when nothing is queued, unless `always` (restore: "continue").
-export function deliver(todoId: number, reason = "deliver", always = false) {
+// this again), when it is removed or not started, or when nothing is queued.
+export function deliver(todoId: number, reason = "deliver") {
   const t = todoRow(todoId);
   if (running.has(todoId) || !t?.session_id || t.removed_at || t.status === "not_started") return;
   const queued = (db.query("SELECT COUNT(*) AS n FROM messages WHERE todo_id = ? AND state = 'queued'").get(todoId) as { n: number }).n;
-  if (queued || always) runWorker(todoId, () => take(todoId, "queued"), { resume: t.session_id }, reason);
+  if (queued) runWorker(todoId, () => take(todoId, "queued"), { resume: t.session_id }, reason);
 }
 
 // `git config worktree.root`, else <local_path>/../worktrees. Created if missing, so --add-dir always gets a real folder.
