@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { slugify, statusAfterRun, uniqueSlug, type Status } from "./lib";
+import { safeFileName, slugify, statusAfterRun, uniqueSlug, type Status } from "./lib";
 import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, start, stopAll } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
@@ -33,12 +33,14 @@ CREATE TABLE IF NOT EXISTS messages (
   state TEXT NOT NULL CHECK (state IN ('pending','queued','delivered')), file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT);
 CREATE TABLE IF NOT EXISTS drafts (key TEXT PRIMARY KEY, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL,
   actor TEXT NOT NULL CHECK (actor IN ('user','agent','app','operator')), detail TEXT, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
 CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
+CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
 `);
 
 export type Todo = {
@@ -53,6 +55,23 @@ export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = 
 export const projectRow = (id: number) => db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null;
 export const filesOf = (todoId: number) => db.query("SELECT id, path FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string }[];
 export const artifactDir = (slug: string, todoId: number) => join(HOME, "data", slug, String(todoId));
+export const attachmentsOf = (messageId: number) =>
+  db.query("SELECT id, name, path FROM attachments WHERE message_id = ? ORDER BY id").all(messageId) as { id: number; name: string; path: string }[];
+
+// Files the user sends with a message, base64 inside the JSON body (see the content-type check in Bun.serve).
+export type Upload = { name: string; data: string };
+// Written to <artifact folder>/uploads/<message id>-<n>-<name>, so two pasted "image.png" never collide.
+export function saveAttachments(todoId: number, messageId: number, uploads: Upload[]) {
+  if (!uploads.length) return;
+  const dir = join(artifactDir(projectRow(todoRow(todoId)!.project_id)!.slug, todoId), "uploads");
+  mkdirSync(dir, { recursive: true });
+  uploads.forEach((u, i) => {
+    const name = safeFileName(u.name);
+    const path = join(dir, `${messageId}-${i + 1}-${name}`);
+    writeFileSync(path, Buffer.from(u.data, "base64"));
+    db.run("INSERT INTO attachments (message_id, name, path) VALUES (?, ?, ?)", [messageId, name, path]);
+  });
+}
 
 export const getMeta = (key: string) => (db.query("SELECT value FROM meta WHERE key = ?").get(key) as any)?.value as string | undefined;
 export function setMeta(key: string, value: string | null) {
@@ -147,7 +166,7 @@ function messageOut(id: number) {
   const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, f.path AS file_path
     FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.id = ?`).get(id) as any;
   const { file_path, ...rest } = m;
-  return { ...rest, file_name: file_path ? basename(file_path) : null };
+  return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name }) => ({ id, name })) };
 }
 
 function fileOut(f: { id: number; path: string }) {
@@ -167,13 +186,17 @@ async function projectOut(p: Project) {
 
 // ---------- writes shared with runner.ts ----------
 
-export function createTodo(projectId: number, instruction: string, actor: "user" | "operator") {
-  const at = now();
-  const id = Number(db.run(
-    "INSERT INTO todos (project_id, title, status, created_at, updated_at) VALUES (?, ?, 'not_started', ?, ?)",
-    [projectId, instruction, at, at],
-  ).lastInsertRowid);
-  addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending");
+// One transaction, so a failed file write leaves no TODO behind.
+export function createTodo(projectId: number, instruction: string, actor: "user" | "operator", uploads: Upload[] = []) {
+  const id = db.transaction(() => {
+    const at = now();
+    const id = Number(db.run(
+      "INSERT INTO todos (project_id, title, status, created_at, updated_at) VALUES (?, ?, 'not_started', ?, ?)",
+      [projectId, instruction, at, at],
+    ).lastInsertRowid);
+    saveAttachments(id, addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending"), uploads);
+    return id;
+  })();
   addEvent(id, "created", actor, "not started yet");
   emit({ type: "todos" });
   return id;
@@ -223,6 +246,12 @@ const expandHome = (p: string) => resolve(p.trim().replace(/^~(?=\/|$)/, homedir
 async function requireRepo(path: string) {
   const r = await sh(["git", "-C", path, "rev-parse", "--git-dir"]);
   if (!r.ok) throw httpError(400, `${path} is not a git repository`);
+}
+function uploadsIn(v: unknown): Upload[] {
+  if (v == null) return [];
+  if (!Array.isArray(v) || !v.every((u) => typeof u?.name === "string" && typeof u?.data === "string"))
+    throw httpError(400, "attachments must be a list of {name, data}");
+  return v;
 }
 
 const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
@@ -290,7 +319,7 @@ async function api(req: Request, path: string): Promise<Response> {
     const instruction = String(body.instruction ?? "").trim();
     if (!projectRow(Number(body.project_id))) return fail("choose a project");
     if (!instruction) return fail("the first instruction is required");
-    const id = createTodo(Number(body.project_id), instruction, "user");
+    const id = createTodo(Number(body.project_id), instruction, "user", uploadsIn(body.attachments));
     setMeta("last_project_id", String(Number(body.project_id)));
     return json((await summaries("t.id = ?", [id]))[0]);
   }
@@ -313,6 +342,13 @@ async function api(req: Request, path: string): Promise<Response> {
       changed(id);
       return json({ mtime: statSync(f.path).mtimeMs });
     }
+  }
+
+  if ((m = path.match(/^\/api\/attachments\/(\d+)$/)) && method === "GET") {
+    const a = db.query("SELECT path FROM attachments WHERE id = ?").get(Number(m[1])) as { path: string } | null;
+    if (!a || !existsSync(a.path)) return fail("no such attachment", 404);
+    // sandbox: an uploaded SVG or HTML opened in a tab cannot run script against this API.
+    return new Response(Bun.file(a.path), { headers: { "content-security-policy": "sandbox" } });
   }
 
   if ((m = path.match(/^\/api\/todos\/(\d+)$/)) && method === "GET") {
@@ -346,8 +382,9 @@ async function api(req: Request, path: string): Promise<Response> {
     } else if (action === "messages") {
       liveTodo(id);
       const text = String(body.body ?? "").trim();
-      if (!text) return fail("empty message");
-      const mid = commitMessage(id, "user", text);
+      const uploads = uploadsIn(body.attachments);
+      if (!text && !uploads.length) return fail("empty message");
+      const mid = commitMessage(id, "user", text, uploads);
       setDraft(`todo:${id}`, "");
       return json(messageOut(mid));
     } else if (action === "read") {

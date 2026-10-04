@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { cutToTwoLines, deliveryAction, deliveryPrompt, isInside, lineCount, slugify, statusAfterRun, toolArg, toolLine, uniqueSlug } from "./lib";
+import {
+  cutToTwoLines, deliveryAction, deliveryPrompt, isInside, lineCount, safeFileName, slugify, statusAfterRun, toolArg, toolLine,
+  uniqueSlug, withAttachments,
+} from "./lib";
 
 test("slugify and uniqueSlug", () => {
   expect(slugify("Billing API!")).toBe("billing-api");
@@ -23,6 +26,17 @@ test("deliveryPrompt", () => {
   expect(deliveryPrompt("/w/feat", ["go"])).toBe("Your worktree: /w/feat. Work there.\n\ngo");
   expect(deliveryPrompt(null, [])).toBe("continue");
   expect(deliveryPrompt("/w/feat", ["", " "])).toBe("Your worktree: /w/feat. Work there.\n\ncontinue");
+});
+
+test("withAttachments and safeFileName", () => {
+  expect(withAttachments("fix it", [])).toBe("fix it");
+  expect(withAttachments(" cut off ", ["/u/1-1-a.png", "/u/1-2-b.pdf"])).toBe("cut off\n\nAttached files (open with Read):\n/u/1-1-a.png\n/u/1-2-b.pdf");
+  expect(withAttachments("", ["/u/1-1-a.png"])).toBe("Attached files (open with Read):\n/u/1-1-a.png");
+  expect(safeFileName("../My Shot (1).png")).toBe("My-Shot-1-.png");
+  expect(safeFileName("..")).toBe("file");
+  expect(safeFileName(".env")).toBe("env");
+  expect(safeFileName("a/b\\c.txt")).toBe("b-c.txt");
+  expect(safeFileName("x".repeat(300) + ".png")).toBe("x".repeat(116) + ".png");
 });
 
 test("deliveryAction and statusAfterRun", () => {
