@@ -4,11 +4,11 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "nod
 import { homedir } from "node:os";
 import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
-import { cutToTwoLines, deliveryAction, deliveryPrompt, isInside, lineCount, statusAfterRun, toolArg, toolLine } from "./lib";
+import { cutToTwoLines, deliveryAction, deliveryPrompt, isInside, lineCount, statusAfterRun, toolArg, toolLine, withAttachments } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOME, addEvent, addMessage, artifactDir, createTodo, db, emit, filesOf, getMeta, now, projectRow, setMeta, setTodo,
-  summaries, todoRow,
+  HOME, addEvent, addMessage, artifactDir, attachmentsOf, createTodo, db, emit, filesOf, getMeta, now, projectRow, saveAttachments,
+  setMeta, setTodo, summaries, todoRow, type Upload,
 } from "./server";
 
 // The fixed app contract (R31), appended to the claude_code system prompt before the project prompt.
@@ -63,12 +63,12 @@ export async function stopAll() {
   await Promise.allSettled(runs.map((r) => r.done));
 }
 
-// Marks the messages delivered and returns their bodies, oldest first.
+// Marks the messages delivered and returns their bodies with the paths of their attachments, oldest first.
 function take(todoId: number | null, state: "pending" | "queued") {
   const msgs = db.query("SELECT id, body FROM messages WHERE todo_id IS ? AND state = ? ORDER BY id").all(todoId, state) as { id: number; body: string }[];
   const at = now();
   for (const m of msgs) db.run("UPDATE messages SET state = 'delivered', delivered_at = ? WHERE id = ?", [at, m.id]);
-  return msgs.map((m) => m.body);
+  return msgs.map((m) => withAttachments(m.body, attachmentsOf(m.id).map((a) => a.path)));
 }
 
 // Runs the for-await loop of one query and reports how it ended. A thrown loop is how interrupt() and process
@@ -91,10 +91,15 @@ async function drain(q: Query, onMessage: (m: any) => void) {
 
 // ---------- workers ----------
 
-// A committed message: stored until start, queued while running, or sent now (R20).
-export function commitMessage(todoId: number, author: "user" | "user via operator", body: string) {
+// A committed message: stored until start, queued while running, or sent now (R20). The attachments are saved in the
+// same transaction and before deliver(), whose take() reads them.
+export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = []) {
   const action = deliveryAction(todoRow(todoId)!.status);
-  const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued");
+  const id = db.transaction(() => {
+    const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued");
+    saveAttachments(todoId, id, uploads);
+    return id;
+  })();
   if (action === "send") deliver(todoId);
   return id;
 }
