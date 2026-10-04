@@ -7,6 +7,7 @@ session answers questions about all TODOs and acts only when told. Spec: `design
 ```sh
 bun install
 bun server.ts        # http://127.0.0.1:4477 (PORT to change)
+bun run app          # same app in its own window (Electron); closing it stops running agents like Ctrl-C
 bun test             # pure helpers in lib.ts
 ```
 

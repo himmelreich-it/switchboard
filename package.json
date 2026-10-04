@@ -3,8 +3,12 @@
   "module": "server.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "app": "electron electron/main.js"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "electron": "^44.5.1"
   },
   "peerDependencies": {
     "typescript": "^5"
