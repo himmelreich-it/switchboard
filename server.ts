@@ -472,3 +472,5 @@ async function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+// Started by electron/main.js: its stdin closes when the window app quits or crashes. Bun emits "end" only once stdin flows.
+if (process.env.SWITCHBOARD_PARENT) process.stdin.on("end", shutdown).resume();
