@@ -140,7 +140,8 @@ SELECT t.*, p.name AS project_name,
   EXISTS (SELECT 1 FROM messages m WHERE m.todo_id = t.id AND m.author = 'agent'
           AND (t.last_read_at IS NULL OR m.committed_at > t.last_read_at)) AS unread,
   EXISTS (SELECT 1 FROM drafts d WHERE d.key = 'todo:' || t.id) AS has_draft,
-  (SELECT json_object('author', author, 'body', body, 'at', committed_at) FROM messages m
+  (SELECT json_object('author', author, 'body', body, 'at', committed_at,
+     'files', (SELECT group_concat(name, ', ') FROM (SELECT name FROM attachments a WHERE a.message_id = m.id ORDER BY a.id))) FROM messages m
    WHERE m.todo_id = t.id ORDER BY m.id DESC LIMIT 1) AS last_message,
   (SELECT json_object('body', body, 'at', committed_at) FROM messages m
    WHERE m.todo_id = t.id AND m.author = 'agent' ORDER BY m.id DESC LIMIT 1) AS last_agent_message,
@@ -166,7 +167,7 @@ function messageOut(id: number) {
   const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, f.path AS file_path
     FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.id = ?`).get(id) as any;
   const { file_path, ...rest } = m;
-  return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name }) => ({ id, name })) };
+  return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name, path }) => ({ id, name, size: Bun.file(path).size })) };
 }
 
 function fileOut(f: { id: number; path: string }) {
@@ -481,7 +482,7 @@ Bun.serve({
     // Cross-site forms can only send simple content types; requiring JSON forces a CORS preflight, which this server never answers.
     if (req.method !== "GET" && !req.headers.get("content-type")?.startsWith("application/json")) return fail("JSON body required", 415);
     if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")));
-    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "favicon.svg")));
+    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/switchboard-icon-small.svg")));
     try {
       return await api(req, url.pathname);
     } catch (e: any) {
