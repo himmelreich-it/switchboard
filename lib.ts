@@ -1,5 +1,5 @@
 // Pure helpers. No I/O here, so lib.test.ts can cover them.
-import { isAbsolute, relative } from "node:path";
+import { basename, isAbsolute, relative } from "node:path";
 
 export type Status = "not_started" | "running" | "waiting" | "idle";
 
@@ -31,6 +31,18 @@ export const lineCount = (text: string) => text.trim().split("\n").filter((l) =>
 export function deliveryPrompt(worktree: string | null, bodies: string[]): string {
   const text = bodies.map((b) => b.trim()).filter(Boolean).join("\n\n") || "continue";
   return worktree ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
+}
+
+// One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
+export function withAttachments(body: string, paths: string[]): string {
+  if (!paths.length) return body;
+  return [body.trim(), `Attached files (open with Read):\n${paths.join("\n")}`].filter(Boolean).join("\n\n");
+}
+
+// "../My Shot (1).png" -> "My-Shot-1-.png": an uploaded file's name as one safe path segment, at most 120 characters
+// (the end is kept, so the extension stays).
+export function safeFileName(name: string): string {
+  return basename(name).replace(/[^A-Za-z0-9._-]+/g, "-").slice(-120).replace(/^[.-]+/, "") || "file";
 }
 
 // What a committed message does, by the TODO's status:

@@ -288,6 +288,18 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .flags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .file-chip { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; background: var(--surface-inset); border: 1px solid var(--line-cyan); border-radius: var(--radius-1); color: var(--accent-cyan); font-family: var(--font-mono); font-size: 12px; cursor: pointer; }
 .file-chip:hover { background: var(--tint-cyan); }
+a.file-chip { text-decoration: none; }
+/* a file picked but not sent yet: preview, name, kind and size, and an × that removes it */
+.upload-chip { display: flex; align-items: center; gap: 12px; width: 272px; padding: 5px 6px 5px 5px; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-2); }
+.upload-chip__preview { flex: none; display: flex; align-items: center; justify-content: center; width: 54px; height: 36px; overflow: hidden; color: var(--accent-cyan); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.upload-chip__preview img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+.upload-chip__text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-family: var(--font-mono); line-height: 1.35; }
+.upload-chip__name { font-size: 13px; color: var(--text-primary); }
+.upload-chip__meta { font-size: 11px; color: var(--text-muted); }
+.flags:empty { display: none; }
+/* fixed height, so the chat does not jump when an image loads after the scroll to the bottom */
+.thumb { display: block; height: 120px; max-width: 240px; object-fit: contain; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.attach-btn { padding: 0 10px; }
 .running-line { display: flex; align-items: center; gap: 8px; padding: 4px 12px; font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); }
 .running-line i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-cyan); box-shadow: var(--glow-cyan); }
 .composer { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--border-subtle); background: var(--bg-base); display: flex; flex-direction: column; gap: 8px; }
@@ -390,9 +402,10 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
               <textarea id="newText" class="mb-textarea" rows="5" placeholder="Describe the task, paste a ticket, or write 'review PR #482'. The agent works out the kind of work and whether it needs a worktree."></textarea>
             </div>
           </div>
+          <div id="newFiles" class="flags"></div>
           <div class="row wrap">
             <span id="newNote" class="small">Lands in Not started. Nothing launches until you start it.</span>
-            <span class="push row"><span class="kbd">⌘↵</span><button type="button" id="addBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="add" disabled>Add</button></span>
+            <span class="push row"><button type="button" class="mb-btn mb-btn--secondary mb-btn--md attach-btn" data-act="pick-files" data-id="new" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button><span class="kbd">⌘↵</span><button type="button" id="addBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="add" disabled>Add</button></span>
           </div>
         </div>
         <div class="panel panel--violet">
@@ -455,8 +468,10 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
             <div class="composer-row">
               <label class="sr-only" for="composer">Message</label>
               <textarea id="composer" class="mb-textarea" rows="2"></textarea>
+              <button type="button" id="attachBtn" class="mb-btn mb-btn--secondary mb-btn--md attach-btn" data-act="pick-files" data-id="composer" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
               <button type="button" id="commitBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="commit" disabled>Commit</button>
             </div>
+            <div id="composerFiles" class="flags"></div>
             <div id="composerHint" class="hint-row"></div>
           </div>
         </div>
@@ -506,6 +521,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
   </div>
 </div>
 
+<input type="file" id="filePick" multiple hidden>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="dialog"></div>
 <script>
@@ -589,6 +605,9 @@ const S = {
 };
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
+// ponytail: unsent attachments live only in this tab, so a reload drops them and Restore never sends them.
+// Upload them on paste into a server-side draft if that starts to hurt.
+const uploads = {}; // 'todo:<id>' | 'new' -> [{name, type, url (data: URL)}], waiting for the next commit
 
 const composer = $("composer"), operatorIn = $("operatorIn"), newText = $("newText"), newProject = $("newProject");
 const fileText = $("fileText"), chatLog = $("chatLog"), pName = $("pName"), pPath = $("pPath"), pPrompt = $("pPrompt"), pRepo = $("pRepo");
@@ -599,6 +618,43 @@ const waitingList = () => live().filter((t) => t.status === "waiting").sort((a, 
 const draftKey = () => (S.sel === "operator" ? "operator" : `todo:${S.sel}`);
 const isDirty = (f) => !!f && f.text !== f.content;
 const syncEdit = (f) => { if (isDirty(f)) edits[f.id] = { text: f.text, mtime: f.mtime }; else delete edits[f.id]; };
+
+// ---------- attachments: paste, drop or pick; sent as base64 in the JSON body of the commit ----------
+const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+const readUpload = (f) => new Promise((ok, no) => {
+  const r = new FileReader();
+  r.onload = () => ok({ name: f.name || "file", type: f.type, size: f.size, url: r.result });
+  r.onerror = () => no(r.error);
+  r.readAsDataURL(f);
+});
+const wire = (u) => ({ name: u.name, data: u.url.slice(u.url.indexOf(",") + 1) });
+async function addUploads(key, files) {
+  try { (uploads[key] ??= []).push(...(await Promise.all([...files].map(readUpload)))); }
+  catch (e) { toast("danger", "Can't read file", e.message); }
+  render();
+}
+const fmtSize = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+// "image" for any image, else the extension ("pdf"), else "file".
+const fileKind = (u) => (u.type.startsWith("image/") ? "image" : /\.([a-z0-9]{1,8})$/i.exec(u.name)?.[1].toLowerCase() ?? "file");
+// Chips for files picked but not sent yet, each with an × to drop it.
+const uploadChips = (key) => (uploads[key] ?? []).map((u, i) => `<div class="upload-chip">
+    <span class="upload-chip__preview">${u.type.startsWith("image/") ? `<img src="${esc(u.url)}" alt="">` : SVG(FILE, 18)}</span>
+    <span class="upload-chip__text"><span class="upload-chip__name ellipsis" title="${esc(u.name)}">${esc(u.name)}</span><span class="upload-chip__meta">${esc(fileKind(u))} · ${fmtSize(u.size)}</span></span>
+    <button type="button" class="mb-iconbtn mb-iconbtn--plain" data-act="drop-upload" data-id="${esc(key)}|${i}" aria-label="Remove ${esc(u.name)}" title="Remove">${SVG(CLOSE, 18)}</button>
+  </div>`).join("");
+function setHtml(el, html) { if (el._html !== html) { el.innerHTML = html; el._html = html; } }
+// Paste and drop on `zone` add files to the list under keyOf(); keyOf() returns null where attachments are off (operator).
+function acceptFiles(zone, keyOf) {
+  zone.addEventListener("paste", (e) => {
+    const files = e.clipboardData?.files, key = keyOf();
+    if (files?.length && key) { e.preventDefault(); addUploads(key, files); }
+  });
+  zone.addEventListener("dragover", (e) => { if (keyOf() && e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
+  zone.addEventListener("drop", (e) => {
+    const files = e.dataTransfer?.files, key = keyOf();
+    if (files?.length && key) { e.preventDefault(); addUploads(key, files); }
+  });
+}
 
 // ---------- loading (one queue, so a burst of SSE events becomes one fetch per resource) ----------
 const loaders = {
@@ -697,17 +753,20 @@ addEventListener("pagehide", () => flushDraft(true));
 
 async function commit(key, el) {
   const body = el.value.trim();
-  if (!body || S.sending) return;
+  const files = uploads[key] ?? [];
+  if ((!body && !files.length) || S.sending) return;
   if (draftPending?.key === key) { clearTimeout(draftTimer); draftPending = null; }   // the server clears the draft on commit
   drafts[key] = "";
   el.value = "";
-  S.sending = { key, body };
+  delete uploads[key];
+  S.sending = { key, body, files };
   render();
   try {
-    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${key.slice(5)}/messages`, { body });
+    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${key.slice(5)}/messages`, { body, attachments: files.map(wire) });
   } catch (e) {
     drafts[key] = body;
     if (!el.value && (el === operatorIn || draftKey() === key)) el.value = body;
+    uploads[key] = [...files, ...(uploads[key] ?? [])];
     toast("danger", "Not sent", e.message);
   }
   S.sending = null;
@@ -720,9 +779,11 @@ async function addTodo() {
   const instruction = newText.value.trim();
   if (!instruction || S.newProject == null) return;
   $("addBtn").disabled = true;
+  const files = uploads.new ?? [];
   try {
-    await call("POST", "/api/todos", { project_id: S.newProject, instruction });
+    await call("POST", "/api/todos", { project_id: S.newProject, instruction, attachments: files.map(wire) });
     newText.value = "";
+    uploads.new = (uploads.new ?? []).filter((u) => !files.includes(u));   // keeps files added while this was sending
     toast("success", "Added to Not started", short(instruction, 48) + ". Start it from its card when ready.");
     need("todos");
   } catch (e) { toast("danger", "Not added", e.message); }
@@ -924,6 +985,7 @@ function renderOverview() {
   newProject.disabled = !S.projects.length;
   $("newNote").textContent = S.projects.length ? "Lands in Not started. Nothing launches until you start it." : "Add a project on the Projects page first.";
   $("addBtn").disabled = !newText.value.trim() || S.newProject == null;
+  setHtml($("newFiles"), uploadChips("new"));
 
   const c = S.operator;
   $("operatorBadge").innerHTML = c?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
@@ -957,7 +1019,7 @@ function cardHtml(t) {
     <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(lm?.at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     <div class="card-meta"><span class="proj">${esc(t.project_name)}</span>${t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : ""}</div>
-    ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body)}</span></div>` : ""}
+    ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || "Sent attachments")}</span></div>` : ""}
     <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span>${t.status === "not_started" ? `<span class="push">${btn("Start", "start", { v: "primary", id: t.id })}</span>` : `<span class="open-label">${t.status === "waiting" ? "Answer" : "Open"} →</span>`}</div>
   </div>`;
 }
@@ -1022,11 +1084,20 @@ function msgHtml(m, operator) {
   if (m.state === "sending") flags.push(badge(!operator && ["idle", "waiting"].includes(cur()?.status) ? "Resuming" : "Sending", "blue"));
   if (m.file_id && !operator) flags.push(`<button type="button" class="file-chip" data-act="open-file" data-id="${m.file_id}" data-fk="chip:${m.id}">${SVG(FILE, 13)}${esc(m.file_name ?? "file")}</button>`);
   // R54: operator replies are full markdown; worker, app and user messages are short plain text
-  const body = m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : `<div class="msg-body">${esc(m.body)}</div>`;
+  const body = m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : m.body ? `<div class="msg-body">${esc(m.body)}</div>` : "";
+  const files = (m.attachments ?? []).map(attachmentHtml).join("");
   return `<div class="msg${m.author.startsWith("user") ? " msg--user" : ""}">
     <div class="msg-side"><span class="who" style="color:${color}">${esc(who)}</span><span class="mono muted" style="font-size:11px">${fmtTime(m.at)}</span></div>
-    <div class="msg-main">${body}${flags.length ? `<div class="flags">${flags.join("")}</div>` : ""}</div>
+    <div class="msg-main">${body}<div class="flags">${files}</div>${flags.length ? `<div class="flags">${flags.join("")}</div>` : ""}</div>
   </div>`;
+}
+
+// A sent attachment ({id, name}) links to the server copy; one still sending ({name, url}) shows its local data: URL.
+function attachmentHtml(a) {
+  const src = esc(a.id ? `/api/attachments/${a.id}` : a.url), name = esc(a.name);
+  if (!IMAGE.test(a.name)) return `<a class="file-chip" href="${src}" download="${name}">${SVG(FILE, 13)}${name}</a>`;
+  const img = `<img class="thumb" src="${src}" alt="${name}">`;
+  return a.id ? `<a href="${src}" target="_blank" rel="noopener" title="${name}">${img}</a>` : img;
 }
 
 function renderChat(operator, t, d) {
@@ -1034,7 +1105,7 @@ function renderChat(operator, t, d) {
   const msgs = operator ? S.operator?.messages ?? [] : d?.messages ?? [];
   const running = operator ? S.operator?.status === "running" : t.status === "running";
   let html = msgs.map((m) => msgHtml(m, operator)).join("");
-  if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, state: "sending", at: new Date().toISOString() }, operator);
+  if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, operator);
   if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working"))}</div>`;
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}`;
@@ -1060,7 +1131,10 @@ function renderHint() {
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
   $("composerHint").innerHTML = `${composer.value.trim() ? badge("Draft") : ""}<span>${esc(hint)}</span><span class="push row" style="gap:6px"><span class="kbd">⌘↵</span>commit</span>`;
-  $("commitBtn").disabled = !composer.value.trim() || !!S.sending;
+  const key = operator ? null : draftKey();   // the operator chat takes no attachments
+  $("attachBtn").hidden = !key;
+  setHtml($("composerFiles"), key ? uploadChips(key) : "");
+  $("commitBtn").disabled = (!composer.value.trim() && !uploads[key]?.length) || !!S.sending;
 }
 
 function renderFiles(t, d) {
@@ -1140,6 +1214,8 @@ const ACTIONS = {
   commit: () => commit(draftKey(), composer),
   add: addTodo,
   "open-file": (id) => openFile(Number(id)),
+  "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
+  "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
   "close-file": closeFile,
   "save-file": () => saveFile(),
   "file-mode": (id) => setFileMode(id),
@@ -1175,6 +1251,13 @@ composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKe
 operatorIn.addEventListener("input", () => saveDraftSoon("operator", operatorIn.value));
 operatorIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commit("operator", operatorIn); } });
 newText.addEventListener("input", () => { $("addBtn").disabled = !newText.value.trim() || S.newProject == null; });
+const filePick = $("filePick");
+filePick.addEventListener("change", () => { addUploads(filePick.dataset.key, filePick.files); filePick.value = ""; });
+acceptFiles(document.querySelector(".composer"), () => (S.sel === "operator" ? null : draftKey()));
+acceptFiles(newText.closest(".panel"), () => "new");
+// A file dropped next to a drop zone would make the browser open it and leave the app.
+addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
+addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTodo(); } });
 newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
 fileText.addEventListener("input", () => { const f = S.file; if (!f) return; f.text = fileText.value; syncEdit(f); renderFile(cur()); });
