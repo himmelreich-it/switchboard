@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>agent-coordinator</title>
-<script>try { if (localStorage.getItem("agent-coordinator-theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}</script>
+<title>switchboard</title>
+<script>try { if (localStorage.getItem("switchboard-theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}</script>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <style>
-/* ---------- Mobbins tokens (from designs/Agent Coordinator.html) ---------- */
+/* ---------- Mobbins tokens (from designs/Switchboard.html) ---------- */
 :root {
   --bg-void: #0A0813; --bg-base: #110E20; --surface-1: #181430; --surface-2: #201B3E; --surface-3: #2B2552; --surface-inset: #0C0A18;
   --bg-aurora: radial-gradient(1100px 600px at 85% -10%, rgba(157,107,255,.17), transparent 60%),
@@ -229,11 +229,11 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .panel--violet { border-top: 2px solid var(--accent-violet); }
 .panel-title { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .new-grid { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); gap: 12px; align-items: start; }
-.coord-preview { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.coord-line { display: flex; gap: 12px; align-items: baseline; }
+.operator-preview { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.operator-line { display: flex; gap: 12px; align-items: baseline; }
 .who { flex: 0 0 92px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
 .clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.coord-body { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.operator-body { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 
 .lane { display: flex; flex-direction: column; gap: 12px; }
 .lane-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); }
@@ -316,7 +316,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .editor:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent-lime); }
 .preview { min-width: 0; overflow: auto; padding: 16px 20px; border-left: 1px solid var(--border-subtle); }
 
-/* rendered markdown (files and coordinator replies) */
+/* rendered markdown (files and operator replies) */
 .md { color: var(--text-primary); font-size: 14px; line-height: 1.65; max-width: 760px; overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
@@ -359,7 +359,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="brand-mark"></span><span>AGENT<b>-COORDINATOR</b></span></div>
+  <div class="brand"><span class="brand-mark"></span><span>SWITCH<b>BOARD</b></span></div>
   <nav class="views" aria-label="Views">
     <button type="button" class="navbtn" data-act="nav" data-id="todos">TODOs<span id="cTodos">0</span></button>
     <button type="button" class="navbtn" data-act="nav" data-id="removed">Removed<span id="cRemoved">0</span></button>
@@ -398,14 +398,14 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
         <div class="panel panel--violet">
           <div class="row wrap">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
-            <span class="panel-title">Coordinator</span>
+            <span class="panel-title">Operator</span>
             <span class="microlabel">Pinned · acts only when asked</span>
-            <span class="push row"><span id="coordBadge"></span><button type="button" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="open-coord">Open</button></span>
+            <span class="push row"><span id="operatorBadge"></span><button type="button" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="open-operator">Open</button></span>
           </div>
-          <div id="coordPreview" class="coord-preview"></div>
+          <div id="operatorPreview" class="operator-preview"></div>
           <div class="row">
-            <label class="sr-only" for="coordIn">Message the coordinator</label>
-            <input id="coordIn" class="mb-input" autocomplete="off" placeholder="Ask what needs you, or: create a todo in infra: …">
+            <label class="sr-only" for="operatorIn">Message the operator</label>
+            <input id="operatorIn" class="mb-input" autocomplete="off" placeholder="Ask what needs you, or: create a todo in infra: …">
             <span class="kbd">↵</span>
           </div>
         </div>
@@ -414,7 +414,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
     </div>
   </div>
 
-  <!-- Focus: one TODO or the coordinator -->
+  <!-- Focus: one TODO or the operator -->
   <div id="vFocus" class="focus-view" hidden>
     <div class="focus-bar">
       <span class="row"><button type="button" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="back">← Overview</button><span class="kbd">Esc</span></span>
@@ -554,13 +554,13 @@ const LANES = [
 ];
 const AUTHOR = {
   user: ["You", "var(--text-secondary)"],
-  "user via coordinator": ["You", "var(--accent-violet)"],
+  "user via operator": ["You", "var(--accent-violet)"],
   agent: ["Agent", "var(--accent-cyan)"],
-  coordinator: ["Coordinator", "var(--accent-violet)"],
+  operator: ["Operator", "var(--accent-violet)"],
   app: ["App", "var(--accent-amber)"],
 };
-const ACTOR = { user: "var(--text-secondary)", agent: "var(--accent-cyan)", coordinator: "var(--accent-violet)", app: "var(--text-muted)" };
-const COORD_TOOLS = ["list_sessions", "read_session", "read_file", "create_todo", "send_message"];
+const ACTOR = { user: "var(--text-secondary)", agent: "var(--accent-cyan)", operator: "var(--accent-violet)", app: "var(--text-muted)" };
+const OPERATOR_TOOLS = ["list_sessions", "read_session", "read_file", "create_todo", "send_message"];
 const RUNNING_LOCK = ["Read-only", "The agent is running. Edit unlocks when it stops."];
 
 const badge = (text, color = "neutral", dot = false) =>
@@ -581,22 +581,22 @@ const act = (p, title = "Failed") => p.catch((e) => toast("danger", title, e.mes
 
 // ---------- state ----------
 const S = {
-  view: "todos", mode: "overview", sel: null, tab: "chat",   // sel: TODO id or "coord"
-  meta: null, projects: [], todos: [], coord: null, detail: null,
+  view: "todos", mode: "overview", sel: null, tab: "chat",   // sel: TODO id or "operator"
+  meta: null, projects: [], todos: [], operator: null, detail: null,
   file: null,            // open file: {todoId, id, name, path, content (disk), mtime (base for save), text (editor), mode}
   dlg: null, toasts: [], sending: null,
   newProject: null, projSel: null, projErr: "",
 };
-const drafts = {};  // 'todo:<id>' | 'coordinator' -> text in this browser, seeded once from the server
+const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
 
-const composer = $("composer"), coordIn = $("coordIn"), newText = $("newText"), newProject = $("newProject");
+const composer = $("composer"), operatorIn = $("operatorIn"), newText = $("newText"), newProject = $("newProject");
 const fileText = $("fileText"), chatLog = $("chatLog"), pName = $("pName"), pPath = $("pPath"), pPrompt = $("pPrompt"), pRepo = $("pRepo");
 
 const live = () => S.todos.filter((t) => !t.removed_at);
 const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.todos.find((t) => t.id === S.sel)) || null;
 const waitingList = () => live().filter((t) => t.status === "waiting").sort((a, b) => a.updated_at.localeCompare(b.updated_at));
-const draftKey = () => (S.sel === "coord" ? "coordinator" : `todo:${S.sel}`);
+const draftKey = () => (S.sel === "operator" ? "operator" : `todo:${S.sel}`);
 const isDirty = (f) => !!f && f.text !== f.content;
 const syncEdit = (f) => { if (isDirty(f)) edits[f.id] = { text: f.text, mtime: f.mtime }; else delete edits[f.id]; };
 
@@ -610,11 +610,11 @@ const loaders = {
     if (S.projSel == null || (S.projSel !== "new" && !S.projects.some((p) => p.id === S.projSel))) S.projSel = S.projects[0]?.id ?? "new";
     if (!keep) fillProjForm();
   },
-  async coord() {
-    S.coord = await call("GET", "/api/coordinator");
-    if (drafts.coordinator === undefined) {
-      drafts.coordinator = S.coord.draft;
-      if (S.sel === "coord") composer.value = S.coord.draft;
+  async operator() {
+    S.operator = await call("GET", "/api/operator");
+    if (drafts.operator === undefined) {
+      drafts.operator = S.operator.draft;
+      if (S.sel === "operator") composer.value = S.operator.draft;
     }
   },
   async detail() {
@@ -654,13 +654,13 @@ async function pump() {
 }
 function refreshVisible() {
   need("todos", "projects");
-  if (S.view === "todos" && (S.mode === "overview" || S.sel === "coord")) need("coord");
+  if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   if (S.view === "todos" && S.mode === "focus" && typeof S.sel === "number") need("detail");
 }
 
 // ---------- navigation ----------
 function setView(v) { flushDraft(); S.view = v; render(); refreshVisible(); }
-function goOverview() { flushDraft(); S.view = "todos"; S.mode = "overview"; S.file = null; render(); need("coord"); }
+function goOverview() { flushDraft(); S.view = "todos"; S.mode = "overview"; S.file = null; render(); need("operator"); }
 function select(id) {
   flushDraft();
   if (S.sel !== id) { S.detail = null; S.file = null; S.tab = "chat"; }
@@ -668,7 +668,7 @@ function select(id) {
   composer.value = drafts[draftKey()] ?? "";
   chatLog.dataset.sig = "";   // scroll the chat to the newest message
   render();
-  need(id === "coord" ? "coord" : "detail");
+  need(id === "operator" ? "operator" : "detail");
 }
 function nextWaiting() {
   const curId = S.mode === "focus" ? S.sel : null;
@@ -690,7 +690,7 @@ function flushDraft(keepalive = false) {
   const p = draftPending;
   draftPending = null;
   if (!p) return;
-  const path = p.key === "coordinator" ? "/api/coordinator/draft" : `/api/todos/${p.key.slice(5)}/draft`;
+  const path = p.key === "operator" ? "/api/operator/draft" : `/api/todos/${p.key.slice(5)}/draft`;
   call("PUT", path, { body: p.body }, keepalive === true).catch((e) => toast("danger", "Draft not saved", e.message));
 }
 addEventListener("pagehide", () => flushDraft(true));
@@ -704,15 +704,15 @@ async function commit(key, el) {
   S.sending = { key, body };
   render();
   try {
-    await call("POST", key === "coordinator" ? "/api/coordinator/messages" : `/api/todos/${key.slice(5)}/messages`, { body });
+    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${key.slice(5)}/messages`, { body });
   } catch (e) {
     drafts[key] = body;
-    if (!el.value && (el === coordIn || draftKey() === key)) el.value = body;
+    if (!el.value && (el === operatorIn || draftKey() === key)) el.value = body;
     toast("danger", "Not sent", e.message);
   }
   S.sending = null;
   render();
-  need(key === "coordinator" ? "coord" : "detail", "todos");
+  need(key === "operator" ? "operator" : "detail", "todos");
 }
 
 // ---------- TODO actions ----------
@@ -759,10 +759,10 @@ async function doRestore(id) {
 }
 async function newSession() {
   try {
-    await call("POST", "/api/coordinator/new-session");
-    toast("info", "Fresh coordinator session", "State comes from tools. Nothing is lost.");
+    await call("POST", "/api/operator/new-session");
+    toast("info", "Fresh operator session", "State comes from tools. Nothing is lost.");
   } catch (e) { toast("danger", "No new session", e.message); }
-  need("coord");
+  need("operator");
 }
 
 // ---------- files (R24, R25, R52) ----------
@@ -908,7 +908,7 @@ function renderHeader() {
   $("cProjects").textContent = S.projects.length;
   document.querySelectorAll(".navbtn").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.view ? "page" : "false"));
   const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
-  document.title = (n ? `(${n}) ` : "") + "agent-coordinator";
+  document.title = (n ? `(${n}) ` : "") + "switchboard";
 }
 
 function renderOverview() {
@@ -925,14 +925,14 @@ function renderOverview() {
   $("newNote").textContent = S.projects.length ? "Lands in Not started. Nothing launches until you start it." : "Add a project on the Projects page first.";
   $("addBtn").disabled = !newText.value.trim() || S.newProject == null;
 
-  const c = S.coord;
-  $("coordBadge").innerHTML = c?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
+  const c = S.operator;
+  $("operatorBadge").innerHTML = c?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
   const ms = (c?.messages ?? []).slice(-2);
-  $("coordPreview").innerHTML = ms.length ? ms.map((m) => {
+  $("operatorPreview").innerHTML = ms.length ? ms.map((m) => {
     const [who, color] = AUTHOR[m.author] ?? [m.author, "var(--text-muted)"];
-    return `<div class="coord-line"><span class="who" style="color:${color}">${esc(who)}</span><span class="coord-body clamp3">${esc(m.body.replace(/[*_`#>|]+/g, ""))}</span></div>`;
+    return `<div class="operator-line"><span class="who" style="color:${color}">${esc(who)}</span><span class="operator-body clamp3">${esc(m.body.replace(/[*_`#>|]+/g, ""))}</span></div>`;
   }).join("") : '<span class="empty">Fresh session. Ask about any TODO, or tell it to create or message one.</span>';
-  if (document.activeElement !== coordIn) coordIn.value = drafts.coordinator ?? "";
+  if (document.activeElement !== operatorIn) operatorIn.value = drafts.operator ?? "";
 
   const rows = live().sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first within a lane
   $("lanes").innerHTML = LANES.map((l) => {
@@ -963,36 +963,36 @@ function cardHtml(t) {
 }
 
 function renderFocus() {
-  const coord = S.sel === "coord";
-  const t = coord ? null : cur();
-  if (!coord && !t) { $("focusHead").innerHTML = '<span class="empty" style="padding-bottom:14px">Loading…</span>'; return; }
+  const operator = S.sel === "operator";
+  const t = operator ? null : cur();
+  if (!operator && !t) { $("focusHead").innerHTML = '<span class="empty" style="padding-bottom:14px">Loading…</span>'; return; }
   const wl = waitingList();
-  const idx = coord ? -1 : wl.findIndex((x) => x.id === t.id);
+  const idx = operator ? -1 : wl.findIndex((x) => x.id === t.id);
   const next = wl.find((x) => x.id !== S.sel);
-  $("focusPos").textContent = coord ? "Focus · coordinator" : idx >= 0 ? `Focus · ${idx + 1} of ${wl.length} waiting` : "Focus · " + (STATUS[t.status]?.label ?? t.status).toLowerCase();
+  $("focusPos").textContent = operator ? "Focus · operator" : idx >= 0 ? `Focus · ${idx + 1} of ${wl.length} waiting` : "Focus · " + (STATUS[t.status]?.label ?? t.status).toLowerCase();
   $("nextHint").textContent = next ? "Next: " + short(next.title, 40) : "Nothing else waiting";
   $("nextBtn").disabled = !next;
 
   const d = S.detail?.todo.id === S.sel ? S.detail : null;
-  const fileOpen = !coord && S.file?.todoId === t.id;
-  const tab = coord ? "chat" : S.tab;
-  renderFocusHead(coord, t, d, fileOpen);
+  const fileOpen = !operator && S.file?.todoId === t.id;
+  const tab = operator ? "chat" : S.tab;
+  renderFocusHead(operator, t, d, fileOpen);
   $("fileView").hidden = !fileOpen;
   $("chatView").hidden = fileOpen || tab !== "chat";
   $("filesView").hidden = fileOpen || tab !== "files";
   $("eventsView").hidden = fileOpen || tab !== "events";
   if (fileOpen) renderFile(t);
-  else if (tab === "chat") renderChat(coord, t, d);
+  else if (tab === "chat") renderChat(operator, t, d);
   else if (tab === "files") renderFiles(t, d);
   else renderEvents(d);
 }
 
-function renderFocusHead(coord, t, d, fileOpen) {
+function renderFocusHead(operator, t, d, fileOpen) {
   let meta, title, status, actions = "";
-  if (coord) {
-    meta = [["Session", S.coord?.session_id || "—"], ["Scope", "all projects"]];
-    title = "Coordinator";
-    status = S.coord?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
+  if (operator) {
+    meta = [["Session", S.operator?.session_id || "—"], ["Scope", "all projects"]];
+    title = "Operator";
+    status = S.operator?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
     actions = btn("New session", "new-session");
   } else {
     const st = STATUS[t.status] ?? STATUS.idle;
@@ -1003,49 +1003,49 @@ function renderFocusHead(coord, t, d, fileOpen) {
     if (t.attention && t.status !== "running") actions += btn("Clear attention", "clear", { id: t.id });
     actions += `<button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO" title="Remove TODO">${SVG(TRASH, 15)}</button>`;
   }
-  const showTabs = !coord && !fileOpen;
+  const showTabs = !operator && !fileOpen;
   const head = $("focusHead");
   head.classList.toggle("notabs", !showTabs);
   head.innerHTML = `<div class="meta-row">${meta.map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join("")}</div>
     <div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
-    ${coord ? `<span style="font-size:13px; color:var(--text-secondary)">Answers about every session and acts only when you tell it. It can create TODOs and message them, never start them.</span>
-      <div class="row wrap" style="gap:6px">${COORD_TOOLS.map((x) => `<span class="tool-chip">${x}</span>`).join("")}</div>` : ""}
+    ${operator ? `<span style="font-size:13px; color:var(--text-secondary)">Answers about every session and acts only when you tell it. It can create TODOs and message them, never start them.</span>
+      <div class="row wrap" style="gap:6px">${OPERATOR_TOOLS.map((x) => `<span class="tool-chip">${x}</span>`).join("")}</div>` : ""}
     ${showTabs ? `<div class="mb-tabs" role="tablist" aria-label="TODO sections" style="margin-bottom:-1px">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", d ? d.files.length : t.file_count], ["events", "Events"]], S.tab, "tab")}</div>` : ""}`;
 }
 
-function msgHtml(m, coord) {
+function msgHtml(m, operator) {
   const [who, color] = AUTHOR[m.author] ?? [m.author, "var(--text-muted)"];
   const flags = [];
-  if (m.author === "user via coordinator") flags.push(badge("Via coordinator", "violet"));
+  if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
   if (m.state === "queued") flags.push(badge("Queued · delivers on idle", "blue", true));
   if (m.state === "pending") flags.push(badge("Delivers at start", "violet", true));
-  if (m.state === "sending") flags.push(badge(!coord && ["idle", "waiting"].includes(cur()?.status) ? "Resuming" : "Sending", "blue"));
-  if (m.file_id && !coord) flags.push(`<button type="button" class="file-chip" data-act="open-file" data-id="${m.file_id}" data-fk="chip:${m.id}">${SVG(FILE, 13)}${esc(m.file_name ?? "file")}</button>`);
-  // R54: coordinator replies are full markdown; worker, app and user messages are short plain text
-  const body = m.author === "coordinator" ? `<div class="md">${md(m.body)}</div>` : `<div class="msg-body">${esc(m.body)}</div>`;
+  if (m.state === "sending") flags.push(badge(!operator && ["idle", "waiting"].includes(cur()?.status) ? "Resuming" : "Sending", "blue"));
+  if (m.file_id && !operator) flags.push(`<button type="button" class="file-chip" data-act="open-file" data-id="${m.file_id}" data-fk="chip:${m.id}">${SVG(FILE, 13)}${esc(m.file_name ?? "file")}</button>`);
+  // R54: operator replies are full markdown; worker, app and user messages are short plain text
+  const body = m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : `<div class="msg-body">${esc(m.body)}</div>`;
   return `<div class="msg${m.author.startsWith("user") ? " msg--user" : ""}">
     <div class="msg-side"><span class="who" style="color:${color}">${esc(who)}</span><span class="mono muted" style="font-size:11px">${fmtTime(m.at)}</span></div>
     <div class="msg-main">${body}${flags.length ? `<div class="flags">${flags.join("")}</div>` : ""}</div>
   </div>`;
 }
 
-function renderChat(coord, t, d) {
+function renderChat(operator, t, d) {
   const key = draftKey();
-  const msgs = coord ? S.coord?.messages ?? [] : d?.messages ?? [];
-  const running = coord ? S.coord?.status === "running" : t.status === "running";
-  let html = msgs.map((m) => msgHtml(m, coord)).join("");
-  if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, state: "sending", at: new Date().toISOString() }, coord);
-  if (running) html += `<div class="running-line"><i></i>${esc(coord ? "running · reading state through tools" : "running · " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working"))}</div>`;
-  if (!html) html = `<span class="empty">${coord ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
+  const msgs = operator ? S.operator?.messages ?? [] : d?.messages ?? [];
+  const running = operator ? S.operator?.status === "running" : t.status === "running";
+  let html = msgs.map((m) => msgHtml(m, operator)).join("");
+  if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, state: "sending", at: new Date().toISOString() }, operator);
+  if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working"))}</div>`;
+  if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
   if (chatLog._html !== html) { chatLog.innerHTML = html; chatLog._html = html; }
   if (chatLog.dataset.sig !== sig || atBottom) chatLog.scrollTop = chatLog.scrollHeight;
   chatLog.dataset.sig = sig;
 
-  composer.placeholder = coord ? "Ask about sessions, or tell it to create or message a TODO" : "One line to the agent";
+  composer.placeholder = operator ? "Ask about sessions, or tell it to create or message a TODO" : "One line to the agent";
   // R56: after an app restart queued messages wait for the user; nothing is delivered on its own
-  const q = coord ? 0 : t.queued_count;
+  const q = operator ? 0 : t.queued_count;
   const bar = $("deliverBar");
   bar.hidden = !(q && t.status !== "running");
   bar.innerHTML = bar.hidden ? "" : `<div class="deliver-bar"><span>${plural(q, "queued message")} not delivered yet.</span><span class="push">${btn("Deliver", "deliver", { id: t.id })}</span></div>`;
@@ -1053,9 +1053,9 @@ function renderChat(coord, t, d) {
 }
 
 function renderHint() {
-  const coord = S.sel === "coord", t = coord ? null : cur();
+  const operator = S.sel === "operator", t = operator ? null : cur();
   // R20 delivery hint, worded as in the design
-  const hint = coord ? "Delivers now. The coordinator acts only on what you ask."
+  const hint = operator ? "Delivers now. The operator acts only on what you ask."
     : !t ? "" : t.status === "running" ? "Agent is running. Your message is queued and delivered once, when the turn ends."
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
@@ -1127,7 +1127,7 @@ function renderProjects() {
 const ACTIONS = {
   nav: (id) => (id === "todos" && S.view === "todos" ? goOverview() : setView(id)),
   open: (id) => select(Number(id)),
-  "open-coord": () => select("coord"),
+  "open-operator": () => select("operator"),
   back: goOverview,
   next: nextWaiting,
   tab: (id) => { S.tab = id; render(); },
@@ -1172,8 +1172,8 @@ document.addEventListener("keydown", (e) => {
 
 composer.addEventListener("input", () => { saveDraftSoon(draftKey(), composer.value); renderHint(); });
 composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commit(draftKey(), composer); } });
-coordIn.addEventListener("input", () => saveDraftSoon("coordinator", coordIn.value));
-coordIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commit("coordinator", coordIn); } });
+operatorIn.addEventListener("input", () => saveDraftSoon("operator", operatorIn.value));
+operatorIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commit("operator", operatorIn); } });
 newText.addEventListener("input", () => { $("addBtn").disabled = !newText.value.trim() || S.newProject == null; });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTodo(); } });
 newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
@@ -1185,7 +1185,7 @@ themeSwitch.checked = document.documentElement.dataset.theme === "light";
 themeSwitch.addEventListener("change", () => {
   const light = themeSwitch.checked;
   if (light) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
-  try { localStorage.setItem("agent-coordinator-theme", light ? "light" : "dark"); } catch (e) {}
+  try { localStorage.setItem("switchboard-theme", light ? "light" : "dark"); } catch (e) {}
 });
 
 // ---------- live updates (R61): one SSE stream; each event refetches only what is on screen ----------
@@ -1194,8 +1194,8 @@ function onEvent(ev) {
   if (ev.type === "todo" || ev.type === "todos") {
     need("todos");   // header counts and the tab title are always on screen
     if (focusTodo && (ev.type === "todos" || ev.id === S.sel)) need("detail");
-  } else if (ev.type === "coordinator") {
-    if (S.view === "todos" && (S.mode === "overview" || S.sel === "coord")) need("coord");
+  } else if (ev.type === "operator") {
+    if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   } else if (ev.type === "projects") need("projects");
 }
 const es = new EventSource("/api/events");
@@ -1203,7 +1203,7 @@ es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { conso
 es.onopen = refreshVisible;   // on every (re)connect, catch up on what was missed
 
 render();
-need("meta", "projects", "todos", "coord");
+need("meta", "projects", "todos", "operator");
 </script>
 </body>
 </html>
