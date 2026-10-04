@@ -289,9 +289,13 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .file-chip { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; background: var(--surface-inset); border: 1px solid var(--line-cyan); border-radius: var(--radius-1); color: var(--accent-cyan); font-family: var(--font-mono); font-size: 12px; cursor: pointer; }
 .file-chip:hover { background: var(--tint-cyan); }
 a.file-chip { text-decoration: none; }
-span.file-chip { cursor: default; }
-.file-chip img { width: 18px; height: 18px; object-fit: cover; border-radius: var(--radius-1); }
-.file-chip .mb-iconbtn { width: 18px; height: 18px; margin-right: -6px; color: inherit; }
+/* a file picked but not sent yet: preview, name, kind and size, and an × that removes it */
+.upload-chip { display: flex; align-items: center; gap: 12px; width: 272px; padding: 5px 6px 5px 5px; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-2); }
+.upload-chip__preview { flex: none; display: flex; align-items: center; justify-content: center; width: 54px; height: 36px; overflow: hidden; color: var(--accent-cyan); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.upload-chip__preview img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+.upload-chip__text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-family: var(--font-mono); line-height: 1.35; }
+.upload-chip__name { font-size: 13px; color: var(--text-primary); }
+.upload-chip__meta { font-size: 11px; color: var(--text-muted); }
 .flags:empty { display: none; }
 /* fixed height, so the chat does not jump when an image loads after the scroll to the bottom */
 .thumb { display: block; height: 120px; max-width: 240px; object-fit: contain; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
@@ -619,7 +623,7 @@ const syncEdit = (f) => { if (isDirty(f)) edits[f.id] = { text: f.text, mtime: f
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
 const readUpload = (f) => new Promise((ok, no) => {
   const r = new FileReader();
-  r.onload = () => ok({ name: f.name || "file", type: f.type, url: r.result });
+  r.onload = () => ok({ name: f.name || "file", type: f.type, size: f.size, url: r.result });
   r.onerror = () => no(r.error);
   r.readAsDataURL(f);
 });
@@ -629,8 +633,15 @@ async function addUploads(key, files) {
   catch (e) { toast("danger", "Can't read file", e.message); }
   render();
 }
+const fmtSize = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+// "image" for any image, else the extension ("pdf"), else "file".
+const fileKind = (u) => (u.type.startsWith("image/") ? "image" : /\.([a-z0-9]{1,8})$/i.exec(u.name)?.[1].toLowerCase() ?? "file");
 // Chips for files picked but not sent yet, each with an × to drop it.
-const uploadChips = (key) => (uploads[key] ?? []).map((u, i) => `<span class="file-chip">${u.type.startsWith("image/") ? `<img src="${esc(u.url)}" alt="">` : SVG(FILE, 13)}${esc(u.name)}<button type="button" class="mb-iconbtn mb-iconbtn--plain" data-act="drop-upload" data-id="${esc(key)}|${i}" aria-label="Remove ${esc(u.name)}">${SVG(CLOSE, 12)}</button></span>`).join("");
+const uploadChips = (key) => (uploads[key] ?? []).map((u, i) => `<div class="upload-chip">
+    <span class="upload-chip__preview">${u.type.startsWith("image/") ? `<img src="${esc(u.url)}" alt="">` : SVG(FILE, 18)}</span>
+    <span class="upload-chip__text"><span class="upload-chip__name ellipsis" title="${esc(u.name)}">${esc(u.name)}</span><span class="upload-chip__meta">${esc(fileKind(u))} · ${fmtSize(u.size)}</span></span>
+    <button type="button" class="mb-iconbtn mb-iconbtn--plain" data-act="drop-upload" data-id="${esc(key)}|${i}" aria-label="Remove ${esc(u.name)}" title="Remove">${SVG(CLOSE, 18)}</button>
+  </div>`).join("");
 function setHtml(el, html) { if (el._html !== html) { el.innerHTML = html; el._html = html; } }
 // Paste and drop on `zone` add files to the list under keyOf(); keyOf() returns null where attachments are off (operator).
 function acceptFiles(zone, keyOf) {
