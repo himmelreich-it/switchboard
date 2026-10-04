@@ -54,6 +54,7 @@ Requirement numbers 1–42 match the references in `designs/Switchboard.html`. R
 49. If a run fails (the Claude Code process exits with an error, for example a usage limit), the app must post an `app` message naming the error, e.g. `claude exited 1: usage limit`, and set the TODO to `idle`. A run the app interrupted itself (removal, shutdown) produces no error message.
 50. When a tool call is denied by the permission system, the app must post an `app` message such as `Auto mode blocked Bash: git push --force origin main` and raise the TODO's attention flag with actor `app`. The agent may clear the flag after the user's reply, as with any other attention.
 51. A `running` TODO must show its most recent tool in the list and the TODO view, e.g. `PreToolUse · Bash`.
+62. The user must be able to attach images and other files to a TODO's first instruction and to later messages, by pasting, dropping, or picking them. A follow-up may be attachments only. Each file is saved to `<artifact folder>/uploads/<message id>-<n>-<name>`, and the prompt lists the absolute paths after the message text, so the agent opens them with `Read`. The chat shows images as thumbnails and other files as download links. Files are sent as base64 inside the JSON body, because the server refuses non-JSON POSTs. Attachments not yet committed are kept only in the browser tab. The operator chat takes no attachments.
 
 ### Markdown files
 
@@ -138,6 +139,7 @@ Requirement numbers 1–42 match the references in `designs/Switchboard.html`. R
 - [ ] An agent that creates a worktree calls `set_worktree`. The TODO row then shows the worktree's branch, and the next resume prompt starts with `Your worktree: <path>. Work there.`
 - [ ] A tool call denied by the permission system produces an `app` message naming the tool and command, and the TODO goes to `waiting on you`.
 - [ ] A turn that ends without `post_message` shows the final result text, cut to two lines, as the agent's message.
+- [ ] A screenshot pasted into the New TODO text or the chat composer is delivered with the message, shows as a thumbnail in the chat, and the agent can open it with `Read`.
 - [ ] A run that fails produces an `app` message with the error and leaves the TODO `idle`.
 - [ ] Removing a running TODO interrupts the agent, posts no error message, sets `removed_at` and `removed_by`, and hides the TODO, its messages and its files from the main list. It then appears in the removed view.
 - [ ] Restoring that TODO shows it in the main list again with its messages and files, and resumes the same session id with "continue", or with the queued messages and draft as one prompt if any existed.
