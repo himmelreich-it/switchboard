@@ -9,9 +9,11 @@
 function applyTheme() {
   let pick = "auto"; try { pick = localStorage.getItem("switchboard-theme"); } catch (e) {}
   if (pick !== "dark" && pick !== "light") pick = "auto";
-  const light = pick === "light" || (pick === "auto" && matchMedia("(prefers-color-scheme: light)").matches);
-  if (light) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
+  const os = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  if (pick === "light" || (pick === "auto" && os === "light")) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
   document.querySelectorAll('[data-act="theme"]').forEach((b) => b.setAttribute("aria-pressed", b.dataset.id === pick));
+  const auto = document.querySelector('[data-act="theme"][data-id="auto"]');
+  if (auto) auto.title = `Follow system · now ${os}`;
 }
 applyTheme();
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
@@ -22,7 +24,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyThem
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <style>
-/* ---------- Mobbins tokens (from designs/Switchboard.html) ---------- */
+/* ---------- Mobbins tokens (from designs/Switchboard-v2.html) ---------- */
 :root {
   --bg-void: #0A0813; --bg-base: #110E20; --surface-1: #181430; --surface-2: #201B3E; --surface-3: #2B2552; --surface-inset: #0C0A18;
   --bg-aurora: radial-gradient(1100px 600px at 85% -10%, rgba(157,107,255,.17), transparent 60%),
@@ -145,6 +147,7 @@ a { color: var(--accent-lime); }
 }
 .mb-iconbtn:hover { background: var(--surface-2); color: var(--text-primary); border-color: var(--border-strong); }
 .mb-iconbtn--plain { background: transparent; border-color: transparent; }
+.mb-iconbtn--md { width: var(--control-md); height: var(--control-md); }
 
 .mb-input, .mb-textarea, .mb-select {
   width: 100%; font-family: var(--font-sans); font-size: 14px; color: var(--text-primary);
@@ -219,9 +222,14 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
   font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
 }
 .navbtn:hover { color: var(--text-primary); }
-.navbtn[aria-current="page"], .navbtn[aria-pressed="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-primary); }
+.navbtn[aria-current="page"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-primary); }
 .navbtn span { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.theme { margin-left: auto; display: flex; gap: 4px; flex: none; }
+.theme { margin-left: auto; display: flex; align-items: center; gap: 2px; height: 28px; padding: 2px; flex: none; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
+.theme > span, .theme button { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.theme > span { padding: 0 6px 0 4px; color: var(--text-muted); }
+.theme button { height: 22px; padding: 0 8px; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); cursor: pointer; }
+.theme button:hover { color: var(--text-primary); }
+.theme button[aria-pressed="true"] { background: var(--surface-3); border-color: var(--border-strong); color: var(--text-primary); }
 
 /* ---------- views ---------- */
 #app { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -292,18 +300,26 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .flags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .file-chip { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; background: var(--surface-inset); border: 1px solid var(--line-cyan); border-radius: var(--radius-1); color: var(--accent-cyan); font-family: var(--font-mono); font-size: 12px; cursor: pointer; }
 .file-chip:hover { background: var(--tint-cyan); }
-a.file-chip { text-decoration: none; }
-/* a file picked but not sent yet: preview, name, kind and size, and an × that removes it */
-.upload-chip { display: flex; align-items: center; gap: 12px; width: 272px; padding: 5px 6px 5px 5px; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-2); }
-.upload-chip__preview { flex: none; display: flex; align-items: center; justify-content: center; width: 54px; height: 36px; overflow: hidden; color: var(--accent-cyan); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
-.upload-chip__preview img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
-.upload-chip__text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-family: var(--font-mono); line-height: 1.35; }
-.upload-chip__name { font-size: 13px; color: var(--text-primary); }
-.upload-chip__meta { font-size: 11px; color: var(--text-muted); }
 .flags:empty { display: none; }
-/* fixed height, so the chat does not jump when an image loads after the scroll to the bottom */
-.thumb { display: block; height: 120px; max-width: 240px; object-fit: contain; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
-.attach-btn { padding: 0 10px; }
+/* attachments: waiting under the text box, or sent in a message */
+.atts { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.atts:empty { display: none; }
+/* a file picked but not sent yet: preview, name, size, and an × that removes it */
+.upload-chip { position: relative; display: flex; align-items: center; gap: 8px; height: 48px; max-width: 260px; padding: 4px 32px 4px 4px; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
+.upload-chip > img { flex: none; width: 54px; height: 38px; object-fit: cover; border: 1px solid var(--border-subtle); border-radius: 2px; }
+.upload-chip__icon { flex: none; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; color: var(--accent-cyan); background: var(--tint-cyan); border: 1px solid var(--line-cyan); border-radius: 2px; }
+.upload-chip__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-family: var(--font-mono); }
+.upload-chip__name { font-size: 12px; color: var(--text-primary); }
+.upload-chip__meta { font-size: 11px; color: var(--text-muted); }
+.upload-chip button { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); font-size: 15px; line-height: 1; cursor: pointer; }
+.upload-chip button:hover { background: var(--surface-3); border-color: var(--border-default); color: var(--text-primary); }
+/* a sent file that is not an image: paperclip, name, size; links to the server copy */
+.att-file { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; text-decoration: none; }
+.att-file:hover { border-color: var(--border-strong); }
+.att-file span { color: var(--text-muted); }
+/* fixed height, so the chat does not jump when an image loads after the scroll to the bottom; scale-down never enlarges a small image */
+.thumb { display: block; overflow: hidden; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
+.thumb img { display: block; height: 150px; max-width: 240px; object-fit: scale-down; }
 .running-line { display: flex; align-items: center; gap: 8px; padding: 4px 12px; font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); }
 .running-line i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-cyan); box-shadow: var(--glow-cyan); }
 .composer { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--border-subtle); background: var(--bg-base); display: flex; flex-direction: column; gap: 8px; }
@@ -382,9 +398,10 @@ a.file-chip { text-decoration: none; }
     <button type="button" class="navbtn" data-act="nav" data-id="projects">Projects<span id="cProjects">0</span></button>
   </nav>
   <div class="theme" role="group" aria-label="Theme">
-    <button type="button" class="navbtn" data-act="theme" data-id="auto" title="Follow the system setting">Auto</button>
-    <button type="button" class="navbtn" data-act="theme" data-id="dark">Dark</button>
-    <button type="button" class="navbtn" data-act="theme" data-id="light">Light</button>
+    <span aria-hidden="true">Theme</span>
+    <button type="button" data-act="theme" data-id="auto">Auto</button>
+    <button type="button" data-act="theme" data-id="dark" title="Dark theme">Dark</button>
+    <button type="button" data-act="theme" data-id="light" title="Light theme">Light</button>
   </div>
 </header>
 
@@ -404,12 +421,14 @@ a.file-chip { text-decoration: none; }
             <div class="mb-field">
               <label class="mb-field__label" for="newText">First instruction</label>
               <textarea id="newText" class="mb-textarea" rows="5" placeholder="Describe the task, paste a ticket, or write 'review PR #482'. The agent works out the kind of work and whether it needs a worktree."></textarea>
+              <span class="mb-field__hint">Paste images with ⌘V, or attach files.</span>
+              <div id="newFiles" class="atts"></div>
             </div>
           </div>
-          <div id="newFiles" class="flags"></div>
           <div class="row wrap">
+            <button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="pick-files" data-id="new" title="Attach files (or paste, or drop them on the text)">Attach</button>
             <span id="newNote" class="small">Lands in Not started. Nothing launches until you start it.</span>
-            <span class="push row"><button type="button" class="mb-btn mb-btn--secondary mb-btn--md attach-btn" data-act="pick-files" data-id="new" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button><span class="kbd">⌘↵</span><button type="button" id="addBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="add" disabled>Add</button></span>
+            <span class="push row"><span class="kbd">⌘↵</span><button type="button" id="addBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="add" disabled>Add</button></span>
           </div>
         </div>
         <div class="panel panel--violet">
@@ -472,10 +491,10 @@ a.file-chip { text-decoration: none; }
             <div class="composer-row">
               <label class="sr-only" for="composer">Message</label>
               <textarea id="composer" class="mb-textarea" rows="2"></textarea>
-              <button type="button" id="attachBtn" class="mb-btn mb-btn--secondary mb-btn--md attach-btn" data-act="pick-files" data-id="composer" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+              <button type="button" id="attachBtn" class="mb-iconbtn mb-iconbtn--md" data-act="pick-files" data-id="composer" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
               <button type="button" id="commitBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="commit" disabled>Commit</button>
             </div>
-            <div id="composerFiles" class="flags"></div>
+            <div id="composerFiles" class="atts"></div>
             <div id="composerHint" class="hint-row"></div>
           </div>
         </div>
@@ -559,6 +578,7 @@ const FILE_LINES = FILE + '<path d="M16 13H8"/><path d="M16 17H8"/>';
 const BRANCH = '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>';
 const TRASH = '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>';
 const CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
+const CLIP = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>';
 
 const STATUS = {
   waiting: { label: "Waiting on you", badge: "amber", edge: "var(--accent-amber)" },
@@ -625,33 +645,45 @@ const syncEdit = (f) => { if (isDirty(f)) edits[f.id] = { text: f.text, mtime: f
 
 // ---------- attachments: paste, drop or pick; sent as base64 in the JSON body of the commit ----------
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
-const readUpload = (f) => new Promise((ok, no) => {
+const readUpload = (f, name) => new Promise((ok, no) => {
   const r = new FileReader();
-  r.onload = () => ok({ name: f.name || "file", type: f.type, size: f.size, url: r.result });
+  r.onload = () => ok({ name, type: f.type, size: f.size, url: r.result });
   r.onerror = () => no(r.error);
   r.readAsDataURL(f);
 });
 const wire = (u) => ({ name: u.name, data: u.url.slice(u.url.indexOf(",") + 1) });
-async function addUploads(key, files) {
-  try { (uploads[key] ??= []).push(...(await Promise.all([...files].map(readUpload)))); }
+// A pasted screenshot arrives as "image.png"; it becomes "pasted-1432.png" (the time), "pasted-1432-2.png" for the second in one paste.
+const isShot = (f) => f.type.startsWith("image/") && (!f.name || /^image\.(png|jpe?g|gif|webp)$/i.test(f.name));
+function shotName(f, i, n) {
+  const d = new Date(), hhmm = [d.getHours(), d.getMinutes()].map((x) => String(x).padStart(2, "0")).join("");
+  return `pasted-${hhmm}${n > 1 ? `-${i + 1}` : ""}.${f.type.slice(6).replace("jpeg", "jpg").replace("svg+xml", "svg")}`;
+}
+async function addUploads(key, files, pasted = false) {
+  const list = [...files], shots = pasted ? list.filter(isShot) : [];
+  const name = (f) => (shots.includes(f) ? shotName(f, shots.indexOf(f), shots.length) : f.name || "file");
+  try { (uploads[key] ??= []).push(...(await Promise.all(list.map((f) => readUpload(f, name(f)))))); }
   catch (e) { toast("danger", "Can't read file", e.message); }
   render();
 }
 const fmtSize = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-// "image" for any image, else the extension ("pdf"), else "file".
-const fileKind = (u) => (u.type.startsWith("image/") ? "image" : /\.([a-z0-9]{1,8})$/i.exec(u.name)?.[1].toLowerCase() ?? "file");
 // Chips for files picked but not sent yet, each with an × to drop it.
-const uploadChips = (key) => (uploads[key] ?? []).map((u, i) => `<div class="upload-chip">
-    <span class="upload-chip__preview">${u.type.startsWith("image/") ? `<img src="${esc(u.url)}" alt="">` : SVG(FILE, 18)}</span>
-    <span class="upload-chip__text"><span class="upload-chip__name ellipsis" title="${esc(u.name)}">${esc(u.name)}</span><span class="upload-chip__meta">${esc(fileKind(u))} · ${fmtSize(u.size)}</span></span>
-    <button type="button" class="mb-iconbtn mb-iconbtn--plain" data-act="drop-upload" data-id="${esc(key)}|${i}" aria-label="Remove ${esc(u.name)}" title="Remove">${SVG(CLOSE, 18)}</button>
-  </div>`).join("");
+const uploadChips = (key) => (uploads[key] ?? []).map((u, i) => {
+  const image = u.type.startsWith("image/");
+  return `<div class="upload-chip">
+    ${image ? `<img src="${esc(u.url)}" alt="">` : `<span class="upload-chip__icon">${SVG(FILE, 16)}</span>`}
+    <span class="upload-chip__text"><span class="upload-chip__name ellipsis" title="${esc(u.name)}">${esc(u.name)}</span><span class="upload-chip__meta">${image ? "image · " : ""}${fmtSize(u.size)}</span></span>
+    <button type="button" data-act="drop-upload" data-id="${esc(key)}|${i}" aria-label="Remove ${esc(u.name)}" title="Remove">×</button>
+  </div>`;
+}).join("");
 function setHtml(el, html) { if (el._html !== html) { el.innerHTML = html; el._html = html; } }
 // Paste and drop on `zone` add files to the list under keyOf(); keyOf() returns null where attachments are off (operator).
 function acceptFiles(zone, keyOf) {
   zone.addEventListener("paste", (e) => {
     const files = e.clipboardData?.files, key = keyOf();
-    if (files?.length && key) { e.preventDefault(); addUploads(key, files); }
+    if (!files?.length || !key) return;
+    // Copied text that also carries an image (a table from a doc): the text still pastes, the image is attached.
+    if (!e.clipboardData.getData("text/plain")) e.preventDefault();
+    addUploads(key, files, true);
   });
   zone.addEventListener("dragover", (e) => { if (keyOf() && e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
   zone.addEventListener("drop", (e) => {
@@ -1023,7 +1055,7 @@ function cardHtml(t) {
     <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(lm?.at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     <div class="card-meta"><span class="proj">${esc(t.project_name)}</span>${t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : ""}</div>
-    ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || "Sent attachments")}</span></div>` : ""}
+    ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || last.files)}</span></div>` : ""}
     <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span>${t.status === "not_started" ? `<span class="push">${btn("Start", "start", { v: "primary", id: t.id })}</span>` : `<span class="open-label">${t.status === "waiting" ? "Answer" : "Open"} →</span>`}</div>
   </div>`;
 }
@@ -1092,16 +1124,16 @@ function msgHtml(m, operator) {
   const files = (m.attachments ?? []).map(attachmentHtml).join("");
   return `<div class="msg${m.author.startsWith("user") ? " msg--user" : ""}">
     <div class="msg-side"><span class="who" style="color:${color}">${esc(who)}</span><span class="mono muted" style="font-size:11px">${fmtTime(m.at)}</span></div>
-    <div class="msg-main">${body}<div class="flags">${files}</div>${flags.length ? `<div class="flags">${flags.join("")}</div>` : ""}</div>
+    <div class="msg-main">${body}<div class="atts">${files}</div>${flags.length ? `<div class="flags">${flags.join("")}</div>` : ""}</div>
   </div>`;
 }
 
-// A sent attachment ({id, name}) links to the server copy; one still sending ({name, url}) shows its local data: URL.
+// A sent attachment ({id, name, size}) links to the server copy; one still sending ({name, url, size}) shows its local data: URL.
 function attachmentHtml(a) {
   const src = esc(a.id ? `/api/attachments/${a.id}` : a.url), name = esc(a.name);
-  if (!IMAGE.test(a.name)) return `<a class="file-chip" href="${src}" download="${name}">${SVG(FILE, 13)}${name}</a>`;
-  const img = `<img class="thumb" src="${src}" alt="${name}">`;
-  return a.id ? `<a href="${src}" target="_blank" rel="noopener" title="${name}">${img}</a>` : img;
+  if (!IMAGE.test(a.name)) return `<a class="att-file" href="${src}" download="${name}">${SVG(CLIP, 13)}${name}${a.size ? `<span>${fmtSize(a.size)}</span>` : ""}</a>`;
+  const img = `<img src="${src}" alt="${name}">`;
+  return a.id ? `<a class="thumb" href="${src}" target="_blank" rel="noopener" title="${name}">${img}</a>` : `<span class="thumb">${img}</span>`;
 }
 
 function renderChat(operator, t, d) {
@@ -1134,8 +1166,8 @@ function renderHint() {
     : !t ? "" : t.status === "running" ? "Agent is running. Your message is queued and delivered once, when the turn ends."
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
-  $("composerHint").innerHTML = `${composer.value.trim() ? badge("Draft") : ""}<span>${esc(hint)}</span><span class="push row" style="gap:6px"><span class="kbd">⌘↵</span>commit</span>`;
   const key = operator ? null : draftKey();   // the operator chat takes no attachments
+  $("composerHint").innerHTML = `${composer.value.trim() ? badge("Draft") : ""}<span>${esc(hint)}</span><span class="push row" style="gap:6px">${key ? '<span class="kbd">⌘V</span><span style="margin-right:6px">image</span>' : ""}<span class="kbd">⌘↵</span>commit</span>`;
   $("attachBtn").hidden = !key;
   setHtml($("composerFiles"), key ? uploadChips(key) : "");
   $("commitBtn").disabled = (!composer.value.trim() && !uploads[key]?.length) || !!S.sending;

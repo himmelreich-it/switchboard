@@ -13,7 +13,11 @@ async function waitForServer() {
   throw new Error(`switchboard server did not start on ${URL}`);
 }
 
+const ICONS = join(import.meta.dirname, "../images/icons");
+
 app.whenReady().then(async () => {
+  // macOS ignores the BrowserWindow icon and shows the dock icon instead.
+  app.dock?.setIcon(join(ICONS, "switchboard-512.png"));
   // A server already running on the port wins: this copy exits on EADDRINUSE and the window attaches to the live one.
   server = spawn("bun", ["server.ts"], {
     cwd: join(import.meta.dirname, ".."),
@@ -21,7 +25,7 @@ app.whenReady().then(async () => {
     env: { ...process.env, SWITCHBOARD_PARENT: "electron" },
   });
   await waitForServer();
-  const win = new BrowserWindow({ width: 1400, height: 900, title: "switchboard" });
+  const win = new BrowserWindow({ width: 1400, height: 900, title: "switchboard", icon: join(ICONS, "switchboard-256.png") });
   // Markdown links get target="_blank" (index.html); open them in the real browser, not a new Electron window.
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   win.loadURL(URL);
