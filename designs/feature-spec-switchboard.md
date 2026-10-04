@@ -116,7 +116,7 @@ Requirement numbers 1–42 match the references in `designs/Switchboard.html`. R
 
 ### UI
 
-58. The UI follows `designs/Switchboard.html`: the overview with the New TODO card, the pinned operator card and the status lanes; the Focus view of a TODO with Chat, Files and Events tabs and its "1 of 2 waiting" counter; the Removed view; the Projects page, which shows the fixed contract text read-only; and the light/dark switch.
+58. The UI follows `designs/Switchboard.html`: the overview with the New TODO card, the pinned operator card and the status lanes; the Focus view of a TODO with Chat, Files and Events tabs and its "1 of 2 waiting" counter; the Removed view; the Projects page, which shows the fixed contract text read-only; and the Auto/Dark/Light theme buttons (Auto follows the OS setting).
 59. Keyboard shortcuts: `N` focuses the new TODO input, `⌘J` opens the next TODO waiting on you, `⌘E` toggles file edit mode, `⌘S` saves the open file, `⌘↵` commits the draft, `Esc` closes the open file or goes back to the overview.
 60. The design's "Show flow" panel (scenarios, lifecycle trace, live event feed) and the launch command preview on the Projects page are not built.
 61. The UI gets live updates from the backend over SSE.
