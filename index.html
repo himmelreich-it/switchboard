@@ -224,6 +224,10 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .navbtn:hover { color: var(--text-primary); }
 .navbtn[aria-current="page"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-primary); }
 .navbtn span { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.gh-btn { margin-left: auto; height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; flex: none; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); cursor: pointer; }
+.gh-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.gh-btn > span { width: 6px; height: 6px; flex: none; border: 1px solid currentColor; }
+.gh-btn:not([hidden]) + .theme { margin-left: 0; }
 .theme { margin-left: auto; display: flex; align-items: center; gap: 2px; height: 28px; padding: 2px; flex: none; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
 .theme > span, .theme button { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .theme > span { padding: 0 6px 0 4px; color: var(--text-muted); }
@@ -264,6 +268,15 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .card-title { font-size: 15px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
 .card-meta { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); min-width: 0; }
 .card-meta .proj { color: var(--text-secondary); flex: none; }
+/* git line and PR line under the branch; facts are colored spans, see gitFactsOf() and prFactsOf() */
+.card-git { display: flex; flex-direction: column; gap: 5px; margin-top: -4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); min-width: 0; }
+.pr-line { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-muted); text-decoration: none; }
+.pr-line:hover { color: var(--text-primary); }
+.pr-line > .ellipsis { flex: 1; }
+.pr-line > svg, .pr-line > .stale { flex: none; }
+.pr-chip { flex: none; padding: 0 5px; line-height: 18px; font-size: 11px; color: var(--text-primary); border: 1px solid var(--border-default); border-radius: 2px; }
+.pr-chip.merged { color: var(--accent-violet); background: var(--tint-violet); border-color: var(--line-violet); }
+.pr-chip.closed, .pr-chip.stale { color: var(--text-muted); background: transparent; border-color: var(--border-default); }
 .ellipsis { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .branch { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .branch svg { flex: none; }
@@ -285,6 +298,13 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .meta-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .meta-row span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
 .meta-row b { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-secondary); }
+.git-rows { display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+.git-row { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+.git-row > .k { flex: 0 0 28px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.git-row > .v { min-width: 0; text-wrap: pretty; color: var(--text-muted); }
+.git-row > .v.err { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--text-secondary); }
+.git-row a { text-decoration: none; }
+.git-row a:hover { text-decoration: underline; }
 .title-row { display: flex; align-items: flex-start; gap: 10px 12px; flex-wrap: wrap; }
 .title-row h1 { flex: 1 1 240px; min-width: 0; font-size: 22px; overflow-wrap: anywhere; }
 .title-row .actions { display: flex; gap: 8px; flex: none; align-items: center; padding-top: 2px; }
@@ -397,6 +417,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
     <button type="button" class="navbtn" data-act="nav" data-id="removed">Removed<span id="cRemoved">0</span></button>
     <button type="button" class="navbtn" data-act="nav" data-id="projects">Projects<span id="cProjects">0</span></button>
   </nav>
+  <button type="button" id="ghBtn" class="gh-btn" data-act="gh-retry" hidden></button>
   <div class="theme" role="group" aria-label="Theme">
     <span aria-hidden="true">Theme</span>
     <button type="button" data-act="theme" data-id="auto">Auto</button>
@@ -578,6 +599,7 @@ const FILE_LINES = FILE + '<path d="M16 13H8"/><path d="M16 17H8"/>';
 const BRANCH = '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>';
 const TRASH = '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>';
 const CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
+const ARROW = '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>';
 const CLIP = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>';
 
 const STATUS = {
@@ -603,6 +625,67 @@ const ACTOR = { user: "var(--text-secondary)", agent: "var(--accent-cyan)", oper
 const OPERATOR_TOOLS = ["list_sessions", "read_session", "read_file", "create_todo", "send_message"];
 const RUNNING_LOCK = ["Read-only", "The agent is running. Edit unlocks when it stops."];
 
+// ---------- git and PR facts (design v3: an ordered list of [text, color]; the card shows a short form) ----------
+const GC = { muted: "var(--text-muted)", sec: "var(--text-secondary)", amber: "var(--accent-amber)", red: "var(--accent-red)", lime: "var(--accent-lime)", cyan: "var(--accent-cyan)", violet: "var(--accent-violet)" };
+const GH_LABEL = { "no network": "PR status · offline", "gh access failed": "PR status · gh access failed", unclear: "PR status · unclear" };
+const factList = (list) => list.filter(Boolean).map((f, i) => ({ text: f[0], color: f[1], sep: i ? " · " : "" }));
+const factsHtml = (list, grey) => list.map((f) => `<span>${f.sep}</span><span style="color:${grey ? GC.muted : f.color}">${esc(f.text)}</span>`).join("");
+const factsText = (list) => list.map((f) => f.sep + f.text).join("");
+function gitFactsOf(g, full) {
+  return factList([
+    g.commits != null && [g.commits ? plural(g.commits, "commit") : "no commits", GC.muted],
+    g.changed && [g.changed + " changed", GC.amber],
+    g.untracked && [g.untracked + " untracked", GC.muted],
+    g.push === "none" ? ["not pushed", GC.amber] : g.push === "unpushed" ? [g.unpushed + " unpushed", GC.amber] : g.push === "pushed" && ["pushed", GC.muted],
+    full && g.behind && [g.behind + " behind " + g.base, GC.muted],
+  ]);
+}
+// Highest priority first; the card keeps the first three facts, the detail view shows all.
+function prFactsOf(pr, full) {
+  if (pr.state === "merged") return factList([["merged", GC.violet]]);
+  if (pr.state === "closed") return factList([["closed", GC.muted]]);
+  const c = pr.checks;
+  const head = full ? [[pr.draft ? "draft" : "open", GC.sec]] : pr.draft ? [["draft", GC.sec]] : [];
+  const body = [
+    pr.conflicts && ["conflicts", GC.red],
+    c.state === "failing" && [full ? "checks ✗ " + c.failing.join(", ") : plural(c.failing.length, "check") + " failing", GC.red],
+    pr.review === "changes" && ["changes requested", GC.amber],
+    (pr.threads > 0 || full) && [plural(pr.threads, "open thread"), pr.threads ? GC.amber : GC.muted],
+    c.state === "running" && [full ? `checks ● ${c.running} running` : "checks ●", GC.cyan],
+    pr.review === "required" && ["awaiting review", GC.muted],
+    pr.review === "approved" && ["approved", GC.lime],
+    c.state === "passing" && [full ? `checks ✓ (${c.passed} passed, ${c.skipped} skipped)` : "checks ✓", GC.lime],
+    full && pr.mergeable && !pr.conflicts && ["mergeable", GC.muted],
+    pr.behind && ["behind " + pr.base, GC.muted],
+  ].filter(Boolean);
+  return factList(head.concat(full ? body : body.slice(0, 3)));
+}
+// The git line, and the PR line linking to GitHub (data-act="link" so the click opens the link, not the TODO).
+// With a gh error the last PR result stays, greyed, with its age. "no PR" only once a check has run.
+function cardGitHtml(t) {
+  const g = t.git, pr = t.pr, err = t.gh_error, age = t.pr_checked_at ? ago(t.pr_checked_at) : "";
+  if (!g) return "";
+  let prLine = "";
+  if (pr) prLine = `<a class="pr-line" href="${esc(pr.url)}" target="_blank" rel="noopener" data-act="link" title="Open PR #${pr.number} on GitHub">
+      <span class="pr-chip ${err ? "stale" : pr.state}">PR #${pr.number}</span><span class="ellipsis">${factsHtml(prFactsOf(pr, false), !!err)}</span>${err ? `<span class="stale">${esc(age)}</span>` : ""}${SVG(ARROW, 13)}</a>`;
+  else if (g.push === "pushed" && t.pr_checked_at) prLine = `<div title="${err ? esc(`${GH_LABEL[err.kind]} · last result ${age}`) : ""}">no PR${err ? " · " + esc(age) : ""}</div>`;
+  return `<div class="card-git"><div class="ellipsis" title="${esc(factsText(gitFactsOf(g, true)))}">${factsHtml(gitFactsOf(g, false))}</div>${prLine}</div>`;
+}
+function focusGitHtml(t) {
+  if (!t.worktree_path) return t.status === "not_started" ? "" : `<div class="git-rows"><div class="git-row"><span class="k">Git</span><span class="v">project folder · shared with other TODOs, not shown</span></div></div>`;
+  const g = t.git, pr = t.pr, err = t.gh_error, age = t.pr_checked_at ? ago(t.pr_checked_at) : "";
+  if (!g) return "";
+  const row = (k, v, cls = "") => `<div class="git-row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
+  let out = row("Git", factsHtml(gitFactsOf(g, true)));
+  const when = err ? ` · as of ${age}` : ` · checked ${age}`;
+  if (pr) out += row("PR", `<a href="${esc(pr.url)}" target="_blank" rel="noopener" title="Open on GitHub">#${pr.number} ↗</a>`
+    + factsHtml(prFactsOf(pr, true).map((f, i) => (i ? f : { ...f, sep: " " })), !!err) + esc((pr.via ? " · registered by agent via " + pr.via : "") + when));
+  else if (g.push === "pushed" && t.pr_checked_at) out += row("PR", err ? `no PR · as of ${esc(age)}` : "no PR · branch pushed");
+  if (err && (pr || g.push === "pushed"))
+    out += row("", `<span>${esc(err.why)} Showing the last result. Retrying every 2 min; the git line is local and stays current.</span>${btn(S.ghRetrying ? "Retrying…" : "Retry now", "gh-retry", { v: "ghost" })}`, "err");
+  return `<div class="git-rows">${out}</div>`;
+}
+
 const badge = (text, color = "neutral", dot = false) =>
   `<span class="mb-badge${color === "neutral" ? "" : " mb-badge--" + color}">${dot ? '<span class="mb-badge__dot"></span>' : ""}${esc(text)}</span>`;
 const btn = (label, act, { v = "secondary", id = "", dis = false } = {}) =>
@@ -624,7 +707,7 @@ const S = {
   view: "todos", mode: "overview", sel: null, tab: "chat",   // sel: TODO id or "operator"
   meta: null, projects: [], todos: [], operator: null, detail: null,
   file: null,            // open file: {todoId, id, name, path, content (disk), mtime (base for save), text (editor), mode}
-  dlg: null, toasts: [], sending: null,
+  dlg: null, toasts: [], sending: null, ghRetrying: false,
   newProject: null, projSel: null, projErr: "",
 };
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
@@ -730,7 +813,7 @@ const loaders = {
 };
 const want = new Set();
 let pumping = false;
-// ponytail: every TODO event refetches the whole list (the server runs one `git branch` per worktree); fine for tens of TODOs.
+// ponytail: every TODO event refetches the whole list (the server runs two git commands per worktree); fine for tens of TODOs.
 function need(...keys) {
   keys.forEach((k) => want.add(k));
   if (!pumping) { pumping = true; queueMicrotask(pump); }
@@ -1005,6 +1088,12 @@ function renderHeader() {
   $("cProjects").textContent = S.projects.length;
   document.querySelectorAll("nav.views .navbtn").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.view ? "page" : "false"));
   const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
+  const ghErr = lv.find((t) => t.git && t.gh_error)?.gh_error, gh = $("ghBtn");
+  gh.hidden = !ghErr;
+  if (ghErr) {
+    gh.innerHTML = `<span></span>${esc(S.ghRetrying ? "PR status · retrying…" : GH_LABEL[ghErr.kind])}`;
+    gh.title = `${ghErr.why} PR lines show the last result, greyed. Git lines are local and stay current. Retries every 2 min. Click to retry now.`;
+  }
   document.title = (n ? `(${n}) ` : "") + "switchboard";
 }
 
@@ -1055,6 +1144,7 @@ function cardHtml(t) {
     <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(lm?.at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     <div class="card-meta"><span class="proj">${esc(t.project_name)}</span>${t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : ""}</div>
+    ${cardGitHtml(t)}
     ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || last.files)}</span></div>` : ""}
     <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span>${t.status === "not_started" ? `<span class="push">${btn("Start", "start", { v: "primary", id: t.id })}</span>` : `<span class="open-label">${t.status === "waiting" ? "Answer" : "Open"} →</span>`}</div>
   </div>`;
@@ -1105,6 +1195,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
   const head = $("focusHead");
   head.classList.toggle("notabs", !showTabs);
   head.innerHTML = `<div class="meta-row">${meta.map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join("")}</div>
+    ${operator ? "" : focusGitHtml(t)}
     <div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
     ${operator ? `<span style="font-size:13px; color:var(--text-secondary)">Answers about every session and acts only when you tell it. It can create TODOs and message them, never start them.</span>
       <div class="row wrap" style="gap:6px">${OPERATOR_TOOLS.map((x) => `<span class="tool-chip">${x}</span>`).join("")}</div>` : ""}
@@ -1257,6 +1348,11 @@ const ACTIONS = {
   "file-mode": (id) => setFileMode(id),
   "pick-project": (id) => { S.projSel = Number(id); fillProjForm(); render(); },
   "new-project": () => { S.projSel = "new"; fillProjForm(); render(); pName.focus(); },
+  "gh-retry": () => {
+    if (S.ghRetrying) return;
+    S.ghRetrying = true; render();
+    act(call("POST", "/api/gh/retry"), "PR status").finally(() => { S.ghRetrying = false; render(); });
+  },
   theme: (id) => { try { localStorage.setItem("switchboard-theme", id); } catch (e) {} applyTheme(); },
   dlg: (id) => { const b = S.dlg?.buttons[Number(id)]; closeDialog(); b?.[2]?.(); },
 };
