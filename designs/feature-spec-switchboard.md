@@ -120,6 +120,7 @@ Requirement numbers 1–42 match the references in `designs/Switchboard.html`. R
 59. Keyboard shortcuts: `N` focuses the new TODO input, `⌘J` opens the next TODO waiting on you, `⌘E` toggles file edit mode, `⌘S` saves the open file, `⌘↵` commits the draft, `Esc` closes the open file or goes back to the overview.
 60. The design's "Show flow" panel (scenarios, lifecycle trace, live event feed) and the launch command preview on the Projects page are not built.
 61. The UI gets live updates from the backend over SSE.
+63. The overview has a project filter row above the lanes, as in `designs/Switchboard-v3.html`: an All chip and one chip per project, each with its count of TODOs and, for a project with TODOs waiting on you, an amber square. Picking a project shows only its TODOs in the lanes, limits `⌘J` and the Focus "1 of 2 waiting" counter to that project, and preselects it in the New TODO card. While a project is picked, the row says how many TODOs (and how many of them waiting) are in other projects, with a Show all button. The tab title and the header counts still count all projects. The pick is kept in the browser's localStorage.
 
 ## Acceptance Criteria
 
