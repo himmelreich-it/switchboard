@@ -660,30 +660,31 @@ function prFactsOf(pr, full) {
   ].filter(Boolean);
   return factList(head.concat(full ? body : body.slice(0, 3)));
 }
-// The git line, and the PR line linking to GitHub (data-act="link" so the click opens the link, not the TODO).
-// With a gh error the last PR result stays, greyed, with its age. "no PR" only once a check has run.
+// The git line (worktree only), and the PR line linking to GitHub (data-act="link" so the click opens the link, not the TODO).
+// A PR registered with set_pr shows without a worktree. With a gh error the last PR result stays, greyed, with its age.
+// "no PR" only once a check has run.
 function cardGitHtml(t) {
   const g = t.git, pr = t.pr, err = t.gh_error, age = t.pr_checked_at ? ago(t.pr_checked_at) : "";
-  if (!g) return "";
+  if (!g && !pr) return "";
   let prLine = "";
   if (pr) prLine = `<a class="pr-line" href="${esc(pr.url)}" target="_blank" rel="noopener" data-act="link" title="Open PR #${pr.number} on GitHub">
       <span class="pr-chip ${err ? "stale" : pr.state}">PR #${pr.number}</span><span class="ellipsis">${factsHtml(prFactsOf(pr, false), !!err)}</span>${err ? `<span class="stale">${esc(age)}</span>` : ""}${SVG(ARROW, 13)}</a>`;
-  else if (g.push === "pushed" && t.pr_checked_at) prLine = `<div title="${err ? esc(`${GH_LABEL[err.kind]} · last result ${age}`) : ""}">no PR${err ? " · " + esc(age) : ""}</div>`;
-  return `<div class="card-git"><div class="ellipsis" title="${esc(factsText(gitFactsOf(g, true)))}">${factsHtml(gitFactsOf(g, false))}</div>${prLine}</div>`;
+  else if (g?.push === "pushed" && t.pr_checked_at) prLine = `<div title="${err ? esc(`${GH_LABEL[err.kind]} · last result ${age}`) : ""}">no PR${err ? " · " + esc(age) : ""}</div>`;
+  const gitLine = g ? `<div class="ellipsis" title="${esc(factsText(gitFactsOf(g, true)))}">${factsHtml(gitFactsOf(g, false))}</div>` : "";
+  return `<div class="card-git"${g ? "" : ' style="margin-top:0"'}>${gitLine}${prLine}</div>`;
 }
 function focusGitHtml(t) {
-  if (!t.worktree_path) return t.status === "not_started" ? "" : `<div class="git-rows"><div class="git-row"><span class="k">Git</span><span class="v">project folder · shared with other TODOs, not shown</span></div></div>`;
   const g = t.git, pr = t.pr, err = t.gh_error, age = t.pr_checked_at ? ago(t.pr_checked_at) : "";
-  if (!g) return "";
   const row = (k, v, cls = "") => `<div class="git-row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
-  let out = row("Git", factsHtml(gitFactsOf(g, true)));
+  let out = g ? row("Git", factsHtml(gitFactsOf(g, true)))
+    : !t.worktree_path && t.status !== "not_started" ? row("Git", "project folder · shared with other TODOs, not shown") : "";
   const when = err ? ` · as of ${age}` : ` · checked ${age}`;
   if (pr) out += row("PR", `<a href="${esc(pr.url)}" target="_blank" rel="noopener" title="Open on GitHub">#${pr.number} ↗</a>`
     + factsHtml(prFactsOf(pr, true).map((f, i) => (i ? f : { ...f, sep: " " })), !!err) + esc((pr.via ? " · registered by agent via " + pr.via : "") + when));
-  else if (g.push === "pushed" && t.pr_checked_at) out += row("PR", err ? `no PR · as of ${esc(age)}` : "no PR · branch pushed");
-  if (err && (pr || g.push === "pushed"))
+  else if (g?.push === "pushed" && t.pr_checked_at) out += row("PR", err ? `no PR · as of ${esc(age)}` : "no PR · branch pushed");
+  if (err && (pr || t.pr_number || g?.push === "pushed"))
     out += row("", `<span>${esc(err.why)} Showing the last result. Retrying every 2 min; the git line is local and stays current.</span>${btn(S.ghRetrying ? "Retrying…" : "Retry now", "gh-retry", { v: "ghost" })}`, "err");
-  return `<div class="git-rows">${out}</div>`;
+  return out && `<div class="git-rows">${out}</div>`;
 }
 
 const badge = (text, color = "neutral", dot = false) =>
@@ -1088,7 +1089,7 @@ function renderHeader() {
   $("cProjects").textContent = S.projects.length;
   document.querySelectorAll("nav.views .navbtn").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.view ? "page" : "false"));
   const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
-  const ghErr = lv.find((t) => t.git && t.gh_error)?.gh_error, gh = $("ghBtn");
+  const ghErr = lv.find((t) => (t.git || t.pr_number) && t.gh_error)?.gh_error, gh = $("ghBtn");
   gh.hidden = !ghErr;
   if (ghErr) {
     gh.innerHTML = `<span></span>${esc(S.ghRetrying ? "PR status · retrying…" : GH_LABEL[ghErr.kind])}`;

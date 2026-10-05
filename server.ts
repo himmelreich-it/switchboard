@@ -168,21 +168,23 @@ export function refreshPrs(projectId: number) {
   }
   return p;
 }
+// A TODO is looked up when it has a worktree (by its branch) or a PR registered with set_pr (by number, also without a worktree).
+const PR_TODOS = "removed_at IS NULL AND (worktree_path IS NOT NULL OR pr_number IS NOT NULL)";
 export async function refreshAllPrs() {
-  const ids = db.query("SELECT DISTINCT project_id AS id FROM todos WHERE removed_at IS NULL AND worktree_path IS NOT NULL").all() as { id: number }[];
+  const ids = db.query(`SELECT DISTINCT project_id AS id FROM todos WHERE ${PR_TODOS}`).all() as { id: number }[];
   await Promise.all(ids.map((r) => refreshPrs(r.id)));
 }
 
 async function fetchPrs(projectId: number) {
   const p = projectRow(projectId);
-  const todos = db.query("SELECT worktree_path, pr_number FROM todos WHERE project_id = ? AND removed_at IS NULL AND worktree_path IS NOT NULL")
-    .all(projectId) as { worktree_path: string; pr_number: number | null }[];
+  const todos = db.query(`SELECT worktree_path, pr_number FROM todos WHERE project_id = ? AND ${PR_TODOS}`)
+    .all(projectId) as { worktree_path: string | null; pr_number: number | null }[];
   if (!p || !todos.length) return;
   const remote = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
   const repo = remote.ok ? parseGithubRemote(remote.out) : null;
   if (!repo) return; // not on GitHub: no PR line
   const numbers = [...new Set(todos.map((t) => t.pr_number).filter((n): n is number => !!n))];
-  const branches = [...new Set((await Promise.all(todos.filter((t) => !t.pr_number).map((t) => gitState(t.worktree_path))))
+  const branches = [...new Set((await Promise.all(todos.flatMap((t) => (!t.pr_number && t.worktree_path ? [gitState(t.worktree_path)] : []))))
     .map((g) => g?.branch).filter((b): b is string => !!b))];
   if (!numbers.length && !branches.length) return;
   const args = ["gh", "api", "graphql", "-f", `query=${prQuery(branches.length, numbers.length)}`, "-f", `o=${repo.owner}`, "-f", `n=${repo.name}`,
@@ -251,7 +253,7 @@ export async function summaries(where = "1", args: any[] = []) {
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
     // set_pr wins over the branch: a review worktree's local branch need not match the PR's head branch.
-    const pr = git && store ? (r.pr_number ? store.byNumber.get(r.pr_number) : git.branch ? store.byBranch.get(git.branch) : null) : null;
+    const pr = store ? (r.pr_number ? store.byNumber.get(r.pr_number) : git?.branch ? store.byBranch.get(git.branch) : null) : null;
     return {
       ...r, attention: !!r.attention, unread: !!r.unread, has_draft: !!r.has_draft,
       last_message: r.last_message ? JSON.parse(r.last_message) : null,
