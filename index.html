@@ -241,7 +241,10 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .panel--violet { border-top: 2px solid var(--accent-violet); }
 .panel-title { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .new-grid { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); gap: 12px; align-items: start; }
-.operator-preview { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+/* basis 0: the preview fills the height the New TODO panel gives the row, but never makes the row taller.
+   Text past the bottom edge fades out; Open shows the full reply.
+   ponytail: fades the last 20px even when nothing is cut; toggle a class on scrollHeight > clientHeight if that bothers. */
+.operator-preview { flex: 1 1 0; display: flex; flex-direction: column; gap: 8px; min-height: 120px; overflow: hidden; mask-image: linear-gradient(#000 calc(100% - 20px), transparent); }
 .operator-line { display: flex; gap: 12px; align-items: baseline; }
 .who { flex: 0 0 92px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
 .clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
@@ -365,6 +368,10 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .md table { display: block; overflow: auto; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; margin: 0 0 .8em; }
 .md th, .md td { border: 1px solid var(--border-default); padding: 6px 10px; }
 .md hr { border: none; border-top: 1px solid var(--border-subtle); }
+/* operator reply in the overview preview: same markdown, sized like the text around it */
+.operator-body.md { font-size: 13px; line-height: 1.5; color: var(--text-secondary); max-width: none; }
+.operator-body.md :is(h1, h2, h3) { font-size: inherit; color: var(--text-primary); margin: 0 0 .3em; padding: 0; border: none; }
+.operator-body.md :is(p, ul, ol, pre, blockquote, table) { margin: 0 0 .4em; }
 
 /* ---------- removed and projects pages ---------- */
 .page { padding: 24px; }
@@ -1028,7 +1035,8 @@ function renderOverview() {
   const ms = (c?.messages ?? []).slice(-2);
   $("operatorPreview").innerHTML = ms.length ? ms.map((m) => {
     const [who, color] = AUTHOR[m.author] ?? [m.author, "var(--text-muted)"];
-    return `<div class="operator-line"><span class="who" style="color:${color}">${esc(who)}</span><span class="operator-body clamp3">${esc(m.body.replace(/[*_`#>|]+/g, ""))}</span></div>`;
+    const body = m.author === "operator" ? `<div class="operator-body md">${md(m.body)}</div>` : `<span class="operator-body clamp3">${esc(m.body)}</span>`;
+    return `<div class="operator-line"><span class="who" style="color:${color}">${esc(who)}</span>${body}</div>`;
   }).join("") : '<span class="empty">Fresh session. Ask about any TODO, or tell it to create or message one.</span>';
   if (document.activeElement !== operatorIn) operatorIn.value = drafts.operator ?? "";
 
