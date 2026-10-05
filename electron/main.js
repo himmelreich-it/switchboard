@@ -1,7 +1,22 @@
 // Desktop window around the unchanged Bun server: Electron runs Node, and server.ts needs Bun (bun:sqlite, Bun.serve).
 import { app, BrowserWindow, dialog, shell } from "electron";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
+
+// Dock and Spotlight start the app with launchd's bare environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin).
+// Load the interactive login shell's environment (PATH from ~/.zshrc, keys from ~/.zshenv) so bun, hooks and MCP servers work as from a terminal.
+// The marker skips anything the shell startup prints before env.
+function loginShellEnv() {
+  try {
+    const out = execFileSync(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "\\0__SB__\\0"; env -0'], { encoding: "utf8", timeout: 10_000 });
+    const vars = out.split("\0__SB__\0").pop().split("\0").filter(Boolean);
+    return Object.fromEntries(vars.map((v) => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
+  } catch (e) {
+    console.error(`could not read the shell environment: ${e.message}`);
+    return {};
+  }
+}
+if (app.isPackaged) Object.assign(process.env, loginShellEnv());
 
 const URL = `http://127.0.0.1:${process.env.PORT ?? 4477}`;
 let server;
