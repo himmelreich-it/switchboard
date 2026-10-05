@@ -24,7 +24,7 @@ Requirement numbers 1–42 match the references in `designs/Switchboard.html`. R
 
 ### TODOs and sessions
 
-5. The system must show a single page listing all TODOs across all projects. Each row shows the title, project, status, and branch or worktree name when one is in use. The branch is read with `git -C <worktree> branch --show-current` from the worktree path registered via `set_worktree` (requirement 46).
+5. The system must show a single page listing all TODOs across all projects. Each row shows the title, project, status, and branch or worktree name when one is in use. The branch is read with `git --no-optional-locks status --porcelain=v2 --branch` in the worktree path registered via `set_worktree` (requirement 46). A row with a worktree also shows a git line (commits on the branch, changed and untracked files, push state). A row with a worktree, or with a PR registered via `set_pr`, shows a PR line (number, state, conflicts, checks, reviews, open threads, behind base) that links to GitHub, as in design v3. Git state is read on every list fetch; PR state comes from one `gh api graphql` call per project every 2 minutes and after each run, run as whichever logged-in `gh` account can read the repository, without switching the active account. A `gh` failure keeps the last PR result, greyed, and shows the reason with a retry button.
 6. Adding a TODO must require choosing a project, defaulting to the most recently chosen project, and a first instruction. A new TODO is created in status `not started yet` and no agent is launched.
 7. A TODO's initial title must be its first instruction. Once the agent runs, it must replace the title with a generated one via `set_title`.
 8. The user must start each TODO explicitly. Starting launches one Claude Code session with the first instruction and any messages committed before the start.
@@ -69,7 +69,7 @@ Requirement numbers 1–42 match the references in `designs/Switchboard.html`. R
 
 27. Agents must run in auto permission mode (`permissionMode: 'auto'`).
 28. Hooks and the app's MCP server must be passed per run as options of the Agent SDK `query()` call (in-process hook callbacks and an in-process MCP server), not via the repository's settings, so only app-launched agents report to the app and the user's normal Claude Code sessions in the same repo are unaffected.
-29. Worker agents must have these MCP tools: `post_message`, `set_title`, `set_attention` (raise and clear), `attach_file`, `set_worktree`. The contract must name them by their full tool ids (`mcp__app__post_message` etc.), because with the user's many MCP servers the agent loads tool definitions on demand.
+29. Worker agents must have these MCP tools: `post_message`, `set_title`, `set_attention` (raise and clear), `attach_file`, `set_worktree`, `set_pr` (the pull request a review works on; otherwise the PR is found by the worktree's branch). The contract must name them by their full tool ids (`mcp__app__post_message` etc.), because with the user's many MCP servers the agent loads tool definitions on demand.
 30. Status must follow the run lifecycle:
 
     | Event | Status |
