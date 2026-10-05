@@ -252,6 +252,14 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .lane-dot { width: 8px; height: 8px; flex: none; align-self: center; }
 .lane-label { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .lane-count { font-family: var(--font-mono); font-size: 13px; }
+.pfilter { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: -8px; }
+.pchips { display: flex; gap: 4px; flex-wrap: wrap; }
+.pchip { height: 28px; padding: 0 10px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-1); color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
+.pchip:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.pchip[aria-checked="true"] { background: var(--surface-2); border-color: var(--accent-lime); color: var(--text-primary); }
+.pchip .n { font-size: 11px; color: var(--text-muted); }
+.pchip .wait { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
+.pfilter-hidden { font-family: var(--font-mono); font-size: 12px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
 .card {
   cursor: pointer; display: flex; flex-direction: column; gap: 10px; padding: 14px; min-width: 0;
@@ -446,6 +454,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
           </div>
         </div>
       </div>
+      <div id="pfilter" class="pfilter"></div>
       <div id="lanes" style="display:flex; flex-direction:column; gap:28px;"></div>
     </div>
   </div>
@@ -626,7 +635,9 @@ const S = {
   file: null,            // open file: {todoId, id, name, path, content (disk), mtime (base for save), text (editor), mode}
   dlg: null, toasts: [], sending: null,
   newProject: null, projSel: null, projErr: "",
+  filter: "all",         // project filter: "all" or a project id as text, kept in localStorage
 };
+try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
 // ponytail: unsent attachments live only in this tab, so a reload drops them and Restore never sends them.
@@ -638,7 +649,10 @@ const fileText = $("fileText"), chatLog = $("chatLog"), pName = $("pName"), pPat
 
 const live = () => S.todos.filter((t) => !t.removed_at);
 const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.todos.find((t) => t.id === S.sel)) || null;
-const waitingList = () => live().filter((t) => t.status === "waiting").sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+// A saved filter for a project that is gone (or not loaded yet) shows all, without forgetting the pick.
+const filterProject = () => S.projects.find((p) => String(p.id) === S.filter) ?? null;
+const inFilter = (t) => { const p = filterProject(); return !p || t.project_id === p.id; };
+const waitingList = () => live().filter((t) => t.status === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
 const draftKey = () => (S.sel === "operator" ? "operator" : `todo:${S.sel}`);
 const isDirty = (f) => !!f && f.text !== f.content;
 const syncEdit = (f) => { if (isDirty(f)) edits[f.id] = { text: f.text, mtime: f.mtime }; else delete edits[f.id]; };
@@ -765,8 +779,17 @@ function select(id) {
 function nextWaiting() {
   const curId = S.mode === "focus" ? S.sel : null;
   const next = waitingList().find((t) => t.id !== curId);
-  if (next) select(next.id);
-  else { goOverview(); toast("success", "Nothing waiting on you", "Back to the overview."); }
+  if (next) return select(next.id);
+  goOverview();
+  const other = live().filter((t) => t.status === "waiting" && !inFilter(t)).length;
+  if (other) toast("info", "Nothing waiting in " + filterProject().name, `${other} waiting in other projects. Show all to see them.`);
+  else toast("success", "Nothing waiting on you", "Back to the overview.");
+}
+function setFilter(id) {
+  try { localStorage.setItem("switchboard-project-filter", id); } catch (e) {}
+  S.filter = id;
+  if (id !== "all") S.newProject = Number(id);
+  render();
 }
 
 // ---------- drafts (R19): saved to the server 400 ms after the last keystroke ----------
@@ -812,15 +835,17 @@ async function commit(key, el) {
 
 // ---------- TODO actions ----------
 async function addTodo() {
-  const instruction = newText.value.trim();
-  if (!instruction || S.newProject == null) return;
+  const instruction = newText.value.trim(), pid = S.newProject;
+  if (!instruction || pid == null) return;
   $("addBtn").disabled = true;
   const files = uploads.new ?? [];
   try {
-    await call("POST", "/api/todos", { project_id: S.newProject, instruction, attachments: files.map(wire) });
+    await call("POST", "/api/todos", { project_id: pid, instruction, attachments: files.map(wire) });
     newText.value = "";
     uploads.new = (uploads.new ?? []).filter((u) => !files.includes(u));   // keeps files added while this was sending
-    toast("success", "Added to Not started", short(instruction, 48) + ". Start it from its card when ready.");
+    const fp = filterProject();
+    if (fp && fp.id !== pid) toast("info", "Added to " + (S.projects.find((p) => p.id === pid)?.name ?? "another project"), short(instruction, 40) + ". Hidden by the project filter.");
+    else toast("success", "Added to Not started", short(instruction, 48) + ". Start it from its card when ready.");
     need("todos");
   } catch (e) { toast("danger", "Not added", e.message); }
   render();
@@ -1016,7 +1041,7 @@ function renderOverview() {
     newProject.dataset.key = key;
   }
   if (!S.projects.some((p) => p.id === S.newProject))
-    S.newProject = S.projects.some((p) => p.id === S.meta?.last_project_id) ? S.meta.last_project_id : S.projects[0]?.id ?? null;
+    S.newProject = filterProject()?.id ?? (S.projects.some((p) => p.id === S.meta?.last_project_id) ? S.meta.last_project_id : S.projects[0]?.id ?? null);
   newProject.value = S.newProject ?? "";
   newProject.disabled = !S.projects.length;
   $("newNote").textContent = S.projects.length ? "Lands in Not started. Nothing launches until you start it." : "Add a project on the Projects page first.";
@@ -1032,12 +1057,24 @@ function renderOverview() {
   }).join("") : '<span class="empty">Fresh session. Ask about any TODO, or tell it to create or message one.</span>';
   if (document.activeElement !== operatorIn) operatorIn.value = drafts.operator ?? "";
 
-  const rows = live().sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first within a lane
+  const lv = live(), fp = filterProject();
+  const waits = (list) => list.filter((t) => t.status === "waiting").length;
+  const chip = (id, label, list, dot) => {
+    const w = waits(list);
+    return `<button type="button" role="radio" class="pchip" aria-checked="${String(id) === String(fp?.id ?? "all")}" data-act="filter" data-id="${id}" data-fk="filter:${id}"${w ? ` title="${w} waiting on you"` : ""}>${dot && w ? '<span class="wait"></span>' : ""}<span>${esc(label)}</span><span class="n">${list.length}</span></button>`;
+  };
+  const hidden = lv.filter((t) => !inFilter(t)), hw = waits(hidden);
+  setHtml($("pfilter"), `<span class="microlabel">Project</span>
+    <div class="pchips" role="radiogroup" aria-label="Show TODOs for project">${chip("all", "All", lv, false)}${S.projects.map((p) => chip(p.id, p.name || "untitled", lv.filter((t) => t.project_id === p.id), true)).join("")}</div>
+    ${fp ? `<span class="push row"><span class="pfilter-hidden" style="color:${hw ? "var(--accent-amber)" : "var(--text-muted)"}">${plural(hidden.length, "TODO")} in other projects${hw ? ` · ${hw} waiting` : ""}</span>${btn("Show all", "filter", { v: "ghost", id: "all" })}</span>` : ""}`);
+
+  const rows = lv.filter(inFilter).sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first within a lane
   $("lanes").innerHTML = LANES.map((l) => {
     const list = rows.filter((t) => t.status === l.st);
+    const empty = l.st === "waiting" && fp ? `Nothing in ${esc(fp.name)} needs you.` : l.empty;
     return `<section class="lane" aria-label="${esc(l.label)}">
       <div class="lane-head"><span class="lane-dot" style="background:${l.color}"></span><h2 class="lane-label">${l.label}</h2><span class="lane-count" style="color:${l.color}">${list.length}</span><span class="small">${l.hint}</span></div>
-      ${list.length ? `<div class="cards">${list.map(cardHtml).join("")}</div>` : `<span class="empty">${l.empty}</span>`}
+      ${list.length ? `<div class="cards">${list.map(cardHtml).join("")}</div>` : `<span class="empty">${empty}</span>`}
     </section>`;
   }).join("");
 }
@@ -1257,6 +1294,7 @@ const ACTIONS = {
   "file-mode": (id) => setFileMode(id),
   "pick-project": (id) => { S.projSel = Number(id); fillProjForm(); render(); },
   "new-project": () => { S.projSel = "new"; fillProjForm(); render(); pName.focus(); },
+  filter: setFilter,
   theme: (id) => { try { localStorage.setItem("switchboard-theme", id); } catch (e) {} applyTheme(); },
   dlg: (id) => { const b = S.dlg?.buttons[Number(id)]; closeDialog(); b?.[2]?.(); },
 };
