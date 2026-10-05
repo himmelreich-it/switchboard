@@ -1,14 +1,33 @@
 {
   "name": "switchboard",
+  "productName": "Switchboard",
+  "version": "0.1.0",
   "module": "server.ts",
+  "main": "electron/main.js",
   "type": "module",
   "private": true,
   "scripts": {
-    "app": "electron electron/main.js"
+    "app": "electron electron/main.js",
+    "package:mac": "electron-builder --mac --dir",
+    "install-local": "osascript -e 'quit app \"Switchboard\"' || true; bun run package:mac && rm -rf /Applications/Switchboard.app && cp -R dist/mac*/Switchboard.app /Applications/ && echo 'Installed /Applications/Switchboard.app'"
+  },
+  "build": {
+    "appId": "dev.himmelreich.switchboard",
+    "productName": "Switchboard",
+    "directories": { "output": "dist" },
+    "files": ["electron/**", "server.ts", "runner.ts", "lib.ts", "index.html", "images/**", "package.json"],
+    "asar": false,
+    "npmRebuild": false,
+    "mac": {
+      "target": "dir",
+      "icon": "images/icons/switchboard-1024.png",
+      "category": "public.app-category.developer-tools"
+    }
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "electron": "^44.5.1"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
   },
   "peerDependencies": {
     "typescript": "^5"
