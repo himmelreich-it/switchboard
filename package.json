@@ -9,7 +9,7 @@
   "scripts": {
     "app": "electron electron/main.js",
     "package:mac": "electron-builder --mac --dir",
-    "install-local": "osascript -e 'quit app \"Switchboard\"' || true; bun run package:mac && rm -rf /Applications/Switchboard.app && cp -R dist/mac*/Switchboard.app /Applications/ && echo 'Installed /Applications/Switchboard.app'"
+    "install-local": "osascript -e 'quit app \"Switchboard\"' || true; bun run package:mac && rm -rf /Applications/Switchboard.app && cp -R dist/mac*/Switchboard.app /Applications/ && rm -rf dist && echo 'Installed /Applications/Switchboard.app'"
   },
   "build": {
     "appId": "dev.himmelreich.switchboard",
