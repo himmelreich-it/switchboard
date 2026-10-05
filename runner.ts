@@ -7,7 +7,7 @@ import { z } from "zod";
 import { cutToTwoLines, deliveryAction, deliveryPrompt, isInside, lineCount, statusAfterRun, toolArg, toolLine, withAttachments } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOME, addEvent, addMessage, artifactDir, attachmentsOf, createTodo, db, emit, filesOf, getMeta, now, projectRow, saveAttachments,
+  HOME, addEvent, addMessage, artifactDir, attachmentsOf, createTodo, db, emit, filesOf, getMeta, now, projectRow, refreshPrs, saveAttachments,
   setMeta, setTodo, summaries, todoRow, type Upload,
 } from "./server";
 
@@ -15,11 +15,12 @@ import {
 // GET /api/meta shows it with the placeholder; each run fills in the TODO's own folder.
 export const CONTRACT = `You are running inside switchboard, a local app where the user tracks this Claude Code session as a TODO and steers it with short chat messages.
 
-- Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file and mcp__app__set_worktree. On your first turn, call mcp__app__set_title with a short title for this TODO.
+- Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file, mcp__app__set_worktree and mcp__app__set_pr. On your first turn, call mcp__app__set_title with a short title for this TODO.
 - Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
 - The TODO text and the user's committed messages are your go-ahead for local edits within this TODO's scope. Outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user.
 - Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Follow the project prompt for how to create one.
 - After creating a worktree, call mcp__app__set_worktree with its absolute path and work only there. Ignore any skill instruction not to switch context.
+- When this TODO works on an existing GitHub pull request (for example a review), call mcp__app__set_pr with its number. A PR opened from your worktree's branch is found without it.
 - When anything is unclear, ask rather than guess: post a message and raise attention with mcp__app__set_attention.
 - When auto mode blocks an action, or you are unsure how to proceed, post a message and raise attention instead of routing around the block.
 - Clear your attention flag (mcp__app__set_attention with raised false) once the user's reply resolves it.`;
@@ -32,7 +33,7 @@ const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, 
 - TODO artifact files live under ${home}/data/<project-slug>/<todo-id>/. You can also read them with Read, Grep and Glob.
 - Your replies are shown in full and rendered as markdown. Brainstorming with the user here is fine.`;
 
-const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree"].map((n) => `mcp__app__${n}`);
+const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr"].map((n) => `mcp__app__${n}`);
 const OPERATOR_TOOLS = ["list_sessions", "read_session", "read_file", "create_todo", "send_message"].map((n) => `mcp__app__${n}`);
 const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
 
@@ -178,6 +179,13 @@ function workerServer(todoId: number, dir: string, turn: { posted: boolean }) {
         addEvent(todoId, "set_worktree", "agent", resolve(path));
         return ok();
       }),
+      tool("set_pr", "Register the number of the GitHub pull request this TODO works on, in the project's repository. The app shows its state, checks and reviews.",
+        { number: z.number().int().positive() }, async ({ number }) => {
+          setTodo(todoId, { pr_number: number });
+          addEvent(todoId, "set_pr", "agent", `#${number}`);
+          refreshPrs(todoRow(todoId)!.project_id);
+          return ok();
+        }),
     ],
   });
 }
@@ -261,6 +269,7 @@ function setupWorker(todoId: number, takeBodies: () => string[], session: { sess
     const status = statusAfterRun(todoRow(todoId)!.attention);
     setTodo(todoId, { status });
     addEvent(todoId, "run ended", "app", status);
+    refreshPrs(p.id); // the agent may have pushed or opened a PR
     if (!shuttingDown) deliver(todoId, "queued messages");
   })();
 }
@@ -289,12 +298,12 @@ function operatorServer() {
     name: "app",
     version: "1.0.0",
     tools: [
-      tool("list_sessions", "List the TODOs: title, project, status, attention, branch, files and the latest messages. Removed TODOs only with include_removed.",
+      tool("list_sessions", "List the TODOs: title, project, status, attention, branch, git state, pull request, files and the latest messages. Removed TODOs only with include_removed.",
         { include_removed: z.boolean().optional() }, async ({ include_removed }) => {
           used("list_sessions");
           const list = await summaries(include_removed ? "1" : "t.removed_at IS NULL");
           return json(list.map((s) => ({
-            id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch,
+            id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
             worktree_path: s.worktree_path, queued_messages: s.queued_count, pending_messages: s.pending_count, files: s.file_names,
             updated_at: s.updated_at, removed_at: s.removed_at, latest_messages: latest(s.id, 3),
           })));
@@ -307,8 +316,8 @@ function operatorServer() {
           const messages = db.query(`SELECT m.author, m.body, m.state, m.committed_at AS at, f.path AS file
             FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.todo_id = ? ORDER BY m.id`).all(todo_id);
           return json({
-            id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch,
-            worktree_path: s.worktree_path, session_id: s.session_id, created_at: s.created_at, removed_at: s.removed_at,
+            id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
+            pr_checked_at: s.pr_checked_at, gh_error: s.gh_error, worktree_path: s.worktree_path, session_id: s.session_id, created_at: s.created_at, removed_at: s.removed_at,
             removed_by: s.removed_by, files: filesOf(todo_id).map((f) => ({ name: basename(f.path), path: f.path })), messages,
           });
         }),

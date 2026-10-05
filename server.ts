@@ -3,7 +3,10 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { safeFileName, slugify, statusAfterRun, uniqueSlug, type Status } from "./lib";
+import {
+  ghOutcome, parseGitStatus, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, uniqueSlug,
+  type Pr, type Status,
+} from "./lib";
 import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, start, stopAll } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
@@ -25,7 +28,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS todos (
   id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), title TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('not_started','running','waiting','idle')), attention INTEGER NOT NULL DEFAULT 0,
-  session_id TEXT, worktree_path TEXT, last_tool TEXT, last_read_at TEXT,
+  session_id TEXT, worktree_path TEXT, pr_number INTEGER, last_tool TEXT, last_read_at TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY, todo_id INTEGER,
@@ -42,10 +45,12 @@ CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
 CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
 CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
 `);
+// Databases made before set_pr existed.
+if (!db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'pr_number'").get()) db.exec("ALTER TABLE todos ADD COLUMN pr_number INTEGER");
 
 export type Todo = {
   id: number; project_id: number; title: string; status: Status; attention: number; session_id: string | null;
-  worktree_path: string | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
+  worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
   removed_at: string | null; removed_by: string | null;
 };
 export type Project = { id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string };
@@ -123,12 +128,101 @@ export function addEvent(todoId: number | null, kind: string, actor: string, det
 
 // ---------- shell ----------
 
-async function sh(cmd: string[]) {
-  const p = Bun.spawn(cmd, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+async function sh(cmd: string[], opts: { env?: Record<string, string>; timeout?: number } = {}) {
+  const p = Bun.spawn(cmd, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: opts.env && { ...process.env, ...opts.env }, timeout: opts.timeout });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-  return { ok: code === 0, out: out.trim(), err: err.trim() || out.trim() };
+  return { ok: code === 0, code, out: out.trim(), err: err.trim() || out.trim() };
 }
-const branchOf = async (wt: string) => { const r = await sh(["git", "-C", wt, "branch", "--show-current"]); return (r.ok && r.out) || null; };
+
+// ---------- git state of a worktree (local, read on every list fetch) ----------
+
+export type GitState = ReturnType<typeof parseGitStatus> & ReturnType<typeof parseRefCounts>;
+// Two git processes, ~0.03 s each. --no-optional-locks: a plain `git status` may rewrite the index and hold
+// .git/index.lock, which would fail a `git commit` the agent runs in the same worktree at that moment.
+// null when the worktree is gone or not a repository.
+export async function gitState(wt: string): Promise<GitState | null> {
+  const st = await sh(["git", "-C", wt, "--no-optional-locks", "status", "--porcelain=v2", "--branch"]);
+  if (!st.ok) return null;
+  const s = parseGitStatus(st.out);
+  const refs = ["refs/remotes/origin/HEAD", ...(s.branch ? [`refs/remotes/origin/${s.branch}`] : [])];
+  const r = await sh(["git", "-C", wt, "for-each-ref", "--format=%(refname) %(symref:short) %(ahead-behind:HEAD)", ...refs]);
+  return { ...s, ...parseRefCounts(r.ok ? r.out : "", s.branch) };
+}
+
+// ---------- pull requests (GitHub, refreshed every 2 minutes and after each run, never on a list fetch) ----------
+
+type GhError = { kind: "no network" | "gh access failed" | "unclear"; why: string };
+type PrStore = { at: string | null; byBranch: Map<string, Pr>; byNumber: Map<number, Pr>; error: GhError | null };
+const prStore = new Map<number, PrStore>(); // project id -> the last result; an error keeps the last good PRs
+const prInFlight = new Map<number, Promise<void>>();
+const ghLoginOf = new Map<number, string>(); // project id -> the gh account that can read its repository
+let ghLogins: string[] | null = null;        // every gh account on this machine; read once, again after an access failure
+
+// One call per project for all its worktree TODOs. Each gh account sees only its own repositories, so the call runs
+// as each logged-in account in turn (GH_TOKEN for that call only; the active `gh` account is never switched).
+export function refreshPrs(projectId: number) {
+  let p = prInFlight.get(projectId);
+  if (!p) {
+    p = fetchPrs(projectId).catch((e) => console.error(`PR refresh for project ${projectId}: ${e?.message ?? e}`)).finally(() => prInFlight.delete(projectId));
+    prInFlight.set(projectId, p);
+  }
+  return p;
+}
+export async function refreshAllPrs() {
+  const ids = db.query("SELECT DISTINCT project_id AS id FROM todos WHERE removed_at IS NULL AND worktree_path IS NOT NULL").all() as { id: number }[];
+  await Promise.all(ids.map((r) => refreshPrs(r.id)));
+}
+
+async function fetchPrs(projectId: number) {
+  const p = projectRow(projectId);
+  const todos = db.query("SELECT worktree_path, pr_number FROM todos WHERE project_id = ? AND removed_at IS NULL AND worktree_path IS NOT NULL")
+    .all(projectId) as { worktree_path: string; pr_number: number | null }[];
+  if (!p || !todos.length) return;
+  const remote = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
+  const repo = remote.ok ? parseGithubRemote(remote.out) : null;
+  if (!repo) return; // not on GitHub: no PR line
+  const numbers = [...new Set(todos.map((t) => t.pr_number).filter((n): n is number => !!n))];
+  const branches = [...new Set((await Promise.all(todos.filter((t) => !t.pr_number).map((t) => gitState(t.worktree_path))))
+    .map((g) => g?.branch).filter((b): b is string => !!b))];
+  if (!numbers.length && !branches.length) return;
+  const args = ["gh", "api", "graphql", "-f", `query=${prQuery(branches.length, numbers.length)}`, "-f", `o=${repo.owner}`, "-f", `n=${repo.name}`,
+    ...branches.flatMap((b, i) => ["-f", `b${i}=${b}`]), ...numbers.flatMap((n, i) => ["-F", `n${i}=${n}`])];
+  const slug = `${repo.owner}/${repo.name}`;
+  const prev = prStore.get(projectId) ?? { at: null, byBranch: new Map(), byNumber: new Map(), error: null };
+  const fail = (error: GhError) => { prStore.set(projectId, { ...prev, error }); emit({ type: "todos" }); };
+
+  let logins: string[];
+  try {
+    ghLogins ??= (JSON.parse((await sh(["gh", "auth", "status", "--json", "hosts"], { timeout: 15_000 })).out || "{}").hosts?.["github.com"] ?? [])
+      .map((h: any) => h.login);
+    logins = ghLogins!;
+  } catch {
+    return fail({ kind: "gh access failed", why: "gh is not installed or did not answer. Install it, run gh auth login, then retry." });
+  }
+  const known = ghLoginOf.get(projectId);
+  for (const login of known ? [known, ...logins.filter((l) => l !== known)] : logins) {
+    const token = await sh(["gh", "auth", "token", "--user", login], { timeout: 15_000 });
+    if (!token.ok) continue;
+    const r = await sh(args, { env: { GH_TOKEN: token.out }, timeout: 15_000 });
+    const o = ghOutcome(r.code, r.out, r.err);
+    if ("error" in o && o.error === "no access") continue;
+    if ("error" in o)
+      return fail(o.error === "no network" ? { kind: "no network", why: "Can't reach github.com." }
+        : { kind: "unclear", why: `gh answered, but not in a form Switchboard can read (${o.detail}). Usually passes on the next try.` });
+    ghLoginOf.set(projectId, login);
+    const newest = (i: number) => o.repo[`b${i}`]?.nodes?.[0]; // pullRequests(...) returns a list
+    prStore.set(projectId, {
+      at: now(), error: null,
+      byBranch: new Map(branches.flatMap((b, i) => (newest(i) ? [[b, prFromNode(newest(i))]] : []))),
+      byNumber: new Map(numbers.flatMap((n, i) => (o.repo[`n${i}`] ? [[n, prFromNode(o.repo[`n${i}`])]] : []))),
+    });
+    emit({ type: "todos" });
+    return;
+  }
+  ghLogins = null; // a `gh auth login` since then is seen on the next try
+  ghLoginOf.delete(projectId);
+  fail({ kind: "gh access failed", why: `gh could not open ${slug} with any logged-in account (${logins.join(", ") || "none"}). Run gh auth login, then retry.` });
+}
 
 // ---------- read models ----------
 
@@ -148,17 +242,23 @@ SELECT t.*, p.name AS project_name,
   (SELECT json_group_array(path) FROM (SELECT path FROM files f WHERE f.todo_id = t.id ORDER BY f.id)) AS file_paths
 FROM todos t JOIN projects p ON p.id = t.project_id`;
 
-// ponytail: one `git branch` per TODO with a worktree on every list fetch; cache it if the list gets slow.
+// ponytail: two git processes per TODO with a worktree on every list fetch; cache gitState() per path for a few seconds
+// if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
   return Promise.all(rows.map(async ({ file_paths, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
+    const git = r.worktree_path ? await gitState(r.worktree_path) : null;
+    const store = prStore.get(r.project_id);
+    // set_pr wins over the branch: a review worktree's local branch need not match the PR's head branch.
+    const pr = git && store ? (r.pr_number ? store.byNumber.get(r.pr_number) : git.branch ? store.byBranch.get(git.branch) : null) : null;
     return {
       ...r, attention: !!r.attention, unread: !!r.unread, has_draft: !!r.has_draft,
       last_message: r.last_message ? JSON.parse(r.last_message) : null,
       last_agent_message: r.last_agent_message ? JSON.parse(r.last_agent_message) : null,
       file_names: names, file_count: names.length,
-      branch: r.worktree_path ? await branchOf(r.worktree_path) : null,
+      branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
+      pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
     };
   }));
 }
@@ -436,6 +536,12 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({});
   }
 
+  if (path === "/api/gh/retry" && method === "POST") {
+    ghLogins = null; // pick up a `gh auth login` done since the last try
+    await refreshAllPrs();
+    return json({});
+  }
+
   // ----- operator -----
 
   if (path === "/api/operator" && method === "GET") {
@@ -498,6 +604,8 @@ for (const t of db.query("SELECT id, attention FROM todos WHERE status = 'runnin
   setTodo(t.id, { status: statusAfterRun(t.attention) });
   addEvent(t.id, "app restarted", "app");
 }
+refreshAllPrs();
+setInterval(refreshAllPrs, 120_000);
 
 // Interrupts every running agent so none keeps working unseen; a second Ctrl-C exits at once.
 let stopping = false;
