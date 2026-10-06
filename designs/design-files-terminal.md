@@ -1,12 +1,12 @@
 # Files, editing and terminals
 
-Proposal, 2026-10-06. Extends `feature-spec-switchboard.md` with browsing the files of a TODO's worktree or its project's main folder, light editing in the style of Orca, and terminals per TODO: clean shells, or Claude Code started with the TODO's context. Because the app can now open shells, it also gets a launch token that guards its API (item 88). Items are numbered from 68, the next free spec number; once agreed they move into the spec, and the UI goes into `designs/Switchboard-v4.html` before it is built (the spec's Design rule).
+Proposal, 2026-10-06. Extends `feature-spec-switchboard.md` with browsing the files of a TODO's worktree or its project's main folder, light editing in the style of Orca, and terminals per TODO: clean shells, or Claude Code started with the TODO's context. Because the app can now open shells, it also gets a launch token that guards its API (item 120). Items are numbered from 100, after the sessions spec (`feature-spec-sessions.md`, 68–85) and the backlog design (`backlog-design.md`, 86–99). The sessions spec's Terminals items (82–85) say how terminals relate to a TODO's sessions, and this design builds on them. Once agreed, the items move into the spec, and the UI goes into `designs/Switchboard-v4.html` before it is built (the spec's Design rule).
 
 Guiding principle, as in the spec: **streamline the user's work, don't delegate their control.** The chat stays the lightweight way to steer an agent. The terminals and the editor are for doing things yourself, or with a Claude session of your own, without leaving the app for an IDE.
 
 ## Replacing the Events tab with terminals
 
-Yes. The Events tab is an audit trail (runs, hooks, attention changes with their actor, denials) that is opened rarely, mostly to find out why a TODO is in its state. A terminal is used often. So the Focus view tabs become **Chat · Files · Terminal**, and Events becomes a toggle in the Chat tab that mixes the events into the chat (item 68). Nothing is lost, and you can reply while the events are shown.
+Yes. The Events tab is an audit trail (runs, hooks, attention changes with their actor, denials) that is opened rarely, mostly to find out why a TODO is in its state. A terminal is used often. So the Focus view tabs become **Chat · Files · Terminal**, and Events becomes a toggle in the Chat tab that mixes the events into the chat (item 100). Nothing is lost, and you can reply while the events are shown.
 
 The Terminal tab holds as many terminals as you need, each in its own tab. A new terminal is one of two kinds:
 
@@ -19,98 +19,98 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 
 ### Focus view
 
-68. The Focus view of a TODO has the tabs Chat, Files and Terminal. The Events tab (item 58) goes away, and the Chat tab gets an **Events** toggle with the TODO's event count.
-    - **Off** (the default), the chat shows messages only, as today.
-    - **On**, the TODO's events are mixed into the chat in time order. Each event is a dim one-line row with time, kind, detail and actor, for example `14:02 · PreToolUse · Bash · agent`. A long detail, such as a turn's full result text (item 48), opens on click.
-    - The composer stays below in both modes, so the user can reply while reading the events.
-    - New events appear live, like messages. The pick is kept in localStorage and applies to every TODO.
-    - The operator's chat has no toggle and is unchanged.
+100. The Focus view of a TODO has the tabs Chat, Files and Terminal. The Events tab (item 58) goes away, and the Chat tab gets an **Events** toggle with the TODO's event count.
+     - **Off** (the default), the chat shows messages only, as today.
+     - **On**, the TODO's events are mixed into the chat in time order. Each event is a dim one-line row with time, kind, detail and actor, for example `14:02 · PreToolUse · Bash · agent`. A long detail, such as a turn's full result text (item 48), opens on click. With several sessions, each event shows in its own session's part of the timeline (sessions spec items 76 and 79).
+     - The composer stays below in both modes, so the user can reply while reading the events.
+     - New events appear live, like messages. The pick is kept in localStorage and applies to every TODO.
+     - The operator's chat has no toggle and is unchanged.
 
 ### Files
 
-69. The Files tab has a root switcher:
-    - **TODO files**, the default: the artifact files of items 22 to 26, listed as today.
-    - **Worktree**: the TODO's registered worktree, labelled with its branch. It is shown only while a worktree is registered and exists on disk.
-    - **Project**: the project's local folder, which is the main checkout.
+101. The Files tab has a root switcher:
+     - **TODO files**, the default: the artifact files of items 22 to 26, listed as today.
+     - **Worktree**: the TODO's registered worktree, labelled with its branch. It is shown only while a worktree is registered and exists on disk.
+     - **Project**: the project's local folder, which is the main checkout.
 
-    The pick is remembered per TODO until the page is reloaded.
-70. The Worktree and Project roots show a folder tree of the files git knows about: tracked files plus untracked files that are not ignored (`git ls-files --cached --others --exclude-standard`). Ignored files such as `node_modules` and build output are not shown. Folders expand on click.
-71. The tree marks changed files as modified, added, untracked or deleted:
-    - The marks combine uncommitted changes (`git --no-optional-locks status --porcelain=v2`) with the changes committed on the branch since its merge base with `origin/HEAD`, the same base the card's git line uses (item 5).
-    - A **Changed** filter lists only these files, flat, with a count. Deleted files appear only there.
-72. Opening a file shows it in the file view, the panel artifact files use today. The panel shows the path relative to the root, the size, and the Read and Edit modes.
-    - Markdown files keep the rendered preview (item 52).
-    - Other text files show syntax-highlighted source.
-    - Images show as an image, served with `Content-Security-Policy: sandbox` as attachments are (item 62).
-    - Binary files, and text files over 2 MB, show only their size.
-73. A changed file also has a **Diff** mode: the merge-base version against the file on disk, unified, with changed lines highlighted. It is read-only.
-74. The file view has **Copy path** and **Add to message**. Add to message inserts the path, relative to the worktree, into the TODO's message draft, so pointing the agent at a file takes one click.
+     The pick is remembered per TODO until the page is reloaded.
+102. The Worktree and Project roots show a folder tree of the files git knows about: tracked files plus untracked files that are not ignored (`git ls-files --cached --others --exclude-standard`). Ignored files such as `node_modules` and build output are not shown. Folders expand on click.
+103. The tree marks changed files as modified, added, untracked or deleted:
+     - The marks combine uncommitted changes (`git --no-optional-locks status --porcelain=v2`) with the changes committed on the branch since its merge base with `origin/HEAD`, the same base the card's git line uses (item 5).
+     - A **Changed** filter lists only these files, flat, with a count. Deleted files appear only there.
+104. Opening a file shows it in the file view, the panel artifact files use today. The panel shows the path relative to the root, the size, and the Read and Edit modes.
+     - Markdown files keep the rendered preview (item 52).
+     - Other text files show syntax-highlighted source.
+     - Images show as an image, served with `Content-Security-Policy: sandbox` as attachments are (item 62).
+     - Binary files, and text files over 2 MB, show only their size.
+105. A changed file also has a **Diff** mode: the merge-base version against the file on disk, unified, with changed lines highlighted. It is read-only.
+106. The file view has **Copy path** and **Add to message**. Add to message inserts the path, relative to the worktree, into the TODO's message draft, so pointing the agent at a file takes one click.
 
 ### Editing
 
-75. Edit mode uses a code editor (CodeMirror 6) for every file, including TODO files, and replaces the textarea. Markdown keeps its side-by-side preview. ⌘E and ⌘S work as today (item 59), and ⌘F searches within the file.
-    - Editing is light on purpose: there is no creating, renaming or deleting of files, no search across files, no LSP and no git actions. The agent or the terminal does those.
-76. Locking and conflicts:
-    - **TODO files**: item 25, unchanged.
-    - **Worktree files**: read-only while the TODO's agent is `running`, as in item 25. Read mode follows the file as it changes.
-    - **Project files**: editable at any time. TODOs without a worktree may work in the main folder, and the app cannot tell which files they touch, so the conflict check is the guard here.
-    - **Every save** sends the mtime the file was loaded with. If the file changed on disk since then, saving warns and offers Overwrite or Discard, as in item 25.
-    - Saving does not notify the agent (item 24).
-77. The tree and the open file refresh in two ways. While a Worktree or Project root is visible, git is polled every 5 seconds. The TODO's runs also trigger a refresh when they end.
-    - An open file without unsaved edits reloads when it changes on disk.
-    - There are no file-system watchers. A recursive watch on Linux takes one inotify watch per folder, including ignored ones like `node_modules`, and polling git behaves the same on every OS.
-78. File requests name a root and a path relative to it.
-    - The server resolves the real path and accepts only paths inside the project's local folder or its worktree root (item 47). Symlinks the worktree skill makes, such as `.env` or `CLAUDE.local.md` pointing into the main folder, therefore open, and nothing outside the project opens.
-    - Writes go to the resolved file, so symlinks are kept.
-    - Writes inside `.git/` are refused.
+107. Edit mode uses a code editor (CodeMirror 6) for every file, including TODO files, and replaces the textarea. Markdown keeps its side-by-side preview. ⌘E and ⌘S work as today (item 59), and ⌘F searches within the file.
+     - Editing is light on purpose: there is no creating, renaming or deleting of files, no search across files, no LSP and no git actions. The agent or the terminal does those.
+108. Locking and conflicts:
+     - **TODO files**: item 25, unchanged.
+     - **Worktree files**: read-only while the TODO's agent is `running`, as in item 25. Read mode follows the file as it changes.
+     - **Project files**: editable at any time. TODOs without a worktree may work in the main folder, and the app cannot tell which files they touch, so the conflict check is the guard here.
+     - **Every save** sends the mtime the file was loaded with. If the file changed on disk since then, saving warns and offers Overwrite or Discard, as in item 25.
+     - Saving does not notify the agent (item 24).
+109. The tree and the open file refresh in two ways. While a Worktree or Project root is visible, git is polled every 5 seconds. The TODO's runs also trigger a refresh when they end.
+     - An open file without unsaved edits reloads when it changes on disk.
+     - There are no file-system watchers. A recursive watch on Linux takes one inotify watch per folder, including ignored ones like `node_modules`, and polling git behaves the same on every OS.
+110. File requests name a root and a path relative to it.
+     - The server resolves the real path and accepts only paths inside the project's local folder or its worktree root (item 47). Symlinks the worktree skill makes, such as `.env` or `CLAUDE.local.md` pointing into the main folder, therefore open, and nothing outside the project opens.
+     - Writes go to the resolved file, so symlinks are kept.
+     - Writes inside `.git/` are refused.
 
 ### Terminal
 
-79. The Terminal tab holds any number of terminals for the TODO, each in its own tab with a × to close it. The Terminal tab's label shows how many are open.
-    - A **+** button opens a new terminal, as a **Shell** or as **Claude** (item 81).
-    - Both kinds start in the TODO's worktree if one is registered, else in the project's local folder. When there is a worktree, the + menu also offers both kinds in the project folder, for example for a git command on the main checkout.
-80. A terminal tab is labelled with the title its program sets (shells and Claude Code set one). Without a title it reads `Shell 2` or `Claude 1`. A terminal in the project folder while a worktree exists also gets `· project`.
-81. **Claude with context.** New Claude opens a short form with the folder and an editable first message, prefilled with:
+111. The Terminal tab holds any number of terminals for the TODO, each in its own tab with a × to close it. The Terminal tab's label shows how many are open.
+     - A **+** button opens a new terminal, as a **Shell** or as **Claude** (item 113).
+     - Both kinds start in the TODO's worktree if one is registered, else in the project's local folder. When there is a worktree, the + menu also offers both kinds in the project folder, for example for a git command on the main checkout.
+112. A terminal tab is labelled with the title its program sets (shells and Claude Code set one). Without a title it reads `Shell 2` or `Claude 1`. A terminal in the project folder while a worktree exists also gets `· project`.
+113. **Claude with context.** New Claude opens a short form with the folder and an editable first message, prefilled with:
 
-    > I'm working on the Switchboard TODO "&lt;title&gt;". What its agent is doing, its branch and PR, the recent chat and its files are in `<context file>`. Read it, then wait for my instructions.
+     > I'm working on the Switchboard TODO "&lt;title&gt;". What its agent is doing, its branch and PR, the recent chat and its files are in `<context file>`. Read it, then wait for my instructions.
 
-    The user can add their own ask, and ⌘↵ starts. The app then:
-    - writes the context file (item 82);
-    - runs `claude --add-dir <artifact folder> "<first message>"` in the chosen folder. The `--add-dir` lets Claude read and write the TODO's files without permission prompts.
+     The user can add their own ask, and ⌘↵ starts. The app then:
+     - writes the context file (item 114);
+     - runs `claude --add-dir <artifact folder> "<first message>"` in the chosen folder. The `--add-dir` lets Claude read and write the TODO's files without permission prompts.
 
-    This is a new session, separate from the TODO's:
-    - It runs with the user's normal Claude Code settings and permission mode, without the app's MCP tools or hooks.
-    - Nothing it does appears in the TODO's chat, and the app does not store its session id. Claude Code keeps its transcript as for any session, so `claude --resume` in a shell finds it.
-82. The context file is `<artifact folder>/terminal/context.md`, rewritten at each Claude launch. It is not listed under TODO files. It is a snapshot, taken at launch, of:
-    - the TODO's title, project, status and first instruction;
-    - the worktree path, branch, git line and PR line (item 5);
-    - the whole chat, with author and time. Agent messages are one or two lines (item 18), so even a long chat stays small;
-    - the TODO's files, with absolute paths, so Claude can read them;
-    - the TODO's session id, so Claude can find the full transcript under `~/.claude/projects/` if it needs more history;
-    - a note that the TODO's agent may be working in the same worktree at the same time, so Claude checks with the user before committing, switching branches or rewriting history.
-83. A terminal's lifetime:
-    - It keeps running when the user switches tabs or TODOs, closes the browser tab, or reloads. Reopening shows its recent output, then the live terminal.
-    - It ends when its tab is closed (asking first while its process is alive), when the TODO is removed, or when the app shuts down (item 56).
-    - When its process exits, the tab stays with the exit code and a **Restart** button; a Claude tab also gets **Shell here**.
-    - Removing a TODO that has open terminals asks for confirmation and says how many will close, the same as item 12 does while the agent runs. Restoring a TODO does not bring its terminals back.
-84. The programs:
-    - **Shell**: on macOS and Linux, the user's login shell (`$SHELL -l`). On Windows, `pwsh` if installed, else Windows PowerShell. `SWITCHBOARD_SHELL` overrides the shell on every OS.
-    - **Claude**: `claude`, found on PATH. In the window app, PATH comes from the login shell (item 66).
-    - **Environment** for both: the server's, plus `TERM=xterm-256color` and `COLORTERM=truecolor`.
-85. Keys and clipboard:
-    - While a terminal has focus, every key goes to it, including Esc and N.
-    - On macOS the ⌘ shortcuts keep working, because ⌘ never reaches a terminal.
-    - On Windows and Linux, Ctrl combinations go to the terminal (Ctrl+J, Ctrl+E and Ctrl+S mean something there). Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V.
-    - Clicking outside the terminal hands the keys back to the app.
-86. The TODO's agent does not see the terminals and is not told about anything done in them. Shells, Claude sessions and the agent can work in the same worktree at the same time, as in any terminal. Nothing guards against two of them running git at the same moment (as the spec's "Not built on purpose" does for shared worktrees). For Claude, the context file says so.
-87. Files and terminals belong to a TODO. The overview, the operator and the Projects page have neither.
+     This is a new session, separate from the TODO's:
+     - It runs with the user's normal Claude Code settings and permission mode, without the app's MCP tools or hooks.
+     - Nothing it does appears in the TODO's chat, and the app does not store its session id. Claude Code keeps its transcript as for any session, so `claude --resume` in a shell finds it.
+114. The context file is `<artifact folder>/terminal/context.md`, rewritten at each Claude launch. The Files listing skips `terminal/`, as it skips `uploads/` (sessions spec item 85). It is a snapshot, taken at launch, of:
+     - the TODO's title, project, status and first instruction;
+     - the worktree path, branch, git line and PR line (item 5);
+     - the whole chat of every session, with author, time and session headers. Agent messages are one or two lines (item 18), so even a long chat stays small;
+     - the TODO's files, with absolute paths, so Claude can read them;
+     - the session ids of the TODO's sessions, so Claude can find their full transcripts under `~/.claude/projects/` if it needs more history;
+     - a note that the TODO's agent may be working in the same worktree at the same time, so Claude checks with the user before committing, switching branches or rewriting history.
+115. A terminal's lifetime:
+     - It keeps running when the user switches tabs or TODOs, closes the browser tab, or reloads. Reopening shows its recent output, then the live terminal.
+     - It ends when its tab is closed (asking first while its process is alive), when the TODO is removed, or when the app shuts down (item 56).
+     - When its process exits, the tab stays with the exit code and a **Restart** button; a Claude tab also gets **Shell here**.
+     - Removing a TODO that has open terminals asks for confirmation and says how many will close, the same as item 12 does while the agent runs. Restoring a TODO does not bring its terminals back.
+116. The programs:
+     - **Shell**: on macOS and Linux, the user's login shell (`$SHELL -l`). On Windows, `pwsh` if installed, else Windows PowerShell. `SWITCHBOARD_SHELL` overrides the shell on every OS.
+     - **Claude**: `claude`, found on PATH. In the window app, PATH comes from the login shell (item 66).
+     - **Environment** for both: the server's, plus `TERM=xterm-256color`, `COLORTERM=truecolor`, and the sessions spec's `SWITCHBOARD_TODO_ID` and `SWITCHBOARD_FILES` (item 84 there).
+117. Keys and clipboard:
+     - While a terminal has focus, every key goes to it, including Esc and N.
+     - On macOS the ⌘ shortcuts keep working, because ⌘ never reaches a terminal.
+     - On Windows and Linux, Ctrl combinations go to the terminal (Ctrl+J, Ctrl+E and Ctrl+S mean something there). Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V.
+     - Clicking outside the terminal hands the keys back to the app.
+118. The TODO's agent does not see the terminals and is not told about anything done in them. Shells, Claude sessions and the agent can work in the same worktree at the same time, as in any terminal. Nothing guards against two of them running git at the same moment (as the spec's "Not built on purpose" does for shared worktrees). For Claude, the context file says so.
+119. Files and terminals belong to a TODO. The overview, the operator and the Projects page have neither.
 
 ### Access
 
-88. The app requires a **launch token**, a random secret the server picks at each start. Every request under `/api/` must carry it, including the SSE stream and the terminal WebSockets; without it the server answers 401. The page itself (`/`) and the favicon stay open, because they hold no data.
-    - The window app gets the token itself, also when it attaches to a server that is already running (item 65), so nothing changes for the user.
-    - In browser mode, `bun server.ts` prints `http://127.0.0.1:4477/#token=…` at start (this changes item 64). Opening that link stores the token in the page, so reloads keep working. After a server restart the old token stops working, and the page asks the user to open the new link.
-    - This shuts out programs that can reach the port but cannot see the token. Examples are another user's programs on a shared machine, or a Linux Docker container started with `--network host`. Without the token such a program can already create and start TODOs; with terminals it would get a shell directly.
+120. The app requires a **launch token**, a random secret the server picks at each start. Every request under `/api/` must carry it, including the SSE stream and the terminal WebSockets; without it the server answers 401. The page itself (`/`) and the favicon stay open, because they hold no data.
+     - The window app gets the token itself, also when it attaches to a server that is already running (item 65), so nothing changes for the user.
+     - In browser mode, `bun server.ts` prints `http://127.0.0.1:4477/#token=…` at start (this changes item 64). Opening that link stores the token in the page, so reloads keep working. After a server restart the old token stops working, and the page asks the user to open the new link.
+     - This shuts out programs that can reach the port but cannot see the token. Examples are another user's programs on a shared machine, or a Linux Docker container started with `--network host`. Without the token such a program can already create and start TODOs; with terminals it would get a shell directly.
 
 ## How it is built
 
@@ -132,13 +132,13 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
   - If replaying the raw buffer garbles too often, the fallback is Orca's approach: mirror each terminal into `@xterm/headless` on the server and send `addon-serialize` snapshots.
 - **Security.**
   - **Origin check.** A WebSocket upgrade is accepted only when `Origin` is `http://127.0.0.1:<port>` or `http://localhost:<port>`, on top of today's Host check. Browsers do not apply CORS to WebSockets: any website can open `ws://127.0.0.1:4477`, and its Host header is then correct. The Origin check stops websites; the token stops programs, which can simply leave the Origin header out.
-  - **Launch token (item 88).**
+  - **Launch token (item 120).**
     - The token is 32 random bytes (`crypto.getRandomValues`), hex-encoded and kept in memory.
     - The server also writes it to `~/.switchboard/token` with mode 0600 and removes the file on shutdown. That is how the window app reads it, including when it attaches to a running server. On Windows the user's profile folder is private to the user by default.
     - The Electron window loads `http://127.0.0.1:<port>/#token=<token>`. A URL fragment is never sent to a server, and the page moves it into localStorage and clears it from the address bar. localStorage is separate per port.
     - `call()` in `index.html` sends the token as an `X-Switchboard-Token` header. `EventSource` and `WebSocket` cannot set headers, so their URLs carry `?token=`, and so do attachment URLs in images and links.
     - It is not a cookie, because browsers do not separate cookies by port. A cookie for `127.0.0.1` would also go to every other server there, such as a dev server or a container's published port, and that server could read the token.
-- **Files API.** Every request names a root (`worktree` or `project`) and a relative path, checked as in item 78.
+- **Files API.** Every request names a root (`worktree` or `project`) and a relative path, checked as in item 110.
   - `GET /api/todos/<id>/tree?root=` returns `{paths, changed}`.
   - `GET /api/todos/<id>/fs?root=&path=` returns `{content, mtime, size, binary}`.
   - `PUT /api/todos/<id>/fs` takes `{root, path, content, base_mtime, force}` and answers 409 on a conflict, like the existing file `PUT`.
@@ -163,7 +163,7 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 
 ## Not built on purpose
 
-- Driving the TODO's own session in a terminal (`claude --resume`). A Claude terminal is always a new session with the TODO's context. An app run cannot be shown in a terminal anyway, because the SDK runs Claude Code without its terminal UI.
+- The app opening one of the TODO's own sessions in a terminal. A Claude terminal is always a new session with the TODO's context. The user can still run `claude --resume <id>` themselves for an earlier session (sessions spec item 78). An app run cannot be shown in a terminal anyway, because the SDK runs Claude Code without its terminal UI.
 - Refreshing a running Claude terminal's context. Its context is a snapshot from launch, and Claude can re-read the TODO's files and git state itself.
 - Split panes.
 - Files and terminals for a project without a TODO, for example on the Projects page.
