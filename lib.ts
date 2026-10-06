@@ -236,6 +236,50 @@ export function parseMarks(nameStatusZ: string, untrackedZ: string): Record<stri
   return marks;
 }
 
+// ---------- terminals (items 111-118) ----------
+
+// The title a program sets with OSC 0 or OSC 2 (ESC ] 0 ; title BEL, or ESC \\ as the end). Shells and Claude Code
+// set one. The last one in the chunk wins; null when there is none.
+// ponytail: a title split across two output chunks is missed; the next prompt sets it again.
+export function parseOscTitle(chunk: string): string | null {
+  let title: string | null = null;
+  for (const m of chunk.matchAll(/\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g)) title = m[1]!;
+  return title;
+}
+
+// True when `version` ("1.3.14") is at least `min` ("1.3.5").
+export function versionAtLeast(version: string, min: string): boolean {
+  const a = version.split(".").map(Number), b = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return true;
+}
+
+// Item 114: what a Claude terminal reads first, written to <artifact folder>/terminal/context.md at each launch.
+export function contextFile(c: {
+  title: string; project: string; status: string; first: string; worktree: string | null; branch: string | null;
+  git: string | null; pr: string | null; sessions: { no: number; session_id: string; started_at: string; ended_at: string | null }[];
+  messages: { author: string; body: string; at: string; session_no: number | null }[]; files: string[];
+}): string {
+  const out: string[] = [
+    `# Switchboard TODO: ${c.title}`, "",
+    `- Project: ${c.project}`, `- Status: ${c.status === "not_started" ? "not started (in the backlog)" : c.status}`,
+    ...[c.worktree && `- Worktree: ${c.worktree}`, c.branch && `- Branch: ${c.branch}`, c.git && `- Git: ${c.git}`, c.pr && `- Pull request: ${c.pr}`].filter((l): l is string => !!l),
+    "", "## First instruction", "", c.first, "",
+    "## Note", "",
+    "The TODO's own agent may be working in the same worktree at the same time. Check with the user before you commit, switch branches or rewrite history.", "",
+  ];
+  if (c.files.length) out.push("## Files", "", ...c.files.map((f) => `- ${f}`), "");
+  if (c.sessions.length) out.push("## Sessions", "", ...c.sessions.map((s) => `- Session ${s.no}: ${s.session_id} (${s.started_at}${s.ended_at ? ` to ${s.ended_at}` : ", live"}). Its full transcript is under ~/.claude/projects/.`), "");
+  out.push("## Chat", "");
+  const groups = c.sessions.length ? c.sessions.map((s) => s.no) : [null];
+  for (const no of groups) {
+    const msgs = c.messages.filter((m) => no === null || (m.session_no ?? c.sessions.at(-1)!.no) === no);
+    if (no !== null && c.sessions.length > 1) out.push(`### Session ${no}`, "");
+    for (const m of msgs) out.push(`**${m.author}** (${m.at}): ${m.body}`, "");
+  }
+  return out.join("\n");
+}
+
 // ---------- schema ----------
 
 // The whole schema plus its migrations. Every migration only adds, so an older build still reads the database.

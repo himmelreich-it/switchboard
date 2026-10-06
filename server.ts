@@ -1,10 +1,11 @@
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
+import type { ServerWebSocket, Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  contextFile, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type Pr, type Status,
 } from "./lib";
 import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, newSession, start, stopAll, worktreeRoot } from "./runner";
@@ -398,6 +399,122 @@ function fileFacts(real: string) {
   return { size: st.size, mtime: st.mtimeMs, image, large: false, binary, content: binary ? null : buf.toString("utf8") };
 }
 
+// ---------- terminals (items 111-120) ----------
+
+// Kept in memory only: a terminal ends with its tab, its TODO's removal or the app (item 115).
+type Term = {
+  id: number; todoId: number; kind: "shell" | "claude"; root: "worktree" | "project"; cwd: string; no: number; message: string;
+  title: string | null; proc: Subprocess | null; exited: boolean; code: number | null; signal: string | null;
+  buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<{ tid: number }>>; cols: number; rows: number; fresh: boolean;
+};
+const terms = new Map<number, Term>();
+const termNos = new Map<string, number>();   // "todo:kind" -> last number; numbers only count up (Shell 1, Shell 2, ...)
+let termSeq = 0;
+const TERM_BUF = 256 * 1024;   // scrollback replayed when a page attaches
+export const TERM_UNSUPPORTED = process.platform === "win32" ? "Terminals are not supported on Windows yet."
+  : !versionAtLeast(Bun.version, "1.3.5") ? `Terminals need Bun 1.3.5 or newer. This server runs Bun ${Bun.version}.` : null;
+const termOut = (x: Term) => ({ id: x.id, kind: x.kind, root: x.root, cwd: x.cwd, no: x.no, title: x.title, exited: x.exited, code: x.code, signal: x.signal });
+const termsOf = (todoId: number) => [...terms.values()].filter((x) => x.todoId === todoId);
+const enc8 = new TextEncoder(), dec8 = new TextDecoder();
+
+// Item 114: the TODO as a Claude terminal reads it, rewritten at each launch.
+async function writeContext(t: Todo) {
+  const [s] = await summaries("t.id = ?", [t.id]);
+  const msgs = db.query("SELECT author, body, committed_at AS at, session_no FROM messages WHERE todo_id = ? ORDER BY id").all(t.id) as any[];
+  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  const g = s.git, pr = s.pr;
+  const text = contextFile({
+    title: s.title, project: s.project_name, status: s.status, first: msgs[0]?.body ?? "", worktree: s.worktree_path, branch: s.branch,
+    git: g ? [g.commits != null && `${g.commits} commits`, g.changed && `${g.changed} changed`, g.untracked && `${g.untracked} untracked`,
+      g.push === "none" ? "not pushed" : g.push === "unpushed" ? `${g.unpushed} unpushed` : g.push].filter(Boolean).join(" · ") : null,
+    pr: pr ? `#${pr.number} ${pr.state}${pr.draft ? " (draft)" : ""} · ${pr.url}` : s.pr_number ? `#${s.pr_number}` : null,
+    sessions: sessionsOf(t.id), messages: msgs, files: filesOf(t.id).map((f) => f.path),
+  });
+  mkdirSync(join(dir, "terminal"), { recursive: true });
+  writeFileSync(join(dir, "terminal", "context.md"), text);
+}
+
+function termSend(x: Term, data: Uint8Array | string) { for (const ws of x.sockets) ws.send(data); }
+async function spawnTerm(x: Term) {
+  const t = todoRow(x.todoId)!;
+  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  mkdirSync(dir, { recursive: true });
+  let cmd: string[];
+  if (x.kind === "claude") {
+    const claude = Bun.which("claude");
+    if (!claude) throw httpError(400, "claude is not on PATH");
+    await writeContext(t);
+    // Run directly with its arguments, not through a shell, so the first message needs no quoting.
+    cmd = [claude, "--add-dir", dir, x.message];
+  } else cmd = [process.env.SWITCHBOARD_SHELL || process.env.SHELL || "/bin/zsh", "-l"];
+  const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
+  delete env.SWITCHBOARD_PARENT;   // a `bun server.ts` started in the terminal must not take this server's stdin rule
+  Object.assign(x, { exited: false, code: null, signal: null, buf: [], bufLen: 0, title: null });
+  const proc = Bun.spawn(cmd, {
+    cwd: x.cwd, env,
+    terminal: {
+      cols: x.cols, rows: x.rows,
+      data: (_term, data) => {
+        x.buf.push(data); x.bufLen += data.length;
+        while (x.bufLen > TERM_BUF && x.buf.length > 1) x.bufLen -= x.buf.shift()!.length;
+        const title = parseOscTitle(dec8.decode(data));
+        if (title !== null && title !== x.title) { x.title = title; emit({ type: "terminals", id: x.todoId }); }
+        termSend(x, data);
+      },
+    },
+  });
+  x.proc = proc;
+  emit({ type: "terminals", id: x.todoId });
+  // The exit code comes from the process; the PTY's own exit callback only reports that the stream closed.
+  proc.exited.then((code) => {
+    if (x.proc !== proc) return;
+    x.exited = true;
+    x.signal = proc.signalCode ?? null;
+    x.code = x.signal ? null : code;
+    termSend(x, JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
+    emit({ type: "terminals", id: x.todoId });
+  });
+}
+function killTerm(x: Term) {
+  const p = x.proc;
+  x.proc = null;
+  try { p?.kill("SIGHUP"); p?.terminal?.close(); } catch {}
+}
+export function closeTerms(todoId: number | null) {
+  for (const x of [...terms.values()]) if (todoId === null || x.todoId === todoId) {
+    killTerm(x);
+    for (const ws of x.sockets) ws.close();
+    terms.delete(x.id);
+  }
+  if (todoId !== null) emit({ type: "terminals", id: todoId });
+}
+const termWs = {
+  open(ws: ServerWebSocket<{ tid: number }>) {
+    const x = terms.get(ws.data.tid);
+    if (!x) return ws.close(4404, "no such terminal");
+    x.sockets.add(ws);
+    // Reset, then the recent output, then live output; the first resize makes full-screen programs redraw.
+    ws.send(enc8.encode("\x1bc"));
+    for (const b of x.buf) ws.send(b);
+    if (x.exited) ws.send(JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
+    x.fresh = true;
+  },
+  message(ws: ServerWebSocket<{ tid: number }>, msg: string | Buffer) {
+    const x = terms.get(ws.data.tid);
+    if (!x?.proc || x.exited) return;
+    if (typeof msg !== "string") return void x.proc.terminal?.write(msg);
+    const c = JSON.parse(msg);
+    if (c.type !== "resize") return;
+    const cols = Math.max(2, Math.min(500, c.cols | 0)), rows = Math.max(2, Math.min(300, c.rows | 0));
+    // A page that attaches with the same size would not send SIGWINCH, so vim or Claude Code would not redraw.
+    if (x.fresh && cols === x.cols && rows === x.rows) x.proc.terminal?.resize(cols, rows - 1);
+    x.fresh = false;
+    x.cols = cols; x.rows = rows;
+    x.proc.terminal?.resize(cols, rows);
+  },
+  close(ws: ServerWebSocket<{ tid: number }>) { terms.get(ws.data.tid)?.sockets.delete(ws); },
+};
+
 const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
 
 async function api(req: Request, path: string): Promise<Response> {
@@ -418,7 +535,8 @@ async function api(req: Request, path: string): Promise<Response> {
   if (path === "/api/meta" && method === "GET") {
     const w = db.query("SELECT COUNT(*) AS n FROM todos WHERE status = 'waiting' AND removed_at IS NULL").get() as any;
     const last = getMeta("last_project_id");
-    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n });
+    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n,
+      shell: basename(process.env.SWITCHBOARD_SHELL || process.env.SHELL || "zsh") });
   }
 
   // ----- projects -----
@@ -582,6 +700,40 @@ async function api(req: Request, path: string): Promise<Response> {
     }
   }
 
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/terminals(?:\/(\d+)\/(restart|close))?$/))) {
+    const id = Number(m[1]);
+    if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: termsOf(id).map(termOut), unsupported: TERM_UNSUPPORTED }); }
+    if (!m[2] && method === "POST") {
+      const t = liveTodo(id);
+      if (TERM_UNSUPPORTED) return fail(TERM_UNSUPPORTED, 409);
+      const kind = body.kind === "claude" ? "claude" : "shell";
+      const root = body.root === "worktree" && t.worktree_path && existsSync(t.worktree_path) ? "worktree" : "project";
+      const key = `${id}:${kind}`, no = (termNos.get(key) ?? 0) + 1;
+      termNos.set(key, no);
+      const x: Term = {
+        id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)!.local_path, no,
+        message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null,
+        buf: [], bufLen: 0, sockets: new Set(), cols: Number(body.cols) || 100, rows: Number(body.rows) || 30, fresh: false,
+      };
+      terms.set(x.id, x);
+      try { await spawnTerm(x); } catch (e) { terms.delete(x.id); throw e; }
+      return json(termOut(x));
+    }
+    const x = terms.get(Number(m[2]));
+    if (!x || x.todoId !== id) return fail("no such terminal", 404);
+    if (m[3] === "close" && method === "POST") {
+      killTerm(x); for (const ws of x.sockets) ws.close(); terms.delete(x.id);
+      emit({ type: "terminals", id });
+      return json({});
+    }
+    if (m[3] === "restart" && method === "POST") {
+      killTerm(x);
+      termSend(x, enc8.encode("\x1bc"));
+      await spawnTerm(x);
+      return json(termOut(x));
+    }
+  }
+
   if ((m = path.match(/^\/api\/attachments\/(\d+)$/)) && method === "GET") {
     const a = db.query("SELECT path FROM attachments WHERE id = ?").get(Number(m[1])) as { path: string } | null;
     if (!a || !existsSync(a.path)) return fail("no such attachment", 404);
@@ -598,6 +750,7 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({
       todo,
       sessions: sessionsOf(id),
+      artifact_dir: artifactDir(projectRow(todo.project_id)!.slug, id) + "/",
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
       events: (db.query("SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").all(id) as any[])
@@ -661,6 +814,7 @@ async function api(req: Request, path: string): Promise<Response> {
       setTodo(id, { removed_at: now(), removed_by: "user" });
       addEvent(id, "removed", "user");
       interrupt(id); // like Esc in Claude Code; queued messages stay queued
+      closeTerms(id); // restoring does not bring them back (item 115)
       emit({ type: "todos" });
     } else if (action === "restore") {
       const t = todoOr404(id);
@@ -754,7 +908,8 @@ Bun.serve({
   hostname: HOST,
   port: PORT,
   idleTimeout: 0, // the default 10s would cut the SSE stream
-  async fetch(req) {
+  websocket: termWs,
+  async fetch(req, server) {
     const url = new URL(req.url);
     // Blocks DNS-rebinding pages: the Host header must name this loopback server.
     if (![`${HOST}:${PORT}`, `localhost:${PORT}`].includes(req.headers.get("host") ?? "")) return fail("bad host", 403);
@@ -769,6 +924,14 @@ Bun.serve({
       return new Response(Bun.file(file), { headers: { "cache-control": "no-cache" } });
     }
     if (!tokenOk(TOKEN, req.headers.get("x-switchboard-token"), url.searchParams.get("token"))) return fail("open the link the server printed at start", 401);
+    // Browsers apply no CORS to WebSockets, so any website could open one; the Origin check stops websites, the token programs.
+    const ws = url.pathname.match(/^\/api\/todos\/(\d+)\/terminals\/(\d+)\/ws$/);
+    if (ws) {
+      if (![`http://${HOST}:${PORT}`, `http://localhost:${PORT}`].includes(req.headers.get("origin") ?? "")) return fail("bad origin", 403);
+      const x = terms.get(Number(ws[2]));
+      if (!x || x.todoId !== Number(ws[1])) return fail("no such terminal", 404);
+      return server.upgrade(req, { data: { tid: x.id } }) ? undefined : fail("websocket upgrade failed", 400);
+    }
     try {
       return await api(req, url.pathname);
     } catch (e: any) {
@@ -796,6 +959,7 @@ async function shutdown() {
   if (stopping) process.exit(1);
   stopping = true;
   console.log("stopping: interrupting running agents");
+  closeTerms(null);
   await Promise.race([stopAll(), Bun.sleep(5000)]);
   try { if (readFileSync(TOKEN_FILE, "utf8") === TOKEN) unlinkSync(TOKEN_FILE); } catch {}
   process.exit(0);

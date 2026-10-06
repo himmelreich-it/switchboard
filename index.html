@@ -16,6 +16,7 @@ function applyTheme() {
   if (auto) auto.title = `Follow system · now ${os}`;
   const hint = document.getElementById("themeHint");
   if (hint) hint.textContent = pick === "auto" ? `Auto follows the system setting. Now ${os}.` : `Fixed to ${pick}. Applies to every window.`;
+  window.dispatchEvent(new Event("sb-theme"));   // terminals take colors as values, not variables
 }
 applyTheme();
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
@@ -543,6 +544,39 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 .file-msg img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
+/* ---------- terminals (items 111-117) ---------- */
+.term-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.term-strip { flex: none; display: flex; align-items: flex-end; gap: 2px; padding: 8px 20px 0; border-bottom: 1px solid var(--border-subtle); position: relative; }
+.term-tabs { display: flex; align-items: flex-end; gap: 2px; min-width: 0; overflow-x: auto; }
+.ttab { height: 32px; margin-bottom: -1px; padding: 0 4px 0 10px; display: flex; align-items: center; gap: 8px; flex: none; cursor: pointer; background: transparent; border: 1px solid transparent; border-top: 2px solid transparent; border-bottom: none; border-radius: 2px 2px 0 0; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.ttab:hover { color: var(--text-primary); }
+.ttab[aria-selected="true"] { background: var(--surface-inset); border-color: var(--border-subtle); border-top-color: var(--accent-lime); color: var(--text-primary); }
+.ttab .ex { color: var(--text-muted); }
+.ttab .x { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 2px; color: var(--text-muted); }
+.ttab .x:hover { background: var(--surface-3); color: var(--text-primary); }
+.term-plus { margin: 0 0 2px 6px; }
+.term-note { margin-left: auto; padding-bottom: 8px; min-width: 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.term-menu { position: absolute; top: 42px; z-index: 300; width: 340px; padding: 4px; background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-2); box-shadow: var(--shadow-3); }
+.term-menu .h { padding: 8px 10px 4px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.term-menu button { width: 100%; min-height: 44px; padding: 6px 10px; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-primary); }
+.term-menu button:hover, .term-menu button:focus-visible { background: var(--surface-3); border-color: var(--border-default); }
+.term-menu .l { display: flex; flex-direction: column; gap: 2px; }
+.term-menu .l b { font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.term-menu .l span { font-size: 12px; color: var(--text-muted); }
+.term-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.term-empty { padding: 24px 20px; display: flex; flex-direction: column; gap: 12px; }
+.term-empty h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; }
+.term-empty p { margin: 0; max-width: 640px; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+.cform { margin: 16px 20px; max-width: 860px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-top: 2px solid var(--accent-violet); border-radius: var(--radius-2); box-shadow: var(--shadow-1); }
+.cform pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-secondary); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); white-space: pre-wrap; overflow-wrap: anywhere; }
+.term-hosts { flex: 1; min-height: 0; display: flex; background: var(--surface-inset); }
+.term-hosts > div { flex: 1; min-width: 0; min-height: 0; padding: 12px 20px; }
+.term-hosts > div:focus-within { box-shadow: inset 0 0 0 1px var(--line-lime); }
+.term-hosts .term-in { width: 100%; height: 100%; }   /* FitAddon measures the parent, so the padding sits outside it */
+.term-exit { flex: none; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 20px 12px; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.term-foot { flex: none; display: flex; align-items: center; gap: 12px; padding: 6px 20px; border-top: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.term-foot .cwd { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
 /* rendered markdown (files and operator replies) */
 .md { color: var(--text-primary); font-size: 14px; line-height: 1.65; max-width: 760px; overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
@@ -719,7 +753,11 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
             <span id="fileFoot" class="small"></span>
           </div>
         </div>
-        <div id="termView" class="pane" hidden></div>
+        <div id="termView" class="term-view" hidden>
+          <div id="termStrip" class="term-strip"></div>
+          <div class="term-main"><div id="termPanel"></div><div id="termHosts" class="term-hosts" hidden></div><div id="termExit" hidden></div></div>
+          <div id="termFoot" class="term-foot" hidden></div>
+        </div>
       </section>
     </div>
   </div>
@@ -996,6 +1034,7 @@ S.editing = null;   // first instruction being edited (items 94-97): {todoId, ms
 S.fileRoot = {};      // TODO id -> "todo" | "worktree" | "project" (item 101), until reload
 S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
 S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
+S.terms = {}; S.termSel = {}; S.termMenu = false; S.cform = null; S.termsUnsupported = null;   // terminals per TODO (item 111)
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
@@ -1102,6 +1141,14 @@ const loaders = {
       if (disk && disk.mtime !== f.mtime) await reloadFile(f);
     }
   },
+  async terms() {
+    const id = S.sel;
+    if (typeof id !== "number") return;
+    const r = await call("GET", `/api/todos/${id}/terminals`);
+    S.terms[id] = r.terminals; S.termsUnsupported = r.unsupported;
+    for (const x of r.terminals) { const v = xterms.get(x.id); if (v) v.info = x; }
+    for (const [tid, v] of xterms) if (v.todoId === id && !r.terminals.some((x) => x.id === tid)) { v.gone = true; if (v.ws?.readyState !== 1) dropXterm(tid); }
+  },
   // Item 109: the tree of the visible root, polled every 5 s and after each run.
   async tree() {
     const t = cur(), root = t && S.fileRoot[t.id];
@@ -1156,7 +1203,7 @@ function goOverview() { flushDraft(); S.view = "todos"; S.mode = "overview"; S.f
 function select(id) {
   flushDraft();
   if (!(S.view === "todos" && S.mode === "focus")) S.focusFrom = S.board;   // ⌘J inside Focus keeps where you came from
-  if (S.sel !== id) { S.detail = null; S.file = null; S.tab = "chat"; }
+  if (S.sel !== id) { S.detail = null; S.file = null; S.tab = "chat"; S.termMenu = false; S.cform = null; }
   S.sel = id; S.view = "todos"; S.mode = "focus";
   composer.value = drafts[draftKey()] ?? "";
   chatLog.dataset.sig = "";   // scroll the chat to the newest message
@@ -1282,11 +1329,16 @@ async function moveProject(id, pid) {
   } catch (e) { toast("danger", "Not moved", e.message); }
   need("detail", "todos", "projects");
 }
+// Items 12, 115: Remove asks while the agent runs or terminals are open, and says what closes.
+function removeText(running, n) {
+  return [running && "The agent is running. Removing interrupts it (Esc).", n && `${plural(n, "open terminal")} will close.`,
+    "The TODO is hidden with its messages and files. Restore resumes the same session" + (n ? "; terminals don't come back." : ".")].filter(Boolean).join(" ");
+}
 function askRemove(id) {
   const t = (S.detail?.todo.id === id && S.detail.todo) || S.todos.find((x) => x.id === id);
-  if (t?.status !== "running") return doRemove(id);
-  openDialog({ title: "Remove TODO", body: "The agent is running. Removing interrupts it (Esc) and hides the TODO with its messages and files. Restore resumes the same session.",
-    detail: t.title, buttons: [["Cancel", "ghost"], ["Remove", "danger", () => doRemove(id)]] });
+  const running = t?.status === "running", n = liveTerms(id);
+  if (!running && !n) return doRemove(id);
+  openDialog({ title: "Remove TODO", body: removeText(running, n), detail: t.title, buttons: [["Cancel", "ghost"], ["Remove", "danger", () => doRemove(id)]] });
 }
 async function doRemove(id) {
   flushDraft();   // restore sends the draft, so it must be on the server
@@ -1294,6 +1346,8 @@ async function doRemove(id) {
   try { await call("POST", `/api/todos/${id}/remove`); }
   catch (e) { return toast("danger", "Not removed", e.message); }
   if (S.sel === id) { S.sel = null; S.detail = null; S.file = null; S.mode = "overview"; }
+  for (const [tid, v] of xterms) if (v.todoId === id) dropXterm(tid);
+  delete S.terms[id];
   toast("info", "Removed", `${short(t?.title ?? "TODO")}. Restore it from Removed.`);
   render();
   need("todos");
@@ -1984,10 +2038,208 @@ function mountEditor(f, host, rw, locked) {
   S.cm = { key, handle };
 }
 
-// ponytail: terminals arrive in step 8 of the v4 plan; until then the tab shows its empty state only.
-const termCount = (todoId) => 0;
+// ---------- terminals (items 111-118) ----------
+const termCount = (todoId) => (S.terms[todoId] ?? []).length;   // exited tabs count too (design v4)
+const liveTerms = (todoId) => (S.terms[todoId] ?? []).filter((x) => !x.exited).length;
+const xterms = new Map();   // terminal id -> {todoId, info, term, fit, ws, host, ...}; kept while the page lives
+let termLib = null;
+function loadTermLib() {
+  if (!termLib) {
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "/vendor/terminal.css"; document.head.append(css);
+    termLib = Promise.all([loadScript("/vendor/terminal.js"), document.fonts.ready]).then(() => window.SBTerm);
+  }
+  return termLib;
+}
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+// The ANSI colors map to the design's accent tokens; xterm.js needs values, read now and again on a theme change.
+function termTheme() {
+  return {
+    background: cssVar("--surface-inset"), foreground: cssVar("--text-primary"), cursor: cssVar("--accent-lime"), cursorAccent: cssVar("--surface-inset"),
+    selectionBackground: "rgba(182,255,58,.25)", black: cssVar("--surface-3"), red: cssVar("--accent-red"), green: cssVar("--status-success"),
+    yellow: cssVar("--accent-amber"), blue: cssVar("--accent-blue"), magenta: cssVar("--accent-violet"), cyan: cssVar("--accent-cyan"),
+    white: cssVar("--text-secondary"), brightBlack: cssVar("--text-muted"), brightRed: cssVar("--accent-red"), brightGreen: cssVar("--status-success"),
+    brightYellow: cssVar("--accent-amber"), brightBlue: cssVar("--accent-blue"), brightMagenta: cssVar("--accent-violet"), brightCyan: cssVar("--accent-cyan"), brightWhite: cssVar("--text-primary"),
+  };
+}
+addEventListener("sb-theme", () => { const th = termTheme(); for (const v of xterms.values()) if (v.term) v.term.options.theme = th; });
+const termLabel = (x, t) => (x.title || `${x.kind === "claude" ? "Claude" : "Shell"} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · project" : "");
+const ROBOT = '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>';
+const PROMPT = '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>';
+const termIcon = (kind) => (kind === "claude" ? SVG(ROBOT, 14, "var(--accent-violet)") : SVG(PROMPT, 14));
+const claudeDefault = (t) => {
+  const p = S.projects.find((x) => x.id === t.project_id);
+  return `I'm working on the Switchboard TODO "${t.title}". What its agent is doing, its branch and PR, the recent chat and its files are in ${artifactPath(t)}terminal/context.md. Read it, then wait for my instructions.`;
+};
+const artifactPath = (t) => (S.detail?.todo.id === t.id ? S.detail.artifact_dir : `data/${S.projects.find((p) => p.id === t.project_id)?.slug ?? "…"}/${t.id}/`);
+function termDirs(t) {
+  const p = S.projects.find((x) => x.id === t.project_id);
+  return treeUsable(t) ? [["worktree", `Worktree · ${t.branch ?? basename(t.worktree_path)}`, t.worktree_path], ["project", `Project folder · ${p?.local_path ?? ""}`, p?.local_path ?? ""]]
+    : [["project", `Project folder · ${p?.local_path ?? ""}`, p?.local_path ?? ""]];
+}
+async function newTerm(kind, root, message = "") {
+  const t = cur();
+  S.termMenu = false; S.cform = null;
+  const box = $("termHosts");
+  try {
+    const x = await call("POST", `/api/todos/${t.id}/terminals`, { kind, root, message, cols: 100, rows: 30 });
+    (S.terms[t.id] ??= []).push(x);
+    S.termSel[t.id] = x.id;
+    render();
+    setTimeout(() => xterms.get(x.id)?.term?.focus(), 60);
+  } catch (e) { toast("danger", "No terminal", e.message); render(); }
+  need("terms");
+}
+function openClaudeForm(root) {
+  const t = cur(), dir = termDirs(t).find((d) => d[0] === root) ?? termDirs(t)[0];
+  S.termMenu = false;
+  S.cform = { todoId: t.id, root: dir[0], cwd: dir[2], message: claudeDefault(t) };
+  render();
+}
+function askCloseTerm(tid) {
+  const t = cur(), x = (S.terms[t.id] ?? []).find((y) => y.id === tid);
+  const close = async () => {
+    try { await call("POST", `/api/todos/${t.id}/terminals/${tid}/close`); } catch (e) { return toast("danger", "Not closed", e.message); }
+    dropXterm(tid);
+    S.terms[t.id] = (S.terms[t.id] ?? []).filter((y) => y.id !== tid);
+    if (S.termSel[t.id] === tid) S.termSel[t.id] = S.terms[t.id].at(-1)?.id;
+    render();
+  };
+  if (!x || x.exited) return close();
+  openDialog({ title: "Close terminal", body: `${x.kind === "claude" ? "Claude" : "The shell"} in this tab is still running. Closing the tab ends its process.`, detail: x.cwd,
+    buttons: [["Cancel", "ghost"], ["Close terminal", "danger", close]] });
+}
+async function restartTerm(tid) {
+  const t = cur();
+  try { await call("POST", `/api/todos/${t.id}/terminals/${tid}/restart`); }
+  catch (e) { return toast("danger", "Not restarted", e.message); }
+  const v = xterms.get(tid);
+  if (v) { v.term?.reset(); v.exit = null; connectTerm(v); }
+  need("terms");
+  setTimeout(() => v?.term?.focus(), 60);
+}
+function dropXterm(tid) {
+  const v = xterms.get(tid);
+  if (!v) return;
+  v.closed = true;
+  try { v.ws?.close(); } catch (e) {}
+  v.term?.dispose(); v.host.remove();
+  xterms.delete(tid);
+}
+// One WebSocket per open terminal: binary frames are terminal bytes both ways, text frames JSON control (resize, exit).
+function connectTerm(v) {
+  try { v.ws?.close(); } catch (e) {}
+  const ws = new WebSocket(withToken(`${location.origin.replace(/^http/, "ws")}/api/todos/${v.todoId}/terminals/${v.info.id}/ws`));
+  ws.binaryType = "arraybuffer";
+  v.ws = ws; v.down = false;
+  ws.onopen = () => { v.down = false; v.fit.fit(); ws.send(JSON.stringify({ type: "resize", cols: v.term.cols, rows: v.term.rows })); renderTermFoot(); };
+  ws.onmessage = (e) => {
+    if (typeof e.data !== "string") return v.term.write(new Uint8Array(e.data));
+    const c = JSON.parse(e.data);
+    if (c.type === "exit") { v.exit = c; v.info = { ...v.info, exited: true, code: c.code, signal: c.signal }; need("terms"); render(); }
+  };
+  ws.onclose = () => {
+    if (v.closed || ws !== v.ws) return;
+    v.down = true; renderTermFoot();
+    // The terminal may be gone (closed in another tab, or the app restarted): the list says which; otherwise retry.
+    setTimeout(async () => {
+      if (v.closed) return;
+      await loaders.terms().catch(() => {});
+      if (v.gone) { v.ended = true; render(); return; }
+      if (!v.exit) connectTerm(v);
+    }, 2000);
+  };
+  v.term.onData((d) => ws.readyState === 1 && !v.exit && ws.send(new TextEncoder().encode(d)));
+}
+function ensureXterm(x, t) {
+  let v = xterms.get(x.id);
+  if (v) return v;
+  v = { todoId: t.id, info: x, host: document.createElement("div") };
+  v.host.dataset.tid = x.id;
+  v.host.hidden = true;
+  $("termHosts").append(v.host);
+  xterms.set(x.id, v);
+  loadTermLib().then((L) => {
+    if (v.closed) return;
+    const term = new L.Terminal({ fontFamily: "'JetBrains Mono', ui-monospace, Menlo, monospace", fontSize: 13, lineHeight: 1.2, cursorBlink: false, cursorStyle: "block", theme: termTheme(), scrollback: 5000, macOptionIsMeta: true, allowProposedApi: true });
+    const fit = new L.FitAddon();
+    term.loadAddon(fit);
+    term.loadAddon(new L.WebLinksAddon((e, uri) => window.open(uri, "_blank", "noopener")));
+    const inner = document.createElement("div");
+    inner.className = "term-in";
+    v.host.append(inner);
+    term.open(inner);
+    try { term.loadAddon(new L.WebglAddon()); } catch (e) { /* canvas fallback */ }
+    Object.assign(v, { term, fit });
+    term.onTitleChange(() => need("terms"));
+    term.onResize(({ cols, rows }) => v.ws?.readyState === 1 && v.ws.send(JSON.stringify({ type: "resize", cols, rows })));
+    // ponytail: Ctrl+Shift+C/V copy and paste on Linux; on macOS ⌘C/⌘V work through the browser.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) { navigator.clipboard.writeText(term.getSelection()); return false; }
+      if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) { navigator.clipboard.readText().then((tx) => term.paste(tx)); return false; }
+      return !e.metaKey;   // ⌘ shortcuts belong to the app (⌘J, ⌘,); every other key goes to the terminal
+    });
+    term.textarea?.addEventListener("focus", renderTermFoot);
+    term.textarea?.addEventListener("blur", renderTermFoot);
+    connectTerm(v);
+    if (!v.host.hidden) requestAnimationFrame(() => fit.fit());
+  });
+  return v;
+}
+addEventListener("resize", () => { for (const v of xterms.values()) if (!v.host.hidden && v.fit) v.fit.fit(); });
+function renderTermFoot() {
+  const t = cur(), tid = t && S.termSel[t.id], v = tid && xterms.get(tid), x = v?.info, foot = $("termFoot");
+  foot.hidden = !x || !!S.cform;
+  if (foot.hidden) return;
+  const focused = v.host.contains(document.activeElement);
+  setHtml(foot, `<span style="color:var(--text-secondary)">${x.kind === "claude" ? "claude · separate session" : esc(S.meta?.shell || "shell") + " · login shell"}</span><span class="cwd" title="${esc(x.cwd)}">${esc(x.cwd)}</span>
+    <span class="push">${v.down && !v.exit && !v.ended ? "Disconnected · reconnecting…" : focused ? "Click outside to hand keys back" : "Keys go here while focused"}</span>`);
+}
 function renderTerminals(t, d) {
-  $("termView").innerHTML = '<span class="empty">No terminals.</span>';
+  const list = S.terms[t.id] ?? [];
+  if (S.terms[t.id] === undefined) need("terms");
+  let sel = S.termSel[t.id];
+  if (!list.some((x) => x.id === sel)) sel = S.termSel[t.id] = list.at(-1)?.id;
+  const dirs = termDirs(t), def = dirs[0];
+  const tabsHtml = list.map((x) => `<div class="ttab" role="tab" tabindex="0" aria-selected="${!S.cform && x.id === sel}" data-act="term-sel" data-id="${x.id}" title="${esc(x.cwd)}">${termIcon(x.kind)}<span>${esc(termLabel(x, t))}</span>${x.exited ? `<span class="ex">${x.signal ? esc(x.signal) : "exit " + x.code}</span>` : ""}<span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="Close">${SVG(CLOSE, 12)}</span></div>`).join("");
+  const menu = S.termMenu ? `<div class="term-menu" role="menu" style="left:${20 + Math.min(list.length * 150, 600)}px">${dirs.map(([root, head]) => `<div class="h">${esc(head)}</div>
+      <button type="button" role="menuitem" data-act="term-new" data-id="shell:${root}">${termIcon("shell")}<span class="l"><b>Shell</b><span>${root === "project" && dirs.length > 1 ? "git or tools on the main checkout" : "git, docker, tests, a dev server"}</span></span></button>
+      <button type="button" role="menuitem" data-act="term-new" data-id="claude:${root}">${termIcon("claude")}<span class="l"><b>Claude</b><span>New session that starts with this TODO's context</span></span></button>`).join("")}</div>` : "";
+  setHtml($("termStrip"), `<div class="term-tabs" role="tablist" aria-label="Terminals">${tabsHtml}</div>
+    <button type="button" class="mb-iconbtn mb-iconbtn--outline term-plus" data-act="term-menu" aria-label="New terminal" title="New terminal"${S.termsUnsupported ? " disabled" : ""}>${SVG('<path d="M5 12h14"/><path d="M12 5v14"/>', 15)}</button>
+    <span class="term-note">${list.length ? plural(list.length, "terminal") + " · your own processes · the agent isn't told about them" : "Your own processes · the agent isn't told about them"}</span>${menu}`);
+  const panel = $("termPanel");
+  if (S.cform?.todoId === t.id) {
+    const f = S.cform;
+    setHtml(panel, `<div class="cform">
+      <div class="row wrap">${termIcon("claude")}<span class="panel-title">New Claude</span><span class="microlabel">Separate session · your settings · no app tools or hooks</span></div>
+      <div class="mb-field"><label class="mb-field__label" for="cfDir">Folder</label><input id="cfDir" class="mb-input" readonly value="${esc(f.cwd)}"></div>
+      <div class="mb-field"><label class="mb-field__label" for="cfMsg">First message</label><textarea id="cfMsg" class="mb-textarea" rows="5">${esc(f.message)}</textarea><span class="mb-field__hint">Add your own ask, or keep it and give instructions once Claude has read the context.</span></div>
+      <pre>cd ${esc(f.cwd)}
+claude --add-dir ${esc(artifactPath(t))} "&lt;first message&gt;"</pre>
+      <span class="small">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Runs with your own Claude Code settings, without the app's tools or hooks. Nothing it does appears in this chat.</span>
+      <div class="row" style="justify-content:flex-end">${btn("Cancel", "cform-cancel", { v: "ghost" })}<span class="kbd">⌘↵</span>${btn("Start", "cform-start", { v: "primary" })}</div></div>`);
+  } else if (!list.length) {
+    setHtml(panel, `<div class="term-empty"><h2>No terminals</h2>${S.termsUnsupported ? `<p>${esc(S.termsUnsupported)}</p>`
+      : `<p>Opens in ${esc(def[2])}. A shell for git, tests or a dev server, or Claude with this TODO's context. Both are your own processes: the agent isn't told about them and nothing shows in the chat.</p>
+      <div class="row">${btn("New shell", "term-new", { id: "shell:" + def[0] }).replace("mb-btn--sm", "mb-btn--md")}${btn("New Claude", "term-new", { id: "claude:" + def[0] }).replace("mb-btn--sm", "mb-btn--md")}</div>`}</div>`);
+  } else setHtml(panel, "");
+  // xterm hosts stay in the page; only the selected one shows
+  const hosts = $("termHosts");
+  hosts.hidden = !!S.cform || !list.length;
+  for (const x of list) ensureXterm(x, t);
+  for (const v of xterms.values()) {
+    const show = !hosts.hidden && v.todoId === t.id && v.info.id === sel;
+    if (v.host.hidden === show) { v.host.hidden = !show; if (show && v.fit) requestAnimationFrame(() => v.fit.fit()); }
+  }
+  const v = sel && xterms.get(sel), x = v?.info, exitEl = $("termExit");
+  const ended = v?.ended, exited = x?.exited || v?.exit;
+  exitEl.hidden = !!S.cform || !(ended || exited);
+  if (!exitEl.hidden) {
+    const code = v.exit ?? x;
+    setHtml(exitEl, `<div class="term-exit"><span>${ended ? "Ended: the app restarted." : code.signal ? `Process ended by signal ${esc(code.signal)}.` : `Process exited with code ${code.code}.`}${x.kind === "claude" ? " Its transcript stays; claude --resume finds it." : ""}</span>
+      ${ended ? "" : `<span class="push row">${x.kind === "claude" ? btn("Shell here", "term-new", { v: "ghost", id: "shell:" + x.root }) : ""}${btn("Restart", "term-restart", { id: x.id })}</span>`}</div>`);
+  }
+  renderTermFoot();
 }
 
 function setMd(el, text) { if (el._src !== text) { el.innerHTML = md(text); el._src = text; } }
@@ -2065,6 +2317,13 @@ const ACTIONS = {
   "copy-path": () => S.file?.abs && copyText(S.file.abs, "Copied", S.file.abs),
   "add-path": addPathToMessage,
   "md-tool": (id) => S.cm?.handle?.format(id),
+  "term-menu": () => { S.termMenu = !S.termMenu; render(); },
+  "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
+  "term-sel": (id) => { const t = cur(); S.termSel[t.id] = Number(id); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
+  "term-close": (id) => askCloseTerm(Number(id)),
+  "term-restart": (id) => restartTerm(Number(id)),
+  "cform-cancel": () => { S.cform = null; render(); },
+  "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm("claude", f.root, msg); },
   "md-view": (id) => { S.mdView = id; render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
@@ -2088,6 +2347,7 @@ const ACTIONS = {
 };
 document.addEventListener("click", (e) => {
   if (e.target.classList?.contains("mb-dialog-overlay")) return closeDialog();   // click on the backdrop
+  if (S.termMenu && !e.target.closest(".term-menu, .term-plus")) { S.termMenu = false; render(); }
   const el = e.target.closest("[data-act]");
   if (!el || el.disabled) return;
   ACTIONS[el.dataset.act]?.(el.dataset.id, el);
@@ -2097,6 +2357,9 @@ document.addEventListener("keydown", (e) => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
   if (S.dlg) { if (e.key === "Escape") { e.preventDefault(); closeDialog(); } return; }
   if (e.defaultPrevented) return;   // the editor or a terminal already took the key
+  // Item 117: while a terminal has focus every key goes to it, except ⌘ shortcuts.
+  if (e.target.closest?.(".term-hosts") && !e.metaKey) return;
+  if (e.target.id === "cfMsg" && e.key === "Enter" && mod) { e.preventDefault(); return ACTIONS["cform-start"](); }
   if (mod && e.key === ",") { e.preventDefault(); return openSettings(); }
   if (mod && k === "j") { e.preventDefault(); return nextWaiting(); }
   const fileShown = !!S.file && !$("vFocus").hidden && !$("fileView").hidden;
@@ -2105,6 +2368,8 @@ document.addEventListener("keydown", (e) => {
   if (mod && k === "s" && fileShown) { e.preventDefault(); return saveFile(); }
   // Esc closes the innermost thing first (design v4): … Settings, then an open file, then Focus.
   if (e.key === "Escape") {
+    if (S.termMenu) { e.preventDefault(); S.termMenu = false; return render(); }
+    if (S.cform) { e.preventDefault(); S.cform = null; return render(); }
     if (S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" && S.nsMode[S.sel]) { e.preventDefault(); delete S.nsMode[S.sel]; return render(); }
     if (S.view === "settings" && !typing) { e.preventDefault(); return closeSettings(); }
     if (fileShown) { e.preventDefault(); return closeFile(); }
@@ -2166,6 +2431,7 @@ function onEvent(ev) {
   } else if (ev.type === "operator") {
     if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   } else if (ev.type === "projects") need("projects");
+  else if (ev.type === "terminals" && focusTodo && ev.id === S.sel) need("terms");
 }
 const es = new EventSource(withToken("/api/events"));
 es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.warn(err); } };
