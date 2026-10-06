@@ -11,9 +11,11 @@ function applyTheme() {
   if (pick !== "dark" && pick !== "light") pick = "auto";
   const os = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   if (pick === "light" || (pick === "auto" && os === "light")) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
-  document.querySelectorAll('[data-act="theme"]').forEach((b) => b.setAttribute("aria-pressed", b.dataset.id === pick));
+  document.querySelectorAll('[data-act="theme"]').forEach((b) => { b.setAttribute("aria-checked", b.dataset.id === pick); b.tabIndex = b.dataset.id === pick ? 0 : -1; });
   const auto = document.querySelector('[data-act="theme"][data-id="auto"]');
   if (auto) auto.title = `Follow system · now ${os}`;
+  const hint = document.getElementById("themeHint");
+  if (hint) hint.textContent = pick === "auto" ? `Auto follows the system setting. Now ${os}.` : `Fixed to ${pick}. Applies to every window.`;
 }
 applyTheme();
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
@@ -235,30 +237,36 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .gate p { margin: 0; color: var(--text-secondary); line-height: 1.55; }
 pre.box { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); padding: 10px 12px; }
 
-/* ---------- header ---------- */
-header.top { height: var(--topbar-height); flex: none; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); }
-.brand { display: flex; align-items: center; gap: 8px; flex: none; font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: .02em; }
-.brand-mark { width: 12px; height: 12px; background: var(--accent-lime); clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 0 100%); }
+/* ---------- title bar (item 121) ---------- */
+/* The whole bar drags the window app; tabs and buttons do not. On macOS the traffic lights sit in the 72px spacer. */
+header.top { height: 40px; flex: none; display: flex; align-items: stretch; border-bottom: 1px solid var(--border-subtle); background: var(--bg-void); -webkit-app-region: drag; user-select: none; }
+.tl-space { display: none; flex: none; width: 72px; }
+.electron-mac:not(.fullscreen) .tl-space { display: block; }
+.brand { display: flex; align-items: center; gap: 8px; flex: none; padding: 0 18px 0 14px; font-family: var(--font-display); font-weight: 700; font-size: 13px; letter-spacing: .02em; }
+.brand-mark { width: 11px; height: 11px; background: var(--accent-lime); clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 0 100%); }
 .brand b { color: var(--accent-lime); font-weight: 700; }
-nav.views { display: flex; gap: 4px; margin-left: 12px; }
-.navbtn {
-  height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 8px; cursor: pointer;
-  background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-secondary);
-  font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webkit-app-region: no-drag; }
+.navtab {
+  position: relative; z-index: 1; height: 34px; margin-bottom: -1px; padding: 0 14px; display: flex; align-items: center; gap: 8px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-top: 2px solid transparent; border-bottom: none; border-radius: 2px 2px 0 0;
+  font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary);
 }
-.navbtn:hover { color: var(--text-primary); }
-.navbtn[aria-current="page"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-primary); }
-.navbtn span { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.gh-btn { margin-left: auto; height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; flex: none; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); cursor: pointer; }
+.navtab:hover { color: var(--text-primary); }
+.navtab[aria-selected="true"] { background: var(--bg-base); border-color: var(--border-subtle); border-top-color: var(--accent-lime); color: var(--text-primary); }
+.navtab .n { font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.navtab .wait { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
+.navtab .x { width: 18px; height: 18px; margin-right: -6px; display: flex; align-items: center; justify-content: center; border-radius: 2px; color: var(--text-muted); }
+.navtab .x:hover { background: var(--surface-3); color: var(--text-primary); }
+.drag-fill { flex: 1; min-width: 24px; }
+.tb-right { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; -webkit-app-region: no-drag; }
+.gh-btn { height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; flex: none; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .gh-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .gh-btn > span { width: 6px; height: 6px; flex: none; border: 1px solid currentColor; }
-.gh-btn:not([hidden]) + .theme { margin-left: 0; }
-.theme { margin-left: auto; display: flex; align-items: center; gap: 2px; height: 28px; padding: 2px; flex: none; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
-.theme > span, .theme button { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-.theme > span { padding: 0 6px 0 4px; color: var(--text-muted); }
-.theme button { height: 22px; padding: 0 8px; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); cursor: pointer; }
-.theme button:hover { color: var(--text-primary); }
-.theme button[aria-pressed="true"] { background: var(--surface-3); border-color: var(--border-strong); color: var(--text-primary); }
+/* a three-way choice in an inset box (theme; Board/Backlog and file roots use it too) */
+.seg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; flex: none; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
+.seg > button { height: 28px; padding: 0 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.seg > button:hover { color: var(--text-primary); }
+.seg > button[aria-checked="true"] { background: var(--surface-3); border-color: var(--border-strong); color: var(--text-primary); }
 
 /* ---------- views ---------- */
 #app { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -433,7 +441,15 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .rm-row { display: flex; align-items: center; gap: 16px; padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); }
 .rm-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .rm-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
-.proj-grid { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; align-items: start; }
+.settings { max-width: 1300px; padding: 24px; display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 24px; align-items: start; }
+.set-nav { display: flex; flex-direction: column; gap: 2px; }
+.set-sec { height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-secondary); font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; text-align: left; }
+.set-sec > span:first-child { flex: 1; }
+.set-sec .n { font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.set-sec:hover { color: var(--text-primary); }
+.set-sec[aria-current="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text-primary); }
+.set-main { max-width: 760px; display: flex; flex-direction: column; gap: 16px; }
+.proj-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; align-items: start; }
 .proj-side, .proj-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .proj-main { gap: 16px; }
 .proj-row { width: 100%; text-align: left; cursor: pointer; padding: 12px; display: flex; flex-direction: column; gap: 4px; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); }
@@ -442,7 +458,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 
 @media (max-width: 720px) {
-  .proj-grid, .grid2, .split { grid-template-columns: minmax(0, 1fr); }
+  .settings, .proj-grid, .grid2, .split { grid-template-columns: minmax(0, 1fr); }
   .split { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .preview { border-left: 0; border-top: 1px solid var(--border-subtle); }
   .new-grid { grid-template-columns: minmax(0, 1fr); }
@@ -451,18 +467,17 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
 </head>
 <body>
 <header class="top">
+  <div class="tl-space"></div>
   <div class="brand"><span class="brand-mark"></span><span>SWITCH<b>BOARD</b></span></div>
-  <nav class="views" aria-label="Views">
-    <button type="button" class="navbtn" data-act="nav" data-id="todos">TODOs<span id="cTodos">0</span></button>
-    <button type="button" class="navbtn" data-act="nav" data-id="removed">Removed<span id="cRemoved">0</span></button>
-    <button type="button" class="navbtn" data-act="nav" data-id="projects">Projects<span id="cProjects">0</span></button>
+  <nav class="views" role="tablist" aria-label="Views">
+    <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="todos"><span id="waitTodos" class="wait" hidden></span><span>TODOs</span><span id="cTodos" class="n">0</span></div>
+    <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="removed"><span>Removed</span><span id="cRemoved" class="n">0</span></div>
+    <div role="tab" tabindex="0" class="navtab" id="settingsTab" data-act="nav" data-id="settings" hidden><span>Settings</span><span role="button" tabindex="0" class="x" data-act="close-settings" aria-label="Close settings" title="Close · Esc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
   </nav>
-  <button type="button" id="ghBtn" class="gh-btn" data-act="gh-retry" hidden></button>
-  <div class="theme" role="group" aria-label="Theme">
-    <span aria-hidden="true">Theme</span>
-    <button type="button" data-act="theme" data-id="auto">Auto</button>
-    <button type="button" data-act="theme" data-id="dark" title="Dark theme">Dark</button>
-    <button type="button" data-act="theme" data-id="light" title="Light theme">Light</button>
+  <div class="drag-fill"></div>
+  <div class="tb-right">
+    <button type="button" id="ghBtn" class="gh-btn" data-act="gh-retry" hidden></button>
+    <button type="button" id="gearBtn" class="mb-iconbtn" data-act="open-settings" aria-label="Settings" title="Settings · ⌘,"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   </div>
 </header>
 
@@ -578,9 +593,15 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
     </div>
   </div>
 
-  <!-- Projects -->
-  <div id="vProjects" class="view page" hidden>
-    <div class="proj-grid">
+  <!-- Settings (item 122): Projects and Appearance -->
+  <div id="vSettings" class="view" hidden>
+   <div class="settings">
+    <nav class="set-nav" aria-label="Settings sections">
+      <span class="microlabel" style="padding:0 10px 8px">Settings</span>
+      <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Projects</span><span id="cProjects" class="n">0</span></button>
+      <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
+    </nav>
+    <div id="secProjects" class="proj-grid">
       <div class="proj-side">
         <div class="row"><h1 class="page-title">Projects</h1><span class="push"><button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="new-project">New</button></span></div>
         <div id="projList" style="display:flex; flex-direction:column; gap:8px;"></div>
@@ -603,6 +624,18 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
         </div>
       </div>
     </div>
+    <div id="secAppearance" class="set-main" hidden>
+      <h1 class="page-title">Appearance</h1>
+      <div class="panel" style="flex-direction:row; flex-wrap:wrap; align-items:center; padding:20px; gap:16px 24px">
+        <div style="flex:1 1 260px; display:flex; flex-direction:column; gap:6px"><span class="microlabel">Theme</span><span id="themeHint" style="font-size:14px; color:var(--text-secondary)"></span></div>
+        <div class="seg" role="radiogroup" aria-label="Theme" style="height:36px">
+          <button type="button" role="radio" data-act="theme" data-id="auto">Auto</button>
+          <button type="button" role="radio" data-act="theme" data-id="dark" title="Dark theme">Dark</button>
+          <button type="button" role="radio" data-act="theme" data-id="light" title="Light theme">Light</button>
+        </div>
+      </div>
+    </div>
+   </div>
   </div>
 </div>
 
@@ -766,6 +799,7 @@ const S = {
   dlg: null, toasts: [], sending: null, ghRetrying: false,
   newProject: null, projSel: null, projErr: "",
   filter: "all",         // project filter: "all" or a project id as text, kept in localStorage
+  settingsOpen: false, settingsFrom: "todos", setSec: "projects",   // Settings tab (item 122): open, the view it came from, its section
 };
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
@@ -896,6 +930,14 @@ function refreshVisible() {
 
 // ---------- navigation ----------
 function setView(v) { flushDraft(); S.view = v; render(); refreshVisible(); }
+// Settings opens as a tab and closes back to the view it was opened from (overview or Focus stay as they were).
+function openSettings() {
+  if (S.view !== "settings") S.settingsFrom = S.view;
+  S.settingsOpen = true;
+  setView("settings");
+}
+window.openSettings = openSettings;   // the window app's menu item "Settings… ⌘,"
+function closeSettings() { S.settingsOpen = false; setView(S.view === "settings" ? S.settingsFrom : S.view); }
 function goOverview() { flushDraft(); S.view = "todos"; S.mode = "overview"; S.file = null; render(); need("operator"); }
 function select(id) {
   flushDraft();
@@ -1145,27 +1187,30 @@ function render() {
   $("vOverview").hidden = !(todos && S.mode === "overview");
   $("vFocus").hidden = !(todos && S.mode === "focus");
   $("vRemoved").hidden = S.view !== "removed";
-  $("vProjects").hidden = S.view !== "projects";
+  $("vSettings").hidden = S.view !== "settings";
   if (!$("vOverview").hidden) renderOverview();
   if (!$("vFocus").hidden) renderFocus();
   if (!$("vRemoved").hidden) renderRemoved();
-  if (!$("vProjects").hidden) renderProjects();
+  if (!$("vSettings").hidden) renderSettings();
   // a live update rebuilt the button you were on: put keyboard focus back on its replacement
   if (fk && document.activeElement === document.body) document.querySelector(`[data-fk="${CSS.escape(fk)}"]`)?.focus();
 }
 
 function renderHeader() {
   const lv = live();
-  $("cTodos").textContent = lv.length;
-  $("cRemoved").textContent = S.todos.length - lv.length;
-  $("cProjects").textContent = S.projects.length;
-  document.querySelectorAll("nav.views .navbtn").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.view ? "page" : "false"));
   const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
-  const ghErr = lv.find((t) => (t.git || t.pr_number) && t.gh_error)?.gh_error, gh = $("ghBtn");
+  $("cTodos").textContent = lv.filter((t) => t.status !== "not_started").length;   // started work only; the backlog counts on its switch
+  $("waitTodos").hidden = !n;
+  $("waitTodos").title = `${n} waiting on you`;
+  $("cRemoved").textContent = S.todos.length - lv.length;
+  $("settingsTab").hidden = !S.settingsOpen;
+  document.querySelectorAll("nav.views .navtab").forEach((b) => b.setAttribute("aria-selected", b.dataset.id === S.view));
+  $("gearBtn").classList.toggle("mb-iconbtn--outline", S.view === "settings");
+  const errT = lv.find((t) => (t.git || t.pr_number) && t.gh_error), ghErr = errT?.gh_error, gh = $("ghBtn");
   gh.hidden = !ghErr;
   if (ghErr) {
     gh.innerHTML = `<span></span>${esc(S.ghRetrying ? "PR status · retrying…" : GH_LABEL[ghErr.kind])}`;
-    gh.title = `${ghErr.why} PR lines show the last result, greyed. Git lines are local and stay current. Retries every 2 min. Click to retry now.`;
+    gh.title = `PR lines show the last result${errT.pr_checked_at ? " from " + ago(errT.pr_checked_at) : ""}, greyed. Git lines are local and stay current. Retries every 2 min. Click to retry now.`;
   }
   document.title = (n ? `(${n}) ` : "") + "switchboard";
 }
@@ -1181,7 +1226,7 @@ function renderOverview() {
     S.newProject = filterProject()?.id ?? (S.projects.some((p) => p.id === S.meta?.last_project_id) ? S.meta.last_project_id : S.projects[0]?.id ?? null);
   newProject.value = S.newProject ?? "";
   newProject.disabled = !S.projects.length;
-  $("newNote").textContent = S.projects.length ? "Lands in Not started. Nothing launches until you start it." : "Add a project on the Projects page first.";
+  $("newNote").textContent = S.projects.length ? "Lands in Not started. Nothing launches until you start it." : "Add a project in Settings › Projects first.";
   $("addBtn").disabled = !newText.value.trim() || S.newProject == null;
   setHtml($("newFiles"), uploadChips("new"));
 
@@ -1393,6 +1438,15 @@ function renderRemoved() {
   }).join("");
 }
 
+function renderSettings() {
+  $("cProjects").textContent = S.projects.length;
+  document.querySelectorAll(".set-sec").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.setSec));
+  $("secProjects").hidden = S.setSec !== "projects";
+  $("secAppearance").hidden = S.setSec !== "appearance";
+  if (S.setSec === "projects") renderProjects();
+  else applyTheme();
+}
+
 function renderProjects() {
   const p = selProject();
   $("projList").innerHTML = S.projects.map((x) => `<button type="button" class="proj-row" data-act="pick-project" data-id="${x.id}" data-fk="pick-project:${x.id}" aria-current="${x.id === S.projSel}">
@@ -1434,13 +1488,16 @@ const ACTIONS = {
   "file-mode": (id) => setFileMode(id),
   "pick-project": (id) => { S.projSel = Number(id); fillProjForm(); render(); },
   "new-project": () => { S.projSel = "new"; fillProjForm(); render(); pName.focus(); },
+  "open-settings": openSettings,
+  "close-settings": (id, el) => { closeSettings(); },
+  "set-sec": (id) => { S.setSec = id; render(); },
   filter: setFilter,
   "gh-retry": () => {
     if (S.ghRetrying) return;
     S.ghRetrying = true; render();
     act(call("POST", "/api/gh/retry"), "PR status").finally(() => { S.ghRetrying = false; render(); });
   },
-  theme: (id) => { try { localStorage.setItem("switchboard-theme", id); } catch (e) {} applyTheme(); },
+  theme: (id, el) => { try { localStorage.setItem("switchboard-theme", id); } catch (e) {} applyTheme(); el?.focus(); },
   dlg: (id) => { const b = S.dlg?.buttons[Number(id)]; closeDialog(); b?.[2]?.(); },
   toast: (id) => { const t = S.toasts.find((x) => x.id === Number(id)); S.toasts = S.toasts.filter((x) => x !== t); renderToasts(); t?.action[1](); },
 };
@@ -1454,16 +1511,27 @@ document.addEventListener("keydown", (e) => {
   const k = (e.key || "").toLowerCase(), mod = e.metaKey || e.ctrlKey;
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
   if (S.dlg) { if (e.key === "Escape") { e.preventDefault(); closeDialog(); } return; }
+  if (e.defaultPrevented) return;   // the editor or a terminal already took the key
+  if (mod && e.key === ",") { e.preventDefault(); return openSettings(); }
   if (mod && k === "j") { e.preventDefault(); return nextWaiting(); }
   const fileShown = !!S.file && !$("vFocus").hidden && !$("fileView").hidden;
   if (mod && k === "e" && fileShown) { e.preventDefault(); return setFileMode(S.file.mode === "edit" ? "read" : "edit"); }
   if (mod && k === "s" && fileShown) { e.preventDefault(); return saveFile(); }
+  // Esc closes the innermost thing first (design v4): … Settings, then an open file, then Focus.
   if (e.key === "Escape") {
+    if (S.view === "settings" && !typing) { e.preventDefault(); return closeSettings(); }
     if (fileShown) { e.preventDefault(); return closeFile(); }
     if (S.view === "todos" && S.mode === "focus") { if (typing) e.target.blur(); return goOverview(); }
     return;
   }
-  if ((e.key === "Enter" || e.key === " ") && !typing && e.target.matches?.('[role="button"][data-act]')) { e.preventDefault(); return e.target.click(); }
+  if ((e.key === "Enter" || e.key === " ") && !typing && e.target.matches?.('[role="button"][data-act], [role="tab"][data-act]')) { e.preventDefault(); return e.target.click(); }
+  // Arrow keys move the choice inside a radio group (theme, filter chips, Board/Backlog, file roots).
+  if (/^Arrow/.test(e.key) && e.target.matches?.('[role="radio"]')) {
+    const all = [...e.target.closest('[role="radiogroup"]').querySelectorAll('[role="radio"]:not([disabled])')];
+    const next = all[(all.indexOf(e.target) + (/Right|Down/.test(e.key) ? 1 : all.length - 1)) % all.length];
+    if (next) { e.preventDefault(); next.click(); next.focus(); }
+    return;
+  }
   if (!typing && !mod && !e.altKey && k === "n") { e.preventDefault(); goOverview(); newText.focus(); }
 });
 
