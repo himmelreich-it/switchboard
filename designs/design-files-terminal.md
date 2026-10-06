@@ -6,7 +6,7 @@ Guiding principle, as in the spec: **streamline the user's work, don't delegate 
 
 ## Replacing the Events tab with terminals
 
-Yes. The Events tab is an audit trail (runs, hooks, attention changes with their actor, denials) that is opened rarely, mostly to find out why a TODO is in its state. A terminal is used often. So the Focus view tabs become **Chat · Files · Terminal**, and Events moves to a button in the Focus head that opens the same list in a side panel (item 68). Nothing is lost.
+Yes. The Events tab is an audit trail (runs, hooks, attention changes with their actor, denials) that is opened rarely, mostly to find out why a TODO is in its state. A terminal is used often. So the Focus view tabs become **Chat · Files · Terminal**, and Events becomes a toggle in the Chat tab that mixes the events into the chat (item 68). Nothing is lost, and you can reply while the events are shown.
 
 The Terminal tab holds as many terminals as you need, each in its own tab. A new terminal is one of two kinds:
 
@@ -19,7 +19,12 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 
 ### Focus view
 
-68. The Focus view of a TODO has the tabs Chat, Files and Terminal. Events (item 58) moves to an Events button in the Focus head that opens the same list, newest first with actors, in a side panel. The operator's Focus view has no tabs and is unchanged.
+68. The Focus view of a TODO has the tabs Chat, Files and Terminal. The Events tab (item 58) goes away, and the Chat tab gets an **Events** toggle with the TODO's event count.
+    - **Off** (the default), the chat shows messages only, as today.
+    - **On**, the TODO's events are mixed into the chat in time order. Each event is a dim one-line row with time, kind, detail and actor, for example `14:02 · PreToolUse · Bash · agent`. A long detail, such as a turn's full result text (item 48), opens on click.
+    - The composer stays below in both modes, so the user can reply while reading the events.
+    - New events appear live, like messages. The pick is kept in localStorage and applies to every TODO.
+    - The operator's chat has no toggle and is unchanged.
 
 ### Files
 
@@ -79,7 +84,7 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 82. The context file is `<artifact folder>/terminal/context.md`, rewritten at each Claude launch. It is not listed under TODO files. It is a snapshot, taken at launch, of:
     - the TODO's title, project, status and first instruction;
     - the worktree path, branch, git line and PR line (item 5);
-    - the last 30 chat messages, with author and time;
+    - the whole chat, with author and time. Agent messages are one or two lines (item 18), so even a long chat stays small;
     - the TODO's files, with absolute paths, so Claude can read them;
     - the TODO's session id, so Claude can find the full transcript under `~/.claude/projects/` if it needs more history;
     - a note that the TODO's agent may be working in the same worktree at the same time, so Claude checks with the user before committing, switching branches or rewriting history.
@@ -98,7 +103,7 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
     - On Windows and Linux, Ctrl combinations go to the terminal (Ctrl+J, Ctrl+E and Ctrl+S mean something there). Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V.
     - Clicking outside the terminal hands the keys back to the app.
 86. The TODO's agent does not see the terminals and is not told about anything done in them. Shells, Claude sessions and the agent can work in the same worktree at the same time, as in any terminal. Nothing guards against two of them running git at the same moment (as the spec's "Not built on purpose" does for shared worktrees). For Claude, the context file says so.
-87. The overview, the operator and the Projects page have no terminals.
+87. Files and terminals belong to a TODO. The overview, the operator and the Projects page have neither.
 
 ## How it is built
 
@@ -120,7 +125,12 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
   - If replaying the raw buffer garbles too often, the fallback is Orca's approach: mirror each terminal into `@xterm/headless` on the server and send `addon-serialize` snapshots.
 - **WebSocket security.**
   - The upgrade is accepted only when `Origin` is `http://127.0.0.1:<port>` or `http://localhost:<port>`, on top of today's Host check. This matters because browsers do not apply CORS to WebSockets. Any website can open `ws://127.0.0.1:4477`, and its Host header is then correct, so the Host and content-type checks alone would hand every website a shell.
-  - Other local users on a shared machine can reach the loopback port and already drive the whole API; a terminal turns that into a direct shell. A per-launch token for the whole app fixes it (open question 1): the window app passes it, and browser mode prints it in the URL, as Jupyter does.
+  - The Origin check stops websites, but not programs. Any program that can reach `127.0.0.1:4477` and simply skips the Origin header gets in. Examples are another user's programs on a shared machine, or a Linux Docker container started with `--network host`. Today such a program can already drive the whole API (create and start TODOs); a terminal gives it a shell directly.
+  - A **launch token** closes that gap (open question 1). It works like this:
+    - At each start the server picks a random secret and keeps it only in memory.
+    - Every API request and WebSocket must carry it in a cookie. Without it the server answers 401.
+    - The window app sets the cookie before loading the page. In browser mode the server prints `http://127.0.0.1:4477/?token=…` once at start; the page moves the token into the cookie and drops it from the URL. Jupyter does the same.
+    - A program that cannot see the secret, such as another user's program or a container, is shut out.
 - **Files API.** Every request names a root (`worktree` or `project`) and a relative path, checked as in item 78.
   - `GET /api/todos/<id>/tree?root=` returns `{paths, changed}`.
   - `GET /api/todos/<id>/fs?root=&path=` returns `{content, mtime, size, binary}`.
@@ -148,25 +158,17 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 
 - Driving the TODO's own session in a terminal (`claude --resume`). A Claude terminal is always a new session with the TODO's context. An app run cannot be shown in a terminal anyway, because the SDK runs Claude Code without its terminal UI.
 - Refreshing a running Claude terminal's context. Its context is a snapshot from launch, and Claude can re-read the TODO's files and git state itself.
-- Split panes, and terminals on the overview or the Projects page.
+- Split panes.
+- Files and terminals for a project without a TODO, for example on the Projects page.
 - Terminals that survive quitting the app (a separate daemon as in Orca, or tmux as in Kanban Code). Quitting stops terminals, as it stops agents.
 - Creating, renaming and deleting files; search across files; LSP; git actions (stage, commit, discard) from the UI.
 - Showing ignored files.
 - A browser preview pane (Orca and Kanban Code have one).
 - Telling the agent about edits or terminal commands. The user says it in chat.
 
-## Phases
-
-1. **Files**: the root switcher, tree, Changed filter, Diff, and CodeMirror replacing the textarea (items 69 to 78). No PTY, so it is the lowest risk, and it works the same on every OS.
-2. **Terminals**: shell tabs, the Events panel, the WebSocket with its Origin check, and the Bun version check (items 68, 79, 80 and 83 to 87).
-3. **Claude with context**: the Claude kind, its launch form and the context file (items 81 and 82). It is small once phase 2 exists.
-
 ## Open questions
 
-1. Should the app-wide launch token against other local users ship with the terminals, or separately?
-2. Events: a side panel (proposed), or a "Show events" toggle that interleaves events into the chat timeline?
-3. Should the files and terminals also be reachable for a project without a TODO, for example from the Projects page?
-4. Is the last 30 chat messages the right amount of context, or should the context file hold the whole chat?
+1. Should the app-wide launch token (see WebSocket security) ship with the terminals, or separately?
 
 ## Reference: how others build this
 
