@@ -477,17 +477,71 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .file-row svg { flex: none; }
 .file-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 
-/* ---------- file view ---------- */
-.fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px; gap: 10px; }
+/* ---------- files tab and file view (items 101-110) ---------- */
+.fileswrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.files-bar { flex: none; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 12px 20px 0; }
+.files-bar .seg { height: 34px; }
+.files-bar .seg > button { height: 26px; padding: 0 12px; font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.files-bar .seg > button .sub { font-family: var(--font-mono); font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text-muted); }
+.chg { height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-1); color: var(--text-secondary); font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.chg[aria-pressed="true"] { background: var(--surface-3); border-color: var(--accent-lime); color: var(--text-primary); }
+.chg .n { font-family: var(--font-mono); font-weight: 400; }
+.root-note { margin-left: auto; min-width: 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.flist { padding: 12px 20px 20px; gap: 8px; }
+.flist > * { max-width: 1040px; }
+.tree { display: flex; flex-direction: column; }
+.tr { height: 30px; display: flex; align-items: center; gap: 8px; padding-right: 10px; font-family: var(--font-mono); font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 2px; }
+.tr:hover { background: var(--surface-2); }
+.tr > .cv { width: 14px; flex: none; display: flex; color: var(--text-muted); }
+.tr > svg { flex: none; }
+.tr > .nm { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tr > .dir { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.tr > .lnk { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.tr > .mk { margin-left: auto; font-size: 12px; font-weight: 600; }
+.tr > .chgdot { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
+.tr.del > .nm { color: var(--text-muted); text-decoration: line-through; }
+.fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 20px 16px; gap: 10px; }
+.file-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.file-head .p { min-width: 0; font-family: var(--font-mono); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.file-head .sz { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.file-head .mkl { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .fileview .tabs-line { display: flex; align-items: flex-end; gap: 12px; }
 .fileview .tabs-line .mb-tabs { flex: 1; min-width: 0; }
 .fileview .tabs-line .keys { display: flex; align-items: center; gap: 6px; padding-bottom: 10px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.file-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .md-host { flex: 1; min-height: 0; display: flex; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); overflow: hidden; }
 .md-read { flex: 1; min-width: 0; overflow: auto; padding: 24px 32px; }
-.split { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-.editor { width: 100%; height: 100%; resize: none; border: none; padding: 16px; font-family: var(--font-mono); font-size: 13px; line-height: 1.65; background: var(--surface-inset); color: var(--text-primary); }
-.editor:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent-lime); }
-.preview { min-width: 0; overflow: auto; padding: 16px 20px; border-left: 1px solid var(--border-subtle); }
+.code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); }
+.code-host .cm-editor { flex: 1; min-height: 0; }
+/* markdown editor: toolbar, editor and preview side by side, status bar (design v4) */
+.md-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: var(--radius-2); overflow: hidden; }
+.md-tools { flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border-subtle); }
+.md-tools button { width: 28px; height: 26px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); cursor: pointer; }
+.md-tools button:hover { background: var(--surface-3); color: var(--text-primary); }
+.md-tools button[aria-pressed="true"] { color: var(--accent-lime); }
+.md-tools .gap { flex: 1; }
+.md-tools .v { width: auto; padding: 0 8px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.split.write { grid-template-columns: minmax(0, 1fr); }
+.split.write > .preview { display: none; }
+.split.preview-only { grid-template-columns: minmax(0, 1fr); }
+.split.preview-only > .ed { display: none; }
+.split > .ed { min-width: 0; min-height: 0; display: flex; overflow: hidden; }
+.split > .ed .cm-editor { flex: 1; }
+.preview { min-width: 0; overflow: auto; padding: 16px 20px; border-left: 1px solid var(--border-subtle); background: var(--surface-1); }
+.split.preview-only > .preview { border-left: 0; }
+.md-status { flex: none; display: flex; gap: 16px; padding: 4px 12px; background: var(--surface-2); border-top: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.diff { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); font-family: var(--font-mono); font-size: 13px; line-height: 20px; }
+.dr { display: grid; grid-template-columns: 48px 48px 24px auto; min-width: max-content; color: var(--text-secondary); }
+.dr > .n { padding-right: 8px; text-align: right; color: var(--text-muted); user-select: none; }
+.dr > .s { text-align: center; user-select: none; }
+.dr > .x { padding-right: 32px; white-space: pre; }
+.dr.add { background: var(--tint-success); color: var(--text-primary); }
+.dr.add > .s { color: var(--status-success); }
+.dr.del { background: var(--tint-red); color: var(--text-primary); }
+.dr.del > .s { color: var(--accent-red); }
+.file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
+.file-msg img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
 /* rendered markdown (files and operator replies) */
 .md { color: var(--text-primary); font-size: 14px; line-height: 1.65; max-width: 760px; overflow-wrap: anywhere; }
@@ -536,7 +590,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 
 @media (max-width: 720px) {
   .settings, .proj-grid, .grid2, .split { grid-template-columns: minmax(0, 1fr); }
-  .split { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .split:not(.write):not(.preview-only) { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .preview { border-left: 0; border-top: 1px solid var(--border-subtle); }
   .new-grid { grid-template-columns: minmax(0, 1fr); }
 }
@@ -625,25 +679,6 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
       <section class="focus-sec" aria-labelledby="focusTitle">
         <div id="focusHead" class="focus-head"></div>
 
-        <div id="fileView" class="fileview" hidden>
-          <div id="fileHead" class="row wrap"></div>
-          <span id="filePath" class="mono small ellipsis"></span>
-          <div class="tabs-line">
-            <div id="fileTabs" class="mb-tabs" role="tablist" aria-label="File mode"></div>
-            <span class="keys"><span class="kbd">⌘E</span>switch<span class="kbd" style="margin-left:6px">⌘S</span>save</span>
-          </div>
-          <span id="fileLocked" class="small" style="color:var(--accent-cyan)" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
-          <div class="md-host">
-            <div id="fileRead" class="md-read"><div class="md"></div></div>
-            <div id="fileSplit" class="split" hidden>
-              <label class="sr-only" for="fileText">Markdown source</label>
-              <textarea id="fileText" class="editor" spellcheck="false"></textarea>
-              <div class="preview"><div id="filePreview" class="md"></div></div>
-            </div>
-          </div>
-          <span class="small">Saving writes to disk only. The agent isn't notified. Tell it in chat when you want it to act.</span>
-        </div>
-
         <div id="chatView" class="chatwrap" hidden>
           <div id="chatLog" class="pane" aria-live="polite"></div>
           <div class="composer">
@@ -660,7 +695,30 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           </div>
         </div>
 
-        <div id="filesView" class="pane" hidden></div>
+        <div id="filesWrap" class="fileswrap" hidden>
+          <div id="filesBar" class="files-bar"></div>
+          <div id="filesView" class="pane flist"></div>
+          <div id="fileView" class="fileview" hidden>
+            <div id="fileHead" class="file-head"></div>
+            <div id="fileTabsLine" class="tabs-line">
+              <div id="fileTabs" class="mb-tabs" role="tablist" aria-label="File mode"></div>
+              <span class="keys"><span class="kbd">⌘E</span>edit<span class="kbd" style="margin-left:6px">⌘S</span>save<span class="kbd" style="margin-left:6px">⌘F</span>find</span>
+            </div>
+            <span id="fileLocked" class="small" style="color:var(--accent-cyan)" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
+            <div class="file-body">
+              <div id="fileRead" class="md-host" hidden><div class="md-read"><div class="md"></div></div></div>
+              <div id="fileMd" class="md-edit" hidden>
+                <div id="mdTools" class="md-tools" role="toolbar" aria-label="Markdown"></div>
+                <div id="mdSplit" class="split"><div id="mdEd" class="ed"></div><div class="preview"><div id="filePreview" class="md"></div></div></div>
+                <div id="mdStatus" class="md-status"></div>
+              </div>
+              <div id="fileCode" class="code-host" hidden></div>
+              <div id="fileDiff" class="diff" hidden></div>
+              <div id="fileMsg" class="file-msg" hidden></div>
+            </div>
+            <span id="fileFoot" class="small"></span>
+          </div>
+        </div>
         <div id="termView" class="pane" hidden></div>
       </section>
     </div>
@@ -935,6 +993,9 @@ const S = {
 try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catch (e) {}
 try { S.board = localStorage.getItem("switchboard-board-view") === "backlog" ? "backlog" : "board"; } catch (e) {}
 S.editing = null;   // first instruction being edited (items 94-97): {todoId, msgId, text, err}
+S.fileRoot = {};      // TODO id -> "todo" | "worktree" | "project" (item 101), until reload
+S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
+S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
@@ -943,7 +1004,7 @@ const edits = {};   // file id -> {text, mtime}: unsaved file edits survive clos
 const uploads = {}; // 'todo:<id>' | 'new' -> [{name, type, url (data: URL)}], waiting for the next commit
 
 const composer = $("composer"), operatorIn = $("operatorIn"), newText = $("newText"), newProject = $("newProject");
-const fileText = $("fileText"), chatLog = $("chatLog"), pName = $("pName"), pPath = $("pPath"), pPrompt = $("pPrompt"), pRepo = $("pRepo");
+const chatLog = $("chatLog"), pName = $("pName"), pPath = $("pPath"), pPrompt = $("pPrompt"), pRepo = $("pRepo");
 
 const live = () => S.todos.filter((t) => !t.removed_at);
 const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.todos.find((t) => t.id === S.sel)) || null;
@@ -952,8 +1013,10 @@ const filterProject = () => S.projects.find((p) => String(p.id) === S.filter) ??
 const inFilter = (t) => { const p = filterProject(); return !p || t.project_id === p.id; };
 const waitingList = () => live().filter((t) => t.status === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
 const draftKey = () => (S.sel === "operator" ? "operator" : `todo:${S.sel}`);
-const isDirty = (f) => !!f && f.text !== f.content;
-const syncEdit = (f) => { if (isDirty(f)) edits[f.id] = { text: f.text, mtime: f.mtime }; else delete edits[f.id]; };
+const isDirty = (f) => !!f && f.content != null && f.text !== f.content;
+// Unsaved edits are kept per file (R25): TODO files by id, worktree and project files by root and path.
+const fileKey = (f) => (f.root === "todo" ? String(f.id) : `${f.todoId}:${f.root}:${f.rel}`);
+const syncEdit = (f) => { if (isDirty(f)) edits[fileKey(f)] = { text: f.text, mtime: f.mtime }; else delete edits[fileKey(f)]; };
 
 // ---------- attachments: paste, drop or pick; sent as base64 in the JSON body of the commit ----------
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
@@ -1034,10 +1097,27 @@ const loaders = {
     S.detail = d;
     if (d.todo.unread) call("POST", `/api/todos/${id}/read`).catch(() => {});   // only emits an event when something was unread
     const f = S.file;
-    if (f && f.todoId === id && !isDirty(f)) {   // a clean open file follows the disk; a dirty one keeps its base mtime so Save can detect the change
+    if (f && f.todoId === id && f.root === "todo" && !isDirty(f)) {   // a clean open file follows the disk; a dirty one keeps its base mtime so Save can detect the change
       const disk = d.files.find((x) => x.id === f.id);
       if (disk && disk.mtime !== f.mtime) await reloadFile(f);
     }
+  },
+  // Item 109: the tree of the visible root, polled every 5 s and after each run.
+  async tree() {
+    const t = cur(), root = t && S.fileRoot[t.id];
+    if (!t || !root || root === "todo") return;
+    const key = `${t.id}:${root}`;
+    try {
+      const tr = await call("GET", `/api/todos/${t.id}/tree?root=${root}`);
+      if (!S.treeOpen[key]) {   // first look: open every folder on the way to a change
+        const open = new Set();
+        for (const p of Object.keys(tr.marks)) { const parts = p.split("/"); for (let i = 1; i < parts.length; i++) open.add(parts.slice(0, i).join("/")); }
+        S.treeOpen[key] = open;
+      }
+      S.trees[key] = tr;
+    } catch (e) { S.trees[key] = { error: e.message }; }
+    const f = S.file;
+    if (f && f.todoId === t.id && f.root === root && !isDirty(f)) await reloadFile(f);
   },
 };
 const want = new Set();
@@ -1239,66 +1319,117 @@ async function newSession() {
   need("operator");
 }
 
-// ---------- files (R24, R25, R52) ----------
-async function openFile(fid) {
-  const id = S.sel;
+// ---------- files (R24, R25, R52, items 101-110) ----------
+const fsUrl = (f, kind = "fs") => `/api/todos/${f.todoId}/${kind}?root=${f.root}&path=${encodeURIComponent(f.rel)}`;
+const fileGet = (f) => call("GET", f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}` : fsUrl(f));
+// Opens a TODO file (by id) or a worktree / project file (by root and relative path) in the Files tab.
+async function openFile(fid, root = "todo", rel = null, mode = null) {
+  const id = S.sel, t = cur();
+  const f = { todoId: id, root, id: root === "todo" ? fid : null, rel };
   try {
-    const r = await call("GET", `/api/todos/${id}/files/${fid}`);
+    const r = await fileGet(f);
     if (S.sel !== id) return;
-    const e = edits[fid];
-    S.file = { todoId: id, id: fid, name: r.name, path: r.path, content: r.content, mtime: e ? e.mtime : r.mtime, text: e ? e.text : r.content, mode: e ? "edit" : "read" };
-    fileText.value = S.file.text;
+    const e = edits[fileKey(f)];
+    const mark = root === "todo" ? null : S.trees[`${id}:${root}`]?.marks?.[rel] ?? null;
+    Object.assign(f, {
+      name: root === "todo" ? r.name : basename(rel), abs: root === "todo" ? r.path : r.abs, size: r.size, binary: r.binary, image: r.image, large: r.large,
+      content: r.content, mtime: e ? e.mtime : r.mtime, text: e ? e.text : r.content, mark, saved: false,
+      mode: mode ?? (e ? "edit" : "read"),
+    });
+    S.file = f; S.tab = "files"; S.fileRoot[id] = root;
+    if (f.mode === "diff") await loadDiff(f);
     render();
   } catch (e) { toast("danger", "Can't open file", e.message); }
 }
+async function openTreeFile(rel) {
+  const t = cur(), root = S.fileRoot[t.id], mark = S.trees[`${t.id}:${root}`]?.marks?.[rel];
+  if (mark === "D") return openDeleted(rel);
+  openFile(null, root, rel);
+}
+// A deleted file exists only at the base: it opens in Diff, all lines removed.
+async function openDeleted(rel) {
+  const t = cur(), root = S.fileRoot[t.id];
+  const f = { todoId: t.id, root, id: null, rel, name: basename(rel), abs: null, size: 0, binary: false, image: false, large: false, content: null, text: "", mtime: null, mark: "D", mode: "diff", deleted: true };
+  S.file = f;
+  await loadDiff(f);
+  render();
+}
+async function loadDiff(f) {
+  try { f.diff = await call("GET", fsUrl(f, "diff")); if (f.deleted && f.diff) f.abs = null; }
+  catch (e) { f.diff = { error: e.message }; }
+}
 async function reloadFile(f) {
   try {
-    const r = await call("GET", `/api/todos/${f.todoId}/files/${f.id}`);
-    if (S.file !== f || isDirty(f)) return;
+    const r = await fileGet(f);
+    if (S.file !== f || isDirty(f) || r.mtime === f.mtime) return;
     f.content = f.text = r.content;
-    f.mtime = r.mtime;
-    fileText.value = r.content;
+    f.mtime = r.mtime; f.size = r.size;
+    if (f.mode === "diff") await loadDiff(f);
+    S.cm?.handle?.setDoc(f.text ?? "");
+    if (S.file === f) render();
   } catch (e) { /* gone from disk: keep showing the last version */ }
 }
-function closeFile() { S.file = null; render(); }   // unsaved text stays in `edits` and comes back when the file is reopened
+function closeFile() { S.file = null; destroyEditor(); render(); }   // unsaved text stays in `edits` and comes back when the file is reopened
+const fileLocked = (f) => f.root !== "project" && cur()?.status === "running";   // item 108
 function setFileMode(m) {
   const f = S.file;
-  if (!f) return;
-  if (m === "edit" && cur()?.status === "running") return toast("info", ...RUNNING_LOCK);
+  if (!f || f.deleted && m !== "diff") return;
+  if (m === "edit" && fileLocked(f)) return toast("info", ...RUNNING_LOCK);
   f.mode = m;
+  if (m === "diff") loadDiff(f).then(render);
   render();
-  if (m === "edit") fileText.focus();
+  if (m === "edit") setTimeout(() => S.cm?.handle?.focus(), 0);
 }
+const hms = (ms) => (ms ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
 async function saveFile(force = false) {
   const f = S.file;
-  if (!f || !isDirty(f)) return;
-  if (cur()?.status === "running") return toast("info", ...RUNNING_LOCK);
-  const sent = f.text;
+  if (!f || !isDirty(f) || f.deleted) return;
+  if (fileLocked(f)) return toast("info", ...RUNNING_LOCK);
+  const sent = f.text, shown = f.root === "todo" ? f.name : f.rel;
   try {
-    const r = await call("PUT", `/api/todos/${f.todoId}/files/${f.id}`, { content: sent, base_mtime: f.mtime, force });
+    const r = f.root === "todo"
+      ? await call("PUT", `/api/todos/${f.todoId}/files/${f.id}`, { content: sent, base_mtime: f.mtime, force })
+      : await call("PUT", `/api/todos/${f.todoId}/fs`, { root: f.root, path: f.rel, content: sent, base_mtime: f.mtime, force });
     f.content = sent;
-    f.mtime = r.mtime;
+    f.mtime = r.mtime; f.saved = true;
     syncEdit(f);
-    toast("success", "Saved", `${f.name} written to disk. Nothing sent to the agent.`);
+    toast("success", "Saved", `${shown} written to disk. Nothing sent to the agent.`);
+    if (f.root !== "todo") need("tree");
   } catch (e) {
-    if (e.body?.error === "changed") openDialog({ title: "File changed on disk",
-      body: `${f.name} changed on disk after you started editing, most likely by the agent. Overwrite replaces it with your version. Discard drops your edits and loads the file from disk.`,
-      buttons: [["Cancel", "ghost"], ["Discard", "secondary", () => discardFile(f)], ["Overwrite", "danger", () => saveFile(true)]] });
+    if (e.body?.error === "changed") openDialog({ title: "Changed on disk",
+      body: `${shown} changed on disk after you opened it. Overwrite replaces it with your version. Discard drops your edits and reloads the file.`,
+      detail: `loaded   mtime ${hms(f.mtime)}\non disk  mtime ${hms(e.body.mtime)}`,
+      buttons: [["Keep editing", "ghost"], ["Discard", "secondary", () => discardFile(f)], ["Overwrite", "primary", () => saveFile(true)]] });
     else if (e.body?.error === "running") toast("info", ...RUNNING_LOCK);
     else toast("danger", "Not saved", e.message);
   }
   render();
 }
 async function discardFile(f) {
-  delete edits[f.id];
+  delete edits[fileKey(f)];
   try {
-    const r = await call("GET", `/api/todos/${f.todoId}/files/${f.id}`);
+    const r = await fileGet(f);
     f.content = f.text = r.content;
     f.mtime = r.mtime;
-    if (S.file === f) fileText.value = r.content;
+    S.cm?.handle?.setDoc(f.text ?? "");
   } catch (e) { toast("danger", "Can't reload the file", e.message); }
   render();
 }
+// Item 106: the path goes into the TODO's draft, relative for worktree files, absolute otherwise.
+function addPathToMessage() {
+  const f = S.file, key = `todo:${f.todoId}`, path = f.root === "worktree" ? f.rel : f.abs;
+  const cur0 = drafts[key] ?? "";
+  const next = cur0 ? cur0.replace(/\s*$/, " ") + path : path;
+  saveDraftSoon(key, next);
+  if (draftKey() === key) composer.value = next;
+  toast("success", "Added to message", path, ["Go to chat", () => { S.tab = "chat"; render(); composer.focus(); }]);
+}
+
+// The editor bundle (CodeMirror 6) loads on first use.
+let editorLib = null;
+const loadScript = (src) => new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => no(new Error("could not load " + src)); document.head.append(el); });
+function loadEditor() { return (editorLib ??= loadScript("/vendor/editor.js").then(() => window.SBEditor)); }
+function destroyEditor() { S.cm?.handle?.destroy(); S.cm = null; }
 
 // ---------- projects ----------
 const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
@@ -1505,18 +1636,18 @@ function renderFocus() {
   $("nextBtn").disabled = !next;
 
   const d = S.detail?.todo.id === S.sel ? S.detail : null;
-  const fileOpen = !operator && S.file?.todoId === t.id;
   const tab = operator ? "chat" : S.tab;
+  const fileOpen = !operator && tab === "files" && S.file?.todoId === t.id;
   $("backBtn").textContent = S.focusFrom === "backlog" ? "← Backlog" : "← Board";
   document.querySelector(".focus-sec").classList.toggle("wide", tab !== "chat");
   renderFocusHead(operator, t, d, fileOpen);
+  $("chatView").hidden = tab !== "chat";
+  $("filesWrap").hidden = tab !== "files";
   $("fileView").hidden = !fileOpen;
-  $("chatView").hidden = fileOpen || tab !== "chat";
-  $("filesView").hidden = fileOpen || tab !== "files";
-  $("termView").hidden = fileOpen || tab !== "terminal";
-  if (fileOpen) renderFile(t);
-  else if (tab === "chat") renderChat(operator, t, d);
-  else if (tab === "files") renderFiles(t, d);
+  $("filesView").hidden = fileOpen;
+  $("termView").hidden = tab !== "terminal";
+  if (tab === "chat") renderChat(operator, t, d);
+  else if (tab === "files") { renderFilesBar(t, d); if (fileOpen) renderFile(t); else renderFiles(t, d); }
   else renderTerminals(t, d);
 }
 
@@ -1554,7 +1685,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
     if (err && (t.pr || t.pr_number || t.git?.push === "pushed"))
       extra = `<div class="gh-line"><span style="text-wrap:pretty">${esc(err.why)} Showing the last result. Retrying every 2 min; the git line is local and stays current.</span>${btn(S.ghRetrying ? "Retrying…" : "Retry now", "gh-retry", { v: "ghost" })}</div>`;
   }
-  const showTabs = !operator && !fileOpen;
+  const showTabs = !operator;
   const head = $("focusHead");
   head.classList.toggle("notabs", !showTabs);
   const evCount = d ? d.events.length : 0;
@@ -1706,14 +1837,151 @@ function renderHint() {
   $("commitBtn").disabled = (!composer.value.trim() && !uploads[key]?.length && !ns) || !!S.sending;
 }
 
+const MARK = { M: ["modified", "var(--accent-amber)"], A: ["added", "var(--status-success)"], U: ["untracked", "var(--accent-cyan)"], D: ["deleted", "var(--accent-red)"] };
+const FOLDER = '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>';
+const treeUsable = (t) => !!(t.worktree_path && t.git);   // registered and on disk (gitState reads it)
+// Item 101: TODO files, the worktree and the project folder; Changed and a note for the tree roots.
+function renderFilesBar(t, d) {
+  let root = S.fileRoot[t.id] ?? "todo";
+  if (root === "worktree" && !treeUsable(t)) root = S.fileRoot[t.id] = "todo";
+  const p = S.projects.find((x) => x.id === t.project_id);
+  const roots = [["todo", "TODO files", d ? d.files.length : t.file_count, d ? d.files[0]?.path.replace(/\/[^/]*$/, "") : ""],
+    treeUsable(t) && ["worktree", "Worktree", t.branch ?? "", t.worktree_path], ["project", "Project", p?.name ?? "", p?.local_path ?? ""]].filter(Boolean);
+  const tr = S.trees[`${t.id}:${root}`], nChanged = tr?.marks ? Object.keys(tr.marks).length : 0;
+  const note = root === "todo" ? "terminal/ and uploads/ not listed" : root === "worktree" ? `${t.worktree_path} · git ls-files · refreshed every 5 s` : `${p?.local_path ?? ""} · main checkout`;
+  setHtml($("filesBar"), `<div class="seg" role="radiogroup" aria-label="Files root">${roots.map(([id, label, sub, title]) =>
+      `<button type="button" role="radio" aria-checked="${root === id}" tabindex="${root === id ? 0 : -1}" data-act="file-root" data-id="${id}" data-fk="file-root:${id}" title="${esc(title)}"><span>${label}</span><span class="sub">${esc(sub)}</span></button>`).join("")}</div>
+    ${root !== "todo" ? `<button type="button" class="chg" aria-pressed="${S.changedOnly}" data-act="changed" data-fk="changed" title="Uncommitted changes plus commits since the merge base with origin/HEAD"><span>Changed</span><span class="n" style="color:${nChanged ? "var(--accent-amber)" : "var(--text-muted)"}">${nChanged}</span></button>` : ""}
+    <span class="root-note" title="${esc(note)}">${esc(note)}</span>`);
+}
 function renderFiles(t, d) {
-  const running = t.status === "running";
-  $("filesView").innerHTML = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
-    : d.files.map((f) => `<div class="file-row">${SVG(FILE_LINES, 16, "var(--accent-cyan)")}
+  const root = S.fileRoot[t.id] ?? "todo";
+  if (root !== "todo") return renderTree(t, root);
+  const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
+  setHtml($("filesView"), !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
+    : d.files.map((f) => `<div class="file-row" style="padding:10px 12px">${SVG(FILE_LINES, 16, "var(--accent-cyan)")}
         <div class="file-names"><span class="mono" style="font-size:13px">${esc(f.name)}</span><span class="mono muted ellipsis" style="font-size:11px">${esc(f.path)}</span></div>
+        ${f.session_no == null ? '<span class="mono" style="font-size:11px; white-space:nowrap; color:var(--accent-amber)">added outside a session</span>' : multi ? `<span class="mono" style="font-size:11px; white-space:nowrap; color:var(--text-secondary)">session ${f.session_no}</span>` : ""}
         <span class="mono muted" style="font-size:11px">${f.lines == null ? "missing on disk" : plural(f.lines, "line")}</span>
         ${running ? badge("Read-only", "cyan") : ""}${btn("Open", "open-file", { id: f.id, dis: f.lines == null })}
-      </div>`).join("");
+      </div>`).join(""));
+}
+// Items 102, 103: folders first; folders on the way to a change start open; Changed lists the changed files flat.
+function renderTree(t, root) {
+  const key = `${t.id}:${root}`, tr = S.trees[key];
+  if (!tr) { need("tree"); return setHtml($("filesView"), '<span class="empty">Loading…</span>'); }
+  if (tr.error) return setHtml($("filesView"), `<span class="empty">Can't list files: ${esc(tr.error)}</span>`);
+  const marks = tr.marks, links = new Set(tr.links), open = S.treeOpen[key] ?? new Set();
+  const markHtml = (m) => (m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : "");
+  const fileRow = (path, depth, showDir) => {
+    const m = marks[path], name = showDir ? basename(path) : path.split("/").pop();
+    const dir = showDir && path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" data-act="open-tree" data-id="${esc(path)}" style="padding-left:${10 + depth * 18}px"><span class="cv"></span>${SVG(FILE, 15, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main folder</span>' : ""}${markHtml(m)}</div>`;
+  };
+  if (S.changedOnly) {
+    const list = Object.keys(marks).sort();
+    return setHtml($("filesView"), list.length ? `<div class="tree" role="tree">${list.map((p) => fileRow(p, 0, true)).join("")}</div>`
+      : `<span class="empty">${root === "worktree" ? "No changes on this branch." : "No uncommitted changes in the main folder."}</span>`);
+  }
+  // nested folders from the flat path list
+  const top = { dirs: new Map(), files: [] };
+  for (const p of tr.paths) {
+    const parts = p.split("/"); let node = top;
+    for (let i = 0; i < parts.length - 1; i++) { const k = parts.slice(0, i + 1).join("/"); if (!node.dirs.has(k)) node.dirs.set(k, { dirs: new Map(), files: [] }); node = node.dirs.get(k); }
+    node.files.push(p);
+  }
+  const changedUnder = (dir) => Object.keys(marks).some((p) => p.startsWith(dir + "/"));
+  const rows = [];
+  const walk = (node, depth) => {
+    for (const [dir, child] of [...node.dirs].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+      const isOpen = open.has(dir);
+      rows.push(`<div class="tr" role="treeitem" tabindex="0" aria-expanded="${isOpen}" data-act="tree-dir" data-id="${esc(dir)}" style="padding-left:${10 + depth * 18}px"><span class="cv">${SVG(isOpen ? CHEV_D : CHEV_R, 14)}</span>${SVG(FOLDER, 15, "var(--accent-violet)")}<span class="nm">${esc(dir.split("/").pop())}</span>${!isOpen && changedUnder(dir) ? '<span class="chgdot" title="Contains changes"></span>' : ""}</div>`);
+      if (isOpen) walk(child, depth + 1);
+    }
+    for (const p of node.files.sort()) rows.push(fileRow(p, depth, false));
+  };
+  walk(top, 0);
+  setHtml($("filesView"), rows.length ? `<div class="tree" role="tree">${rows.join("")}</div>` : '<span class="empty">No files git knows about.</span>');
+}
+
+const TOOL_ICONS = {
+  heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>', bold: '<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>',
+  italic: '<line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/>',
+  quote: '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+  ul: '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>',
+  ol: '<line x1="10" x2="21" y1="6" y2="6"/><line x1="10" x2="21" y1="12" y2="12"/><line x1="10" x2="21" y1="18" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>',
+  task: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/>', hr: '<path d="M5 12h14"/>',
+  table: '<path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/>',
+};
+const TOOL_TITLES = { heading: "Heading", bold: "Bold", italic: "Italic", quote: "Quote", link: "Link", code: "Code", ul: "Bullet list", ol: "Numbered list", task: "Task", hr: "Rule", table: "Table" };
+const isMd = (name) => /\.(md|markdown)$/i.test(name ?? "");
+function renderFile(t) {
+  const f = S.file, locked = fileLocked(f), dirty = isDirty(f), md0 = isMd(f.name);
+  const text0 = !f.binary && !f.image && !f.large && f.content != null;
+  const canDiff = f.root !== "todo" && !f.binary && !f.image && !f.large && (f.mark || dirty || f.saved || f.deleted);
+  if (f.mode === "edit" && (locked || !text0)) f.mode = "read";
+  if (f.mode === "diff" && !canDiff) f.mode = "read";
+  const mode = f.mode, shown = f.root === "todo" ? f.abs : f.rel, m = f.mark && MARK[f.mark];
+  const lines = f.text != null ? f.text.split("\n").length - (f.text.endsWith("\n") ? 1 : 0) : 0;
+  const sizeText = f.deleted ? "" : f.binary || f.image || f.large ? fmtBytes(f.size) : `${fmtBytes(new Blob([f.text ?? ""]).size)} · ${plural(lines, "line")}`;
+  setHtml($("fileHead"), `${btn("← Files", "close-file", { v: "ghost" })}<span class="p">${esc(shown)}</span>${sizeText ? `<span class="sz">${sizeText}</span>` : ""}
+    ${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}${dirty ? badge("Unsaved", "amber") : ""}
+    <span class="push row">${btn("Copy path", "copy-path", { v: "ghost", dis: !f.abs })}${btn("Add to message", "add-path", { dis: !f.abs })}${btn("Save", "save-file", { v: "primary", dis: locked || !dirty || f.deleted })}</span>`);
+  const modes = f.binary || f.image || f.large ? [] : f.deleted ? [["diff", "Diff"]] : [["read", "Read"], ["edit", locked ? "Edit · locked" : "Edit"], ...(canDiff ? [["diff", "Diff"]] : [])];
+  $("fileTabsLine").hidden = !modes.length;
+  setHtml($("fileTabs"), tabs(modes, mode, "file-mode"));
+  $("fileLocked").hidden = !locked || mode === "diff";
+  const show = { read: false, md: false, code: false, diff: false, msg: false };
+  if (!text0 && !f.deleted) show.msg = true;
+  else if (mode === "diff") show.diff = true;
+  else if (md0 && mode === "read") show.read = true;
+  else if (md0) show.md = true;
+  else show.code = true;
+  $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
+  if (show.msg) {
+    destroyEditor();
+    const src = f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}?raw=1` : fsUrl(f, "fs/raw");
+    setHtml($("fileMsg"), f.image ? `<img src="${esc(withToken(src))}" alt="${esc(f.name)}">` : f.large ? `Large file · ${fmtBytes(f.size)}. Not shown.` : `Binary file · ${fmtBytes(f.size)}. Not shown.`);
+  }
+  if (show.read) { destroyEditor(); setMd($("fileRead").querySelector(".md"), f.text); }
+  if (show.md || show.code) mountEditor(f, show.md ? $("mdEd") : $("fileCode"), show.md ? "rw" : mode === "edit" ? "rw" : "ro", locked);
+  if (show.md) {
+    setHtml($("mdTools"), Object.keys(TOOL_ICONS).map((k) => `<button type="button" data-act="md-tool" data-id="${k}" title="${TOOL_TITLES[k]}" aria-label="${TOOL_TITLES[k]}">${SVG(TOOL_ICONS[k], 15)}</button>`).join("")
+      + `<span class="gap"></span>${["write", "split", "preview"].map((v) => `<button type="button" class="v" data-act="md-view" data-id="${v}" aria-pressed="${S.mdView === v}">${v}</button>`).join("")}`);
+    $("mdSplit").className = "split" + (S.mdView === "write" ? " write" : S.mdView === "preview" ? " preview-only" : "");
+    setMd($("filePreview"), f.text);
+    $("mdStatus").textContent = `${plural(lines, "line")} · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}`;
+  }
+  if (show.diff) {
+    destroyEditor();
+    const dd = f.diff;
+    if (!dd) setHtml($("fileDiff"), '<div style="padding:8px 16px" class="muted">Loading…</div>');
+    else if (dd.error) setHtml($("fileDiff"), `<div style="padding:8px 16px">Can't open: ${esc(dd.error)}</div>`);
+    else if (window.SBEditor) setHtml($("fileDiff"), SBEditor.lineDiff(dd.base, f.deleted ? "" : f.text).map((r) =>
+      `<div class="dr${r.sign === "+" ? " add" : r.sign === "-" ? " del" : ""}"><span class="n">${r.a ?? ""}</span><span class="n">${r.b ?? ""}</span><span class="s">${r.sign === "-" ? "−" : r.sign === "+" ? "+" : ""}</span><span class="x">${esc(r.text)}</span></div>`).join(""));
+    else loadEditor().then(() => render());
+  }
+  const base = f.diff?.base_sha ? f.diff.base_sha.slice(0, 7) : "";
+  $("fileFoot").textContent = mode === "diff" ? `Diff · ${f.diff?.base_label ?? "merge-base"} ${base} (origin/HEAD) → ${dirty ? "your unsaved edits" : "on disk"} · read-only`
+    : f.root === "todo" ? "Saving writes to disk only. The agent isn't notified. Tell it in chat when you want it to act."
+    : f.root === "worktree" ? (locked ? "Read-only while the agent runs. Read mode follows the file as it changes." : "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it.")
+    : "Main checkout. Editable any time; a save warns if the file changed on disk since you opened it.";
+}
+const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed(1)} KB` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+// One CodeMirror view at a time, rebuilt when the file, its host or read/write changes.
+function mountEditor(f, host, rw, locked) {
+  const key = `${fileKey(f)}:${host.id}:${rw}`;
+  if (S.cm?.key === key && S.cm.handle) { S.cm.handle.setReadOnly(locked || rw === "ro"); return; }
+  if (!window.SBEditor) { host.innerHTML = '<div style="padding:12px 16px" class="muted">Loading editor…</div>'; loadEditor().then(() => S.file === f && render(), (e) => toast("danger", "Editor not loaded", e.message)); return; }
+  destroyEditor();
+  host.innerHTML = "";
+  const handle = SBEditor.create(host, { doc: f.text ?? "", name: f.name, readOnly: locked || rw === "ro", onChange: (text) => {
+    f.text = text; syncEdit(f);
+    renderFile(cur());   // header badges, preview and status bar; the editor itself is kept
+  } });
+  S.cm = { key, handle };
 }
 
 // ponytail: terminals arrive in step 8 of the v4 plan; until then the tab shows its empty state only.
@@ -1723,21 +1991,6 @@ function renderTerminals(t, d) {
 }
 
 function setMd(el, text) { if (el._src !== text) { el.innerHTML = md(text); el._src = text; } }
-function renderFile(t) {
-  const f = S.file, running = t.status === "running", dirty = isDirty(f);
-  const mode = running ? "read" : f.mode;   // R25: locked while running; unsaved text stays in f.text
-  $("fileHead").innerHTML = `${SVG(FILE_LINES, 16, "var(--accent-cyan)")}<span class="mono" style="font-size:13px; font-weight:600">${esc(f.name)}</span>
-    ${running ? badge("Read-only · agent running", "cyan") : ""}${dirty ? badge("Unsaved", "amber") : ""}
-    <span class="push row">${btn("Close", "close-file", { v: "ghost" })}${btn("Save", "save-file", { v: "primary", dis: running || !dirty })}</span>`;
-  $("filePath").textContent = f.path;
-  $("fileTabs").innerHTML = tabs([["read", "Read"], ["edit", running ? "Edit · locked" : "Edit"]], mode, "file-mode");
-  $("fileLocked").hidden = !running;
-  $("fileRead").hidden = mode !== "read";
-  $("fileSplit").hidden = mode !== "edit";
-  setMd(mode === "read" ? $("fileRead").firstElementChild : $("filePreview"), f.text);
-  fileText.readOnly = running;
-}
-
 function renderRemoved() {
   const rows = S.todos.filter((t) => t.removed_at).sort((a, b) => b.removed_at.localeCompare(a.removed_at));
   $("removedList").innerHTML = !rows.length ? '<span class="empty">Nothing removed.</span>' : rows.map((r) => {
@@ -1779,6 +2032,7 @@ function renderProjects() {
 const ACTIONS = {
   nav: (id) => (id === "todos" && S.view === "todos" ? goOverview() : setView(id)),
   open: (id) => select(Number(id)),
+  // a chat file chip opens the file in Files › TODO files
   "open-operator": () => select("operator"),
   back: goOverview,
   next: nextWaiting,
@@ -1804,6 +2058,14 @@ const ACTIONS = {
   "edit-cancel": () => { S.editing = null; render(); },
   "edit-save": saveEdit,
   "open-file": (id) => openFile(Number(id)),
+  "open-tree": (id) => openTreeFile(id),
+  "tree-dir": (id) => { const k = `${S.sel}:${S.fileRoot[S.sel]}`, o = (S.treeOpen[k] ??= new Set()); o.has(id) ? o.delete(id) : o.add(id); render(); },
+  "file-root": (id) => { S.fileRoot[S.sel] = id; if (S.file?.todoId === S.sel) closeFile(); need("tree"); render(); },
+  changed: () => { S.changedOnly = !S.changedOnly; render(); },
+  "copy-path": () => S.file?.abs && copyText(S.file.abs, "Copied", S.file.abs),
+  "add-path": addPathToMessage,
+  "md-tool": (id) => S.cm?.handle?.format(id),
+  "md-view": (id) => { S.mdView = id; render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
   "close-file": closeFile,
@@ -1839,6 +2101,7 @@ document.addEventListener("keydown", (e) => {
   if (mod && k === "j") { e.preventDefault(); return nextWaiting(); }
   const fileShown = !!S.file && !$("vFocus").hidden && !$("fileView").hidden;
   if (mod && k === "e" && fileShown) { e.preventDefault(); return setFileMode(S.file.mode === "edit" ? "read" : "edit"); }
+  if (mod && k === "f" && fileShown && S.cm?.handle) { e.preventDefault(); return S.cm.handle.search(); }
   if (mod && k === "s" && fileShown) { e.preventDefault(); return saveFile(); }
   // Esc closes the innermost thing first (design v4): … Settings, then an open file, then Focus.
   if (e.key === "Escape") {
@@ -1848,7 +2111,7 @@ document.addEventListener("keydown", (e) => {
     if (S.view === "todos" && S.mode === "focus") { if (typing) e.target.blur(); return goOverview(); }
     return;
   }
-  if ((e.key === "Enter" || e.key === " ") && !typing && e.target.matches?.('[role="button"][data-act], [role="tab"][data-act]')) { e.preventDefault(); return e.target.click(); }
+  if ((e.key === "Enter" || e.key === " ") && !typing && e.target.matches?.('[role="button"][data-act], [role="tab"][data-act], [role="treeitem"][data-act]')) { e.preventDefault(); return e.target.click(); }
   // Arrow keys move the choice inside a radio group (theme, filter chips, Board/Backlog, file roots).
   if (/^Arrow/.test(e.key) && e.target.matches?.('[role="radio"]')) {
     const all = [...e.target.closest('[role="radiogroup"]').querySelectorAll('[role="radio"]:not([disabled])')];
@@ -1886,17 +2149,20 @@ addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files"
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTodo(e.shiftKey); } });
 newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
-fileText.addEventListener("input", () => { const f = S.file; if (!f) return; f.text = fileText.value; syncEdit(f); renderFile(cur()); });
 [pName, pPath, pPrompt].forEach((el) => el.addEventListener("input", renderProjects));
 
 applyTheme();   // the head script ran before the theme buttons existed; mark the active one
 
 // ---------- live updates (R61): one SSE stream; each event refetches only what is on screen ----------
+const treeVisible = () => S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" && S.tab === "files" && ["worktree", "project"].includes(S.fileRoot[S.sel]);
+// Item 109: git is polled while a tree root is visible; an open clean file follows the disk the same way.
+setInterval(() => { if (treeVisible() && !document.hidden) need("tree"); }, 5000);
 function onEvent(ev) {
   const focusTodo = S.view === "todos" && S.mode === "focus" && typeof S.sel === "number";
   if (ev.type === "todo" || ev.type === "todos") {
     need("todos");   // header counts and the tab title are always on screen
     if (focusTodo && (ev.type === "todos" || ev.id === S.sel)) need("detail");
+    if (focusTodo && ev.id === S.sel && treeVisible()) need("tree");   // a run that ended may have changed files
   } else if (ev.type === "operator") {
     if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   } else if (ev.type === "projects") need("projects");
