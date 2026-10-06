@@ -1,6 +1,6 @@
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { Database } from "bun:sqlite";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
@@ -424,7 +424,41 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!instruction) return fail("the first instruction is required");
     const id = createTodo(Number(body.project_id), instruction, "user", uploadsIn(body.attachments));
     setMeta("last_project_id", String(Number(body.project_id)));
+    if (body.start === true) start(id);   // Add & start (item 92): one request, so the TODO never sits in the backlog
     return json((await summaries("t.id = ?", [id]))[0]);
+  }
+
+  // Items 94-97: the first instruction and the project can change until the TODO starts.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/edit$/)) && method === "POST") {
+    const t = liveTodo(Number(m[1]));
+    if (t.status !== "not_started") return fail("this TODO has started; its first instruction and project are fixed now", 409);
+    const first = db.query("SELECT id, body FROM messages WHERE todo_id = ? ORDER BY id LIMIT 1").get(t.id) as { id: number; body: string };
+    const instruction = body.instruction === undefined ? null : String(body.instruction).trim();
+    if (instruction === "") return fail("the first instruction is required");
+    const to = body.project_id === undefined ? null : projectRow(Number(body.project_id));
+    if (body.project_id !== undefined && !to) return fail("choose a project");
+    const from = projectRow(t.project_id)!;
+    db.transaction(() => {
+      if (instruction !== null && instruction !== first.body) {
+        db.run("UPDATE messages SET body = ? WHERE id = ?", [instruction, first.id]);
+        // The title is the first instruction until an agent sets one (item 7).
+        setTodo(t.id, t.title === first.body ? { title: instruction } : {});
+        addEvent(t.id, "edited", "user", "first instruction");
+      }
+      if (to && to.id !== from.id) {
+        // Nothing else is stored per project before the start: the artifact folder holds only the attachments.
+        // HOME is a real path, so the stored paths start with these folders exactly.
+        const a = artifactDir(from.slug, t.id), b = artifactDir(to.slug, t.id);
+        if (existsSync(a)) { mkdirSync(join(b, ".."), { recursive: true }); renameSync(a, b); }
+        for (const tbl of ["attachments", "files"])
+          db.run(`UPDATE ${tbl} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`, [b + "/", a.length + 2, a.length + 1, a + "/"]);
+        setTodo(t.id, { project_id: to.id });
+        addEvent(t.id, "edited", "user", `project ${from.name} → ${to.name}\nMoved data/${from.slug}/${t.id}/ → data/${to.slug}/${t.id}/\nAttachment paths rewritten.`);
+        emit({ type: "projects" });
+      }
+    })();
+    emit({ type: "todos" });
+    return json((await summaries("t.id = ?", [t.id]))[0]);
   }
 
   if ((m = path.match(/^\/api\/todos\/(\d+)\/files\/(\d+)$/))) {

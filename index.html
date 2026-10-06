@@ -287,6 +287,22 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .operator-body { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 
+/* Board / Backlog (items 86-88) */
+.bb-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: -12px; }
+.bb-switch { height: 40px; }
+.bb-switch > button { height: 32px; padding: 0 16px; font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.bb-switch .n { font-family: var(--font-mono); font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--text-muted); }
+.bb-switch .wait { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
+.bl-list { display: flex; flex-direction: column; gap: 1px; background: var(--border-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); overflow: hidden; }
+.bl-row { display: grid; grid-template-columns: minmax(88px, 128px) minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 10px 12px 10px 16px; background: var(--surface-1); cursor: pointer; transition: background var(--fast); }
+.bl-row:hover { background: var(--surface-2); }
+.bl-row > .c1 { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-family: var(--font-mono); font-size: 12px; }
+.bl-row > .c2 { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bl-row > .c2 > .t { font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: pretty; overflow-wrap: anywhere; }
+.bl-row > .c3 { display: flex; align-items: center; gap: 8px; flex: none; }
+.board-empty { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 20px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); font-size: 14px; color: var(--text-secondary); }
+.edit-btn { margin-top: 2px; height: 24px; padding: 0 8px; background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-1); color: var(--text-secondary); font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+.edit-btn:hover { border-color: var(--accent-lime); color: var(--text-primary); }
 .lane { display: flex; flex-direction: column; gap: 12px; }
 .lane-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); }
 .lane-dot { width: 8px; height: 8px; flex: none; align-self: center; }
@@ -546,8 +562,13 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
   <!-- Overview -->
   <div id="vOverview" class="view" hidden>
     <div class="ov">
+      <div class="bb-row">
+        <div id="bbSwitch" class="seg bb-switch" role="radiogroup" aria-label="TODO view"></div>
+        <span class="row small"><span class="kbd">B</span>switch</span>
+        <span id="bbHint" class="push small"></span>
+      </div>
       <div class="top-grid">
-        <div class="panel panel--lime">
+        <div id="newPanel" class="panel panel--lime">
           <div class="row"><span class="panel-title">New TODO</span><span class="push row small"><span class="kbd">N</span>focus</span></div>
           <div class="new-grid">
             <div class="mb-field">
@@ -564,8 +585,9 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           </div>
           <div class="row wrap">
             <button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="pick-files" data-id="new" title="Attach files (or paste, or drop them on the text)">Attach</button>
-            <span id="newNote" class="small">Lands in Not started. Nothing launches until you start it.</span>
-            <span class="push row"><span class="kbd">⌘↵</span><button type="button" id="addBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="add" disabled>Add</button></span>
+            <span id="newNote" class="small">Lands in the backlog. Nothing launches until you start it.</span>
+            <span class="push row wrap"><span class="kbd">⌘⇧↵</span><button type="button" id="addStartBtn" class="mb-btn mb-btn--secondary mb-btn--md" data-act="add-start" disabled>Add &amp; start</button>
+              <span class="kbd" style="margin-left:4px">⌘↵</span><button type="button" id="addBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="add" disabled>Add</button></span>
           </div>
         </div>
         <div class="panel panel--violet">
@@ -729,6 +751,16 @@ function ago(iso) {
   if (s < 86400) return Math.floor(s / 3600) + "h ago";
   return Math.floor(s / 86400) + "d ago";
 }
+// Backlog rows: "now", "12m", "4h", "1d", "2w", "3mo"
+function shortAge(iso) {
+  const m = (Date.now() - new Date(iso)) / 60000;
+  if (m < 1) return "now";
+  if (m < 60) return Math.floor(m) + "m";
+  if (m < 1440) return Math.floor(m / 60) + "h";
+  if (m < 14 * 1440) return Math.floor(m / 1440) + "d";
+  if (m < 60 * 1440) return Math.floor(m / 10080) + "w";
+  return Math.floor(m / 43200) + "mo";
+}
 const SVG = (d, size = 16, color = "currentColor") => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const FILE = '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>';
 const FILE_LINES = FILE + '<path d="M16 13H8"/><path d="M16 17H8"/>';
@@ -747,7 +779,6 @@ const STATUS = {
 const LANES = [
   { st: "waiting", label: "Waiting on you", color: "var(--accent-amber)", hint: "Handle one, then ⌘J for the next.", empty: "Nothing needs you right now." },
   { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit are queued until the turn ends.", empty: "No agent is running." },
-  { st: "not_started", label: "Not started", color: "var(--accent-violet)", hint: "Nothing launches until you start it.", empty: "Add a TODO above." },
   { st: "idle", label: "Idle", color: "var(--text-secondary)", hint: "Resting state. Remove a TODO when it is done.", empty: "No idle TODOs." },
 ];
 const AUTHOR = {
@@ -808,7 +839,8 @@ function cardGitHtml(t) {
   if (pr) prLine = `<a class="pr-line" href="${esc(pr.url)}" target="_blank" rel="noopener" data-act="link" title="Open PR #${pr.number} on GitHub">
       <span class="pr-chip ${err ? "stale" : pr.state}">PR #${pr.number}</span><span class="ellipsis">${factsHtml(prFactsOf(pr, false), !!err)}</span>${err ? `<span class="stale">${esc(age)}</span>` : ""}${SVG(ARROW, 13)}</a>`;
   else if (g?.push === "pushed" && t.pr_checked_at) prLine = `<div title="${err ? esc(`${GH_LABEL[err.kind]} · last result ${age}`) : ""}">no PR${err ? " · " + esc(age) : ""}</div>`;
-  const gitLine = g ? `<div class="ellipsis" title="${esc(factsText(gitFactsOf(g, true)))}">${factsHtml(gitFactsOf(g, false))}</div>` : "";
+  const sess = t.session_count > 1 ? `<span> · </span><span style="color:var(--text-secondary)">session ${t.session_count}</span>` : "";   // item 80
+  const gitLine = g ? `<div class="ellipsis" title="${esc(factsText(gitFactsOf(g, true)))}">${factsHtml(gitFactsOf(g, false))}${sess}</div>` : "";
   return `<div class="card-git"${g ? "" : ' style="margin-top:0"'}>${gitLine}${prLine}</div>`;
 }
 // Item 124: the git and PR parts of the Focus info line. Each shows its most important fact plus "+N", and every fact
@@ -901,6 +933,8 @@ const S = {
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
 };
 try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catch (e) {}
+try { S.board = localStorage.getItem("switchboard-board-view") === "backlog" ? "backlog" : "board"; } catch (e) {}
+S.editing = null;   // first instruction being edited (items 94-97): {todoId, msgId, text, err}
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
@@ -1058,6 +1092,11 @@ function nextWaiting() {
   if (other) toast("info", "Nothing waiting in " + filterProject().name, `${other} waiting in other projects. Show all to see them.`);
   else toast("success", "Nothing waiting on you", "Back to the overview.");
 }
+function setBoard(v) {
+  S.board = v;
+  try { localStorage.setItem("switchboard-board-view", v); } catch (e) {}
+  render();
+}
 function setFilter(id) {
   try { localStorage.setItem("switchboard-project-filter", id); } catch (e) {}
   S.filter = id;
@@ -1111,21 +1150,57 @@ async function commit(key, el) {
 }
 
 // ---------- TODO actions ----------
-async function addTodo() {
+let adding = false;
+// Add, or Add & start (item 92): Add & start is one request and leaves you in the backlog with a toast to open it.
+async function addTodo(start = false) {
   const instruction = newText.value.trim(), pid = S.newProject;
-  if (!instruction || pid == null) return;
-  $("addBtn").disabled = true;
+  if (!instruction || pid == null || adding) return;
+  adding = true;
+  render();
   const files = uploads.new ?? [];
   try {
-    await call("POST", "/api/todos", { project_id: pid, instruction, attachments: files.map(wire) });
+    const t = await call("POST", "/api/todos", { project_id: pid, instruction, attachments: files.map(wire), start });
     newText.value = "";
     uploads.new = (uploads.new ?? []).filter((u) => !files.includes(u));   // keeps files added while this was sending
-    const fp = filterProject();
-    if (fp && fp.id !== pid) toast("info", "Added to " + (S.projects.find((p) => p.id === pid)?.name ?? "another project"), short(instruction, 40) + ". Hidden by the project filter.");
-    else toast("success", "Added to Not started", short(instruction, 48) + ". Start it from its card when ready.");
+    const fp = filterProject(), hidden = fp && fp.id !== pid;
+    if (start) startedToast(t.id, instruction, hidden);
+    else if (hidden) toast("info", "Added to " + (S.projects.find((p) => p.id === pid)?.name ?? "another project"), short(instruction, 40) + ". Hidden by the project filter.");
+    else toast("success", "Added to the backlog", short(instruction, 48) + ". Start it when you have room.");
     need("todos");
   } catch (e) { toast("danger", "Not added", e.message); }
+  adding = false;
   render();
+}
+const startedToast = (id, text, hidden = false) =>
+  toast("success", "Started", short(text, 48) + (hidden ? ". It is on the board, hidden by the project filter." : ". It is on the board now."), ["Open", () => select(id)]);
+// Item 89: a start from the backlog leaves you there.
+async function startFromBacklog(id) {
+  const t = S.todos.find((x) => x.id === id);
+  try { await call("POST", `/api/todos/${id}/start`); startedToast(id, t?.title ?? ""); }
+  catch (e) { toast("danger", "Can't start", e.message); }
+  need("todos");
+}
+// Items 94-97: edit the first instruction, or move the TODO to another project, until it starts.
+async function saveEdit() {
+  const ed = S.editing;
+  if (!ed || !ed.text.trim()) return;
+  try {
+    await call("POST", `/api/todos/${ed.todoId}/edit`, { instruction: ed.text });
+    S.editing = null;
+    toast("success", "Saved", "First instruction and title updated. It moved to the top of the backlog.");
+    need("detail", "todos");
+  } catch (e) {
+    ed.err = e.status === 409 ? "409 · This TODO has started, maybe from another tab. Editing is closed; your text is kept here so you can copy it." : e.message;
+    render();
+  }
+}
+async function moveProject(id, pid) {
+  const p = S.projects.find((x) => x.id === pid);
+  try {
+    await call("POST", `/api/todos/${id}/edit`, { project_id: pid });
+    toast("success", "Moved to " + (p?.name ?? "project"), `Artifact folder moved to data/${p?.slug ?? "…"}/${id}/ with its attachments.`);
+  } catch (e) { toast("danger", "Not moved", e.message); }
+  need("detail", "todos", "projects");
 }
 function askRemove(id) {
   const t = (S.detail?.todo.id === id && S.detail.todo) || S.todos.find((x) => x.id === id);
@@ -1152,7 +1227,7 @@ async function doRestore(id) {
   }
   delete drafts[`todo:${id}`];   // the server sent the draft as part of the continue prompt and cleared it
   const what = [t?.queued_count && "queued messages", t?.has_draft && "your draft"].filter(Boolean).join(" and ");
-  toast("success", "Restored", t?.session_id ? `Resumed session ${t.session_id} with ${what || '"continue"'}.` : "Back in the list. Not started.");
+  toast("success", "Restored", t?.session_id ? `Resumed session ${t.session_id} with ${what || '"continue"'}.` : "Back in the backlog.");
   select(id);
   need("todos");
 }
@@ -1331,9 +1406,13 @@ function renderOverview() {
     S.newProject = filterProject()?.id ?? (S.projects.some((p) => p.id === S.meta?.last_project_id) ? S.meta.last_project_id : S.projects[0]?.id ?? null);
   newProject.value = S.newProject ?? "";
   newProject.disabled = !S.projects.length;
-  $("newNote").textContent = S.projects.length ? "Lands in Not started. Nothing launches until you start it." : "Add a project in Settings › Projects first.";
-  $("addBtn").disabled = !newText.value.trim() || S.newProject == null;
+  $("newNote").textContent = S.projects.length ? "Lands in the backlog. Nothing launches until you start it." : "Add a project in Settings › Projects first.";
+  $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || S.newProject == null || adding;
   setHtml($("newFiles"), uploadChips("new"));
+  // The New TODO card lives in the backlog only (item 92). It stays in the page, hidden, because its inputs and
+  // drop zone are wired once at load.
+  const backlog = S.board === "backlog";
+  $("newPanel").hidden = !backlog;
 
   const c = S.operator;
   $("operatorBadge").innerHTML = c?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
@@ -1346,25 +1425,54 @@ function renderOverview() {
   if (document.activeElement !== operatorIn) operatorIn.value = drafts.operator ?? "";
 
   const lv = live(), fp = filterProject();
+  const isIdea = (t) => t.status === "not_started";
+  const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
   const waits = (list) => list.filter((t) => t.status === "waiting").length;
-  const chip = (id, label, list, dot) => {
-    const w = waits(list);
-    return `<button type="button" role="radio" class="pchip" aria-checked="${String(id) === String(fp?.id ?? "all")}" data-act="filter" data-id="${id}" data-fk="filter:${id}"${w ? ` title="${w} waiting on you"` : ""}>${dot && w ? '<span class="wait"></span>' : ""}<span>${esc(label)}</span><span class="n">${list.length}</span></button>`;
+  const anyWait = waits(lv);
+  // Item 86: the switch counts follow the project filter; the amber square counts every project, as waiting does everywhere.
+  setHtml($("bbSwitch"), [["board", "Board", lv.filter((t) => !isIdea(t) && inFilter(t)).length, "Started work · B"], ["backlog", "Backlog", lv.filter((t) => isIdea(t) && inFilter(t)).length, "Not started yet · B"]]
+    .map(([id, label, n, title]) => `<button type="button" role="radio" aria-checked="${S.board === id}" tabindex="${S.board === id ? 0 : -1}" data-act="board" data-id="${id}" data-fk="board:${id}" title="${title}">${id === "board" && anyWait ? '<span class="wait"></span>' : ""}<span>${label}</span><span class="n">${n}</span></button>`).join(""));
+  $("bbHint").textContent = backlog ? "Not started. Nothing launches until you start it." : "Started work. Ideas wait in the backlog.";
+  // Item 90: chip counts and "in other projects" count the current view; the amber square and "waiting" count all live TODOs.
+  const chip = (id, label, list, all, dot) => {
+    const w = waits(all);
+    return `<button type="button" role="radio" class="pchip" aria-checked="${String(id) === String(fp?.id ?? "all")}" tabindex="${String(id) === String(fp?.id ?? "all") ? 0 : -1}" data-act="filter" data-id="${id}" data-fk="filter:${id}"${w ? ` title="${w} waiting on you"` : ""}>${dot && w ? '<span class="wait"></span>' : ""}<span>${esc(label)}</span><span class="n">${list.length}</span></button>`;
   };
-  const hidden = lv.filter((t) => !inFilter(t)), hw = waits(hidden);
+  const view = lv.filter(inView), hidden = view.filter((t) => !inFilter(t)), hw = waits(lv.filter((t) => !inFilter(t)));
   setHtml($("pfilter"), `<span class="microlabel">Project</span>
-    <div class="pchips" role="radiogroup" aria-label="Show TODOs for project">${chip("all", "All", lv, false)}${S.projects.map((p) => chip(p.id, p.name || "untitled", lv.filter((t) => t.project_id === p.id), true)).join("")}</div>
+    <div class="pchips" role="radiogroup" aria-label="Show TODOs for project">${chip("all", "All", view, lv, false)}${S.projects.map((p) => chip(p.id, p.name || "untitled", view.filter((t) => t.project_id === p.id), lv.filter((t) => t.project_id === p.id), true)).join("")}</div>
     ${fp ? `<span class="push row"><span class="pfilter-hidden" style="color:${hw ? "var(--accent-amber)" : "var(--text-muted)"}">${plural(hidden.length, "TODO")} in other projects${hw ? ` · ${hw} waiting` : ""}</span>${btn("Show all", "filter", { v: "ghost", id: "all" })}</span>` : ""}`);
 
-  const rows = lv.filter(inFilter).sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first within a lane
-  $("lanes").innerHTML = LANES.map((l) => {
+  const rows = view.filter(inFilter).sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first within a lane
+  if (backlog) return setHtml($("lanes"), backlogHtml(rows, fp));
+  if (!rows.length) {
+    const ideas = lv.filter((t) => isIdea(t) && inFilter(t)).length;
+    return setHtml($("lanes"), `<div class="board-empty"><span>No started TODOs${fp ? " in " + esc(fp.name) : ""}. ${ideas ? `${plural(ideas, "idea")} in the backlog.` : "The backlog is empty too."}</span><span class="push">${btn("Open backlog", "board", { id: "backlog" })}</span></div>`);
+  }
+  setHtml($("lanes"), LANES.map((l) => {
     const list = rows.filter((t) => t.status === l.st);
     const empty = l.st === "waiting" && fp ? `Nothing in ${esc(fp.name)} needs you.` : l.empty;
     return `<section class="lane" aria-label="${esc(l.label)}">
       <div class="lane-head"><span class="lane-dot" style="background:${l.color}"></span><h2 class="lane-label">${l.label}</h2><span class="lane-count" style="color:${l.color}">${list.length}</span><span class="small">${l.hint}</span></div>
       ${list.length ? `<div class="cards">${list.map(cardHtml).join("")}</div>` : `<span class="empty">${empty}</span>`}
     </section>`;
-  }).join("");
+  }).join(""));
+}
+
+// Item 88: the backlog as compact rows, most recently touched first.
+function backlogHtml(rows, fp) {
+  const head = `<div class="lane-head"><span class="lane-dot" style="background:var(--accent-violet)"></span><h2 class="lane-label">Backlog</h2><span class="lane-count" style="color:var(--accent-violet)">${rows.length}</span><span class="small">Recently touched first. A note or an edit moves an idea to the top.</span></div>`;
+  if (!rows.length) return `<section class="lane">${head}<span class="empty">${fp ? `Nothing in the ${esc(fp.name)} backlog.` : "The backlog is empty. Capture an idea above."}</span></section>`;
+  return `<section class="lane" aria-label="Backlog">${head}<div class="bl-list">${rows.map((t) => {
+    const notes = Math.max(0, t.pending_count - 1), atts = t.pending_attachments ?? 0;
+    const meta = notes || atts ? [notes && plural(notes, "note"), atts && plural(atts, "attachment"), "waiting for the start"].filter(Boolean).join(" · ") : "";
+    return `<div class="bl-row" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
+      <div class="c1"><span class="ellipsis" style="color:var(--text-secondary)">${esc(t.project_name)}</span><span class="muted" title="${esc(new Date(t.created_at).toLocaleString())}">${shortAge(t.created_at)}</span></div>
+      <div class="c2"><span class="t">${esc(t.title)}</span>${meta ? `<span class="mono muted" style="font-size:11px">${meta}</span>` : ""}</div>
+      <div class="c3">${t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
+        <span title="Remove · no confirmation, nothing is running" style="display:flex"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove">${SVG(CLOSE, 15)}</button></span></div>
+    </div>`;
+  }).join("")}</div></section>`;
 }
 
 function cardHtml(t) {
@@ -1374,15 +1482,14 @@ function cardHtml(t) {
   const last = lm && lm.author === "app" ? lm : la ? { ...la, author: "agent" } : lm;
   const who = !last ? "" : last.author.startsWith("user") ? (t.message_count === 1 ? "You · first instruction" : "You") : AUTHOR[last.author]?.[0] ?? last.author;
   const foot = t.status === "running" ? "● " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working")
-    : t.status === "not_started" ? `${plural(t.pending_count, "message")} delivered at start`
     : t.file_count ? `${plural(t.file_count, "file")} · ${t.file_names.join(", ")}` : "No files";
   return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${t.status === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${st.edge}">
-    <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(lm?.at)}</span></div>
+    <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     <div class="card-meta"><span class="proj">${esc(t.project_name)}</span>${t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : ""}</div>
     ${cardGitHtml(t)}
     ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || last.files)}</span></div>` : ""}
-    <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span>${t.status === "not_started" ? `<span class="push">${btn("Start", "start", { v: "primary", id: t.id })}</span>` : `<span class="open-label">${t.status === "waiting" ? "Answer" : "Open"} →</span>`}</div>
+    <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span><span class="open-label">${t.status === "waiting" ? "Answer" : "Open"} →</span></div>
   </div>`;
 }
 
@@ -1434,11 +1541,14 @@ function renderFocusHead(operator, t, d, fileOpen) {
     if (t.attention && !running) actions += btn("Clear attention", "clear", { id: t.id });
     if (t.session_id) actions += `<span title="${running ? "Available once the agent stops" : `End session ${n} and start session ${n + 1} with a hand-over`}" style="display:flex">${btn("New session", "open-ns", { id: t.id, dis: running })}</span>`;
     actions += `<button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO" title="Remove TODO">${SVG(TRASH, 15)}</button>`;
-    left = `<span class="sec">${esc(t.project_name)}</span>`;
+    left = t.status === "not_started" && S.projects.length > 1
+      ? `<select aria-label="Project" title="Project · editable until you start" data-change="move-project" data-id="${t.id}">${S.projects.map((p) => `<option value="${p.id}"${p.id === t.project_id ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`
+      : `<span class="sec">${esc(t.project_name)}</span>`;
     if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, "Copy session id · resume outside with claude --resume")}`;
     if (t.branch) left += `<span class="sep">·</span><span class="sec">${SVG(BRANCH, 12)}${esc(t.branch)}</span>`;
     left += infoGitHtml(t);
     if (!t.worktree_path && t.status !== "not_started") left += `<span class="sep">·</span><span>project folder, shared with other TODOs</span>`;
+    if (t.status === "not_started") left += `<span class="sep">·</span><span>not started · instruction and project editable until you start</span>`;
     right = infoPrHtml(t) + ctxHtml(t.ctx, `Session ${n || 1}`, running);
     const err = t.gh_error;
     if (err && (t.pr || t.pr_number || t.git?.push === "pushed"))
@@ -1456,6 +1566,9 @@ function renderFocusHead(operator, t, d, fileOpen) {
 
 function msgHtml(m, operator) {
   const [who, color] = AUTHOR[m.author] ?? [m.author, "var(--text-muted)"];
+  const t = operator ? null : cur();
+  const firstOf = !operator && t?.status === "not_started" && S.detail?.messages[0]?.id === m.id;   // items 94-98
+  const editing = firstOf && S.editing?.msgId === m.id;
   const flags = [];
   if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
   if (m.state === "queued") flags.push(badge("Queued · delivers on idle", "blue", true));
@@ -1464,10 +1577,15 @@ function msgHtml(m, operator) {
   if (m.file_id && !operator) flags.push(`<button type="button" class="file-chip" data-act="open-file" data-id="${m.file_id}" data-fk="chip:${m.id}">${SVG(FILE, 13)}${esc(m.file_name ?? "file")}</button>`);
   // R54: operator replies are full markdown; worker, app and user messages are short plain text
   const body = (m.tools?.length ? `<span class="tools-line">→ ${m.tools.map(esc).join(" · ")}</span>` : "")
-    + (m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : m.body ? `<div class="msg-body">${esc(m.body)}</div>` : "");
+    + (editing ? `<div style="display:flex; flex-direction:column; gap:8px">
+        <label class="sr-only" for="editFirst">First instruction</label><textarea id="editFirst" class="mb-textarea" rows="4">${esc(S.editing.start)}</textarea>
+        ${S.editing.err ? `<span style="font-size:12px; line-height:1.5; color:var(--accent-red)">${esc(S.editing.err)}</span>` : ""}
+        <div class="row wrap"><span class="small">Also updates the title. Attachments stay; add more as notes.</span>
+          <span class="push row"><span class="kbd">Esc</span>${btn("Cancel", "edit-cancel", { v: "ghost" })}<span class="kbd">⌘↵</span>${btn("Save", "edit-save", { v: "primary" })}</span></div></div>`
+    : m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : m.body ? `<div class="msg-body">${esc(m.body)}</div>` : "");
   const files = (m.attachments ?? []).map(attachmentHtml).join("");
   return `<div class="msg${m.author.startsWith("user") ? " msg--user" : ""}">
-    <div class="msg-side"><span class="who" style="color:${color}">${esc(who)}</span><span class="mono muted" style="font-size:11px">${fmtTime(m.at)}</span></div>
+    <div class="msg-side"><span class="who" style="color:${color}">${esc(who)}</span><span class="mono muted" style="font-size:11px">${fmtTime(m.at)}</span>${firstOf && !editing ? `<button type="button" class="edit-btn" data-act="edit-first" data-id="${m.id}" title="Edit the first instruction · until you start">Edit</button>` : ""}</div>
     <div class="msg-main">${body}<div class="atts">${files}</div>${flags.length ? `<div class="flags">${flags.join("")}</div>` : ""}</div>
   </div>`;
 }
@@ -1545,7 +1663,12 @@ function renderChat(operator, t, d) {
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
-  if (chatLog._html !== html) { chatLog.innerHTML = html; chatLog._html = html; }
+  if (chatLog._html !== html) {
+    const hadFocus = document.activeElement?.id === "editFirst";
+    chatLog.innerHTML = html; chatLog._html = html;
+    const ta = $("editFirst");   // the edit box is rebuilt with its starting text; put the typed text back
+    if (ta && S.editing) { ta.value = S.editing.text; if (hadFocus) ta.focus(); }
+  }
   if (chatLog.dataset.sig !== sig || atBottom) chatLog.scrollTop = chatLog.scrollHeight;
   chatLog.dataset.sig = sig;
 
@@ -1673,7 +1796,13 @@ const ACTIONS = {
   restore: (id) => doRestore(Number(id)),
   "new-session": newSession,
   commit: () => commit(draftKey(), composer),
-  add: addTodo,
+  add: () => addTodo(false),
+  "add-start": () => addTodo(true),
+  board: (id) => setBoard(id),
+  "start-backlog": (id) => startFromBacklog(Number(id)),
+  "edit-first": (id) => { const m = S.detail?.messages.find((x) => x.id === Number(id)); if (!m) return; S.editing = { todoId: S.sel, msgId: m.id, start: m.body, text: m.body, err: "" }; render(); const ta = $("editFirst"); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); },
+  "edit-cancel": () => { S.editing = null; render(); },
+  "edit-save": saveEdit,
   "open-file": (id) => openFile(Number(id)),
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
@@ -1727,14 +1856,27 @@ document.addEventListener("keydown", (e) => {
     if (next) { e.preventDefault(); next.click(); next.focus(); }
     return;
   }
-  if (!typing && !mod && !e.altKey && k === "n") { e.preventDefault(); goOverview(); newText.focus(); }
+  if (!typing && !mod && !e.altKey && k === "b" && S.view === "todos" && S.mode === "overview") { e.preventDefault(); return setBoard(S.board === "board" ? "backlog" : "board"); }
+  // N: the New TODO card lives in the backlog, so it switches there first (item 93).
+  if (!typing && !mod && !e.altKey && k === "n") { e.preventDefault(); S.focusFrom = null; goOverview(); setBoard("backlog"); newText.focus(); }
 });
 
+// <select> in rendered markup: data-change names the action, like data-act for clicks.
+document.addEventListener("change", (e) => {
+  const el = e.target.closest?.("[data-change]");
+  if (el?.dataset.change === "move-project") moveProject(Number(el.dataset.id), Number(el.value));
+});
+document.addEventListener("input", (e) => { if (e.target.id === "editFirst" && S.editing) { S.editing.text = e.target.value; if (S.editing.err) { S.editing.err = ""; render(); } } });
+document.addEventListener("keydown", (e) => {
+  if (e.target.id !== "editFirst") return;
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEdit(); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); S.editing = null; render(); }
+}, true);
 composer.addEventListener("input", () => { saveDraftSoon(draftKey(), composer.value); renderHint(); });
 composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commit(draftKey(), composer); } });
 operatorIn.addEventListener("input", () => saveDraftSoon("operator", operatorIn.value));
 operatorIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commit("operator", operatorIn); } });
-newText.addEventListener("input", () => { $("addBtn").disabled = !newText.value.trim() || S.newProject == null; });
+newText.addEventListener("input", () => { $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || S.newProject == null || adding; });
 const filePick = $("filePick");
 filePick.addEventListener("change", () => { addUploads(filePick.dataset.key, filePick.files); filePick.value = ""; });
 acceptFiles(document.querySelector(".composer"), () => (S.sel === "operator" ? null : draftKey()));
@@ -1742,7 +1884,7 @@ acceptFiles(newText.closest(".panel"), () => "new");
 // A file dropped next to a drop zone would make the browser open it and leave the app.
 addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
-newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTodo(); } });
+newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTodo(e.shiftKey); } });
 newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
 fileText.addEventListener("input", () => { const f = S.file; if (!f) return; f.text = fileText.value; syncEdit(f); renderFile(cur()); });
 [pName, pPath, pPrompt].forEach((el) => el.addEventListener("input", renderProjects));
