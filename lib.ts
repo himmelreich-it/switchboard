@@ -284,7 +284,6 @@ export function contextFile(c: {
 
 // The whole schema plus its migrations. Every migration only adds, so an older build still reads the database.
 export function migrateDb(db: Database) {
-  const hadSessions = !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'").get();
   db.exec(`
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL,
@@ -321,16 +320,17 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("events", "session_no", "INTEGER");
   addColumn("events", "meta", "TEXT");           // a result's duration and tool count (JSON)
   addColumn("files", "session_no", "INTEGER");
-  // Databases from before sessions: every started TODO was one session, which becomes session 1.
-  if (!hadSessions) db.transaction(() => {
-    db.exec(`
-INSERT INTO sessions (todo_id, no, session_id, started_at)
-  SELECT t.id, 1, t.session_id, COALESCE((SELECT MIN(e.at) FROM events e WHERE e.todo_id = t.id AND e.kind = 'launch'), t.created_at)
-  FROM todos t WHERE t.session_id IS NOT NULL;
-UPDATE messages SET session_no = 1 WHERE state = 'delivered' AND todo_id IN (SELECT todo_id FROM sessions);
-UPDATE events SET session_no = 1 WHERE todo_id IN (SELECT todo_id FROM sessions)
-  AND at >= (SELECT s.started_at FROM sessions s WHERE s.todo_id = events.todo_id);
-UPDATE files SET session_no = 1 WHERE todo_id IN (SELECT todo_id FROM sessions);
-`);
+  // A started TODO without a sessions row was one session, which becomes session 1: every TODO of a database from
+  // before sessions, and one started by an older build on this database. Runs on every start, so it catches both.
+  db.transaction(() => {
+    const ids = (db.query("SELECT id FROM todos t WHERE session_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.todo_id = t.id)").all() as { id: number }[]).map((r) => r.id);
+    for (const id of ids) {
+      db.run(`INSERT INTO sessions (todo_id, no, session_id, started_at)
+        SELECT id, 1, session_id, COALESCE((SELECT MIN(e.at) FROM events e WHERE e.todo_id = t.id AND e.kind = 'launch'), created_at) FROM todos t WHERE id = ?`, [id]);
+      const start = (db.query("SELECT started_at FROM sessions WHERE todo_id = ?").get(id) as { started_at: string }).started_at;
+      db.run("UPDATE messages SET session_no = 1 WHERE todo_id = ? AND state = 'delivered' AND session_no IS NULL", [id]);
+      db.run("UPDATE events SET session_no = 1 WHERE todo_id = ? AND at >= ? AND session_no IS NULL", [id, start]);
+      db.run("UPDATE files SET session_no = 1 WHERE todo_id = ? AND session_no IS NULL", [id]);
+    }
   })();
 }

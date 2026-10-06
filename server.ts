@@ -270,15 +270,27 @@ function fileOut(f: { id: number; path: string; session_no: number | null }) {
 
 // Item 85: every file in the artifact folder is a TODO file, also one written from a terminal. Files no session
 // registered get session_no NULL ("added outside a session"). uploads/ (attachments) and terminal/ (context) are skipped.
+// Symlinks are skipped: they could point the editor at files outside the folder, or loop.
+// ponytail: stops after 500 files; an artifact folder holds plans and notes, not a checkout.
 function registerDiskFiles(t: Todo) {
   const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
   if (!existsSync(dir)) return;
-  const real = realpathSync(dir);
-  for (const rel of readdirSync(real, { recursive: true }) as string[]) {
-    if (/^(uploads|terminal)(\/|$)/.test(rel) || rel.split("/").some((p) => p.startsWith("."))) continue;
-    const path = join(real, rel);
-    if (statSync(path).isFile()) db.run("INSERT OR IGNORE INTO files (todo_id, path) VALUES (?, ?)", [t.id, path]);
-  }
+  const found: string[] = [];
+  const walk = (d: string, top: boolean) => {
+    let names: string[];
+    try { names = readdirSync(d); } catch { return; }
+    for (const n of names) {
+      if (found.length >= 500 || n.startsWith(".") || (top && (n === "uploads" || n === "terminal"))) continue;
+      const p = join(d, n);
+      try {
+        const st = lstatSync(p);
+        if (st.isDirectory()) walk(p, false);
+        else if (st.isFile()) found.push(p);
+      } catch {}
+    }
+  };
+  walk(realpathSync(dir), true);
+  for (const p of found) db.run("INSERT OR IGNORE INTO files (todo_id, path) VALUES (?, ?)", [t.id, p]);
 }
 
 async function projectOut(p: Project) {
@@ -373,6 +385,8 @@ function fsTarget(t: Todo, root: string, rel: string, write = false) {
   if (typeof rel !== "string" || !rel || isAbsolute(rel)) throw httpError(400, "path must be relative to the root");
   const lexical = resolve(base, rel);
   if (!isInside(lexical, resolve(base))) throw httpError(403, `${rel} is outside the ${root}`);
+  // A link whose target is missing would make a write create that target, wherever it points.
+  if (!existsSync(lexical)) { let link = false; try { link = lstatSync(lexical).isSymbolicLink(); } catch {} if (link) throw httpError(403, `${rel} is a link to a missing file`); }
   const real = existsSync(lexical) ? realpathSync(lexical) : join(realpathSync(dirname(lexical)), basename(lexical));
   const allowed = [realpathSync(p.local_path), realpathSync(worktreeRoot(p.local_path))];
   if (!allowed.some((d) => isInside(real, d))) throw httpError(403, `${rel} points outside the project`);
@@ -444,13 +458,16 @@ async function spawnTerm(x: Term) {
     const claude = Bun.which("claude");
     if (!claude) throw httpError(400, "claude is not on PATH");
     await writeContext(t);
+    if (terms.get(x.id) !== x || x.proc) return;   // closed, or restarted twice, while the context file was written
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
-    cmd = [claude, "--add-dir", dir, x.message];
+    // `--add-dir` takes every folder after it, so `--` ends it before the first message.
+    cmd = [claude, "--add-dir", dir, ...(x.message ? ["--", x.message] : [])];
   } else cmd = [process.env.SWITCHBOARD_SHELL || process.env.SHELL || "/bin/zsh", "-l"];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
   delete env.SWITCHBOARD_PARENT;   // a `bun server.ts` started in the terminal must not take this server's stdin rule
   Object.assign(x, { exited: false, code: null, signal: null, buf: [], bufLen: 0, title: null });
-  const proc = Bun.spawn(cmd, {
+  let proc: Subprocess;
+  try { proc = Bun.spawn(cmd, {
     cwd: x.cwd, env,
     terminal: {
       cols: x.cols, rows: x.rows,
@@ -462,7 +479,12 @@ async function spawnTerm(x: Term) {
         termSend(x, data);
       },
     },
-  });
+  }); } catch (e: any) {
+    // e.g. the worktree was deleted after a merge: the tab shows the failure instead of a terminal with no process
+    x.exited = true;
+    emit({ type: "terminals", id: x.todoId });
+    throw httpError(400, `could not start ${cmd[0]}: ${e.message}`);
+  }
   x.proc = proc;
   emit({ type: "terminals", id: x.todoId });
   // The exit code comes from the process; the PTY's own exit callback only reports that the stream closed.
@@ -605,6 +627,7 @@ async function api(req: Request, path: string): Promise<Response> {
         addEvent(t.id, "edited", "user", "first instruction");
       }
       if (to && to.id !== from.id) {
+        if (termsOf(t.id).some((x) => !x.exited)) throw httpError(409, "close this TODO's terminals first; they run in the old project's folders");
         // Nothing else is stored per project before the start: the artifact folder holds only the attachments.
         // HOME is a real path, so the stored paths start with these folders exactly.
         const a = artifactDir(from.slug, t.id), b = artifactDir(to.slug, t.id);
@@ -650,7 +673,7 @@ async function api(req: Request, path: string): Promise<Response> {
       const [files, others, diff] = await Promise.all([
         sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]),
         sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--others", "--exclude-standard", "-z"]),
-        b ? sh(["git", "-C", base, "--no-optional-locks", "diff", "--name-status", "-z", b.sha]) : Promise.resolve({ ok: true, out: "" }),
+        b ? sh(["git", "-C", base, "--no-optional-locks", "diff", "--relative", "--name-status", "-z", b.sha]) : Promise.resolve({ ok: true, out: "" }),
       ]);
       if (!files.ok) return fail(`git could not list ${base}`, 500);
       const marks = parseMarks(diff.ok ? diff.out : "", others.out);
@@ -713,7 +736,8 @@ async function api(req: Request, path: string): Promise<Response> {
       const x: Term = {
         id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)!.local_path, no,
         message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null,
-        buf: [], bufLen: 0, sockets: new Set(), cols: Number(body.cols) || 100, rows: Number(body.rows) || 30, fresh: false,
+        buf: [], bufLen: 0, sockets: new Set(), fresh: false,
+        cols: Math.max(2, Math.min(500, Number(body.cols) || 100)), rows: Math.max(2, Math.min(300, Number(body.rows) || 30)),
       };
       terms.set(x.id, x);
       try { await spawnTerm(x); } catch (e) { terms.delete(x.id); throw e; }
@@ -904,7 +928,7 @@ const TOKEN = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("
 const TOKEN_FILE = join(HOME, "token");
 const VENDOR = join(import.meta.dir, "vendor");
 
-Bun.serve({
+const httpServer = Bun.serve({
   hostname: HOST,
   port: PORT,
   idleTimeout: 0, // the default 10s would cut the SSE stream
@@ -959,6 +983,9 @@ async function shutdown() {
   if (stopping) process.exit(1);
   stopping = true;
   console.log("stopping: interrupting running agents");
+  // The port frees at once, so a window reopened during the 5 s below starts a new server instead of reading this
+  // server's token and attaching to a server that is about to exit.
+  httpServer.stop(true);
   closeTerms(null);
   await Promise.race([stopAll(), Bun.sleep(5000)]);
   try { if (readFileSync(TOKEN_FILE, "utf8") === TOKEN) unlinkSync(TOKEN_FILE); } catch {}

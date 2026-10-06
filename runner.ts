@@ -113,11 +113,19 @@ export function commitMessage(todoId: number, author: "user" | "user via operato
 // first run under a session id made here. Every session starts here: Start for session 1, New session for the rest.
 // `before` runs once the new session is live, so what it records belongs to that session.
 function openSession(todoId: number, no: number, takeBodies: () => string[], reason: string, header = "", before?: (sessionId: string) => void) {
+  const prev = todoRow(todoId)!;
   const sessionId = crypto.randomUUID();
   db.run("INSERT INTO sessions (todo_id, no, session_id, started_at) VALUES (?, ?, ?, ?)", [todoId, no, sessionId, now()]);
   setTodo(todoId, { session_id: sessionId, ctx: null });
   before?.(sessionId);
   runWorker(todoId, takeBodies, { sessionId }, reason, header);
+  // The run could not be set up (runWorker posted why): undo, so Start or New session can be tried again and
+  // delivery keeps resuming the session that exists.
+  if (!running.has(todoId)) {
+    db.run("DELETE FROM sessions WHERE todo_id = ? AND no = ?", [todoId, no]);
+    if (no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, no - 1]);
+    setTodo(todoId, { session_id: prev.session_id, ctx: prev.ctx });
+  }
 }
 
 // The first turn: every message committed before the start goes out as one prompt.
@@ -246,6 +254,7 @@ function setupWorker(todoId: number, takeBodies: () => string[], session: { sess
   const args = new Map<string, string>(); // tool_use_id -> command, for the denial message
   const denied = new Set<string>();
   const abort = new AbortController();
+  const res = { duration_ms: null as number | null, tools: 0 };   // the result footer (item 128)
   const options: Options = {
     ...session,
     cwd: p.local_path,
@@ -264,6 +273,7 @@ function setupWorker(todoId: number, takeBodies: () => string[], session: { sess
       PreToolUse: [{
         hooks: [async (input: any) => {
           args.set(input.tool_use_id, toolArg(input.tool_input));
+          res.tools++;
           setTodo(todoId, { last_tool: input.tool_name }, false);
           addEvent(todoId, "PreToolUse", "agent", toolLine(input.tool_name, input.tool_input));
           return {};
@@ -289,13 +299,11 @@ function setupWorker(todoId: number, takeBodies: () => string[], session: { sess
 
   // The context meter (item 123) and the result footer (item 128) come from the run's own messages.
   let ctx: Ctx | null = t.ctx ? JSON.parse(t.ctx) : null;
-  const res = { duration_ms: null as number | null, tools: 0 };
   run.done = (async () => {
     const { text, error } = await drain(q, (m) => {
       if (m.type === "system" && m.subtype === "permission_denied") deny(m.tool_name, m.tool_use_id, m.message ?? "");
       if (m.type === "result") for (const d of m.permission_denials ?? []) deny(d.tool_name, d.tool_use_id, toolArg(d.tool_input));
       if (m.type === "result") res.duration_ms = m.duration_ms ?? null;
-      if (m.type === "assistant" && m.parent_tool_use_id == null) res.tools += (m.message?.content ?? []).filter((b: any) => b.type === "tool_use").length;
       ctx = usageStep(ctx, m);
     });
     // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
