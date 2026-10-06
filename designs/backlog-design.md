@@ -16,7 +16,7 @@ The TODOs screen gets two views, **Board** and **Backlog**. The backlog holds ev
 |---|---|---|
 | What is the backlog? | All live TODOs with status `not_started`. No new status, no new table. | `not started yet` already means "an idea that has not launched" (items 6, 8, 11). |
 | Order | Recently touched first (`updated_at`), as in the board lanes (item 40). | No schema change. Adding a note or editing an idea moves it to the top, which is a natural way to bump it. |
-| Where to add | The New TODO card is on both views. **Add** files the TODO in the backlog; **Add & start** starts it at once. | Capture works from anywhere; urgent work does not need a detour through the backlog. |
+| Where to add | Only in the backlog. The New TODO card is part of the backlog view, with **Add** and **Add & start**. | The board shows started work only; a new TODO is not started, so adding is a backlog action. Add & start covers work that should begin right away. |
 | Editing before start | The first instruction and the project can be edited while the TODO has not started. | Ideas are rough when captured and get refined before they are worth starting. |
 | Back to the backlog | No. A started TODO never returns to the backlog. | Keeps item 11 (no pause). `idle` stays the resting state of started work. |
 
@@ -24,7 +24,7 @@ The TODOs screen gets two views, **Board** and **Backlog**. The backlog holds ev
 
 ### Board and backlog
 
-68. The TODOs screen has a **Board / Backlog** switch above the project filter row, each side with its count. `B` toggles it. The pick is kept in localStorage, like the project filter. The New TODO card and the pinned operator card sit above the switch and are the same in both views.
+68. The TODOs screen has a **Board / Backlog** switch at the top, each side with its count. `B` toggles it. The pick is kept in localStorage, like the project filter. Below the switch, the board shows the pinned operator card, the project filter row and the lanes; the backlog shows the New TODO card next to the operator card, the project filter row and the backlog list. The board has no New TODO card.
 69. The **board** shows the lanes `Waiting on you`, `Running` and `Idle`, in that order (item 40 without the Not started lane). With no started TODOs it says so and names how many are in the backlog, with a button that switches to it.
 70. The **backlog** lists every TODO that has not started, most recently touched first, as compact rows rather than cards, so many ideas fit on one screen. A row shows the title (the first instruction until the TODO starts, clamped to two lines), the project, how long ago it was created, the number of notes and attachments waiting for the start, and a Draft badge. Each row has **Start** and **Remove** (no confirmation, as for any TODO that is not running, item 12). Clicking the row opens the Focus view.
 71. Starting a TODO from the backlog leaves the user in the backlog, so they can keep browsing; a toast says it started, with a button to open it. Starting from the Focus view stays in the Focus view, as today.
@@ -33,8 +33,8 @@ The TODOs screen gets two views, **Board** and **Backlog**. The backlog holds ev
 
 ```
  TODOs ─────────────────────────────────────────────────────────────
- [ New TODO ………………………………… ]  [ Operator ……………………………… ]
  ( Board 9 | Backlog 23 )                                       B
+ [ New TODO ………………………………… ]  [ Operator ……………………………… ]
  Project  [All 23] [infra 11] [web 8] [docs 4]
  ───────────────────────────────────────────────────────────────────
  infra · 3d   Rotate the staging DB credentials and update…   Draft
@@ -45,8 +45,8 @@ The TODOs screen gets two views, **Board** and **Backlog**. The backlog holds ev
 
 ### Adding
 
-74. The New TODO card has **Add** (`⌘↵`) and **Add & start** (`⌘⇧↵`). Add creates the TODO as `not started yet`, as today (item 6); its note reads "Lands in the backlog. Nothing launches until you start it." Add & start creates it and starts it in one request, so it appears on the board as `running`. Both record their events (`created`, then the start's run events) as separate actions would.
-75. Adding from the board view shows a toast "Added to the backlog" with a button to switch there, because the new TODO is not visible on the board.
+74. TODOs are added only in the backlog view. The New TODO card has **Add** (`⌘↵`) and **Add & start** (`⌘⇧↵`). Add creates the TODO as `not started yet`, as today (item 6), at the top of the backlog; the card's note reads "Lands in the backlog. Nothing launches until you start it." Add & start creates it and starts it in one request, so it leaves the backlog and appears on the board as `running`, with the same toast as item 71. Both record their events (`created`, then the start's run events) as separate actions would.
+75. `N` focuses the New TODO input (item 59). On the board it switches to the backlog first.
 
 ### Editing before start
 
@@ -66,8 +66,8 @@ The TODOs screen gets two views, **Board** and **Backlog**. The backlog holds ev
 - **Server.**
   - `POST /api/todos` takes an optional `start: true` and calls `start(id)` after `createTodo`.
   - New `POST /api/todos/:id/edit` with `{ instruction?, project_id? }`, following the existing action routes. It runs in one transaction: check `not_started`, update the first message and title, and on a project change rename the artifact folder and rewrite `attachments.path`. It writes an `edited` event with actor `user`.
-- **Frontend.** `S.board` (`"board"` or `"backlog"`) next to the project filter in localStorage; `renderOverview` renders either the lanes (without `not_started`) or the backlog list; `LANES` loses its Not started entry. The New TODO card gets the second button and shortcut. `renderFocusHead` and the first chat message get the edit controls for `not_started`.
-- **Spec items that change.** 5 (one page → two views), 6 (Add & start, backlog note), 36 (wording), 40 (board lanes), 58 (screens), 59 (`B`, `⌘⇧↵`), 63 (filter counts per view).
+- **Frontend.** `S.board` (`"board"` or `"backlog"`) next to the project filter in localStorage; `renderOverview` renders either the lanes (without `not_started`) or the backlog list; `LANES` loses its Not started entry. The New TODO card renders only in the backlog view and gets the second button and shortcut. `renderFocusHead` and the first chat message get the edit controls for `not_started`.
+- **Spec items that change.** 5 (one page → two views), 6 (added only in the backlog, Add & start), 36 (wording), 40 (board lanes), 58 (screens), 59 (`B`, `⌘⇧↵`, `N` switches to the backlog), 63 (filter counts per view).
 - **Design.** The spec says the UI follows the newest design, and `Switchboard-v3.html` has no backlog. Either a v4 design is made from this document before building, or the spec notes that the backlog screens follow this document until v4 exists.
 
 ## Not in scope
