@@ -1,6 +1,6 @@
 # Files, editing and terminals
 
-Proposal, 2026-10-06. Extends `feature-spec-switchboard.md` with browsing the files of a TODO's worktree or its project's main folder, light editing in the style of Orca, and terminals per TODO: clean shells, or Claude Code started with the TODO's context. Items are numbered from 68, the next free spec number; once agreed they move into the spec, and the UI goes into `designs/Switchboard-v4.html` before it is built (the spec's Design rule).
+Proposal, 2026-10-06. Extends `feature-spec-switchboard.md` with browsing the files of a TODO's worktree or its project's main folder, light editing in the style of Orca, and terminals per TODO: clean shells, or Claude Code started with the TODO's context. Because the app can now open shells, it also gets a launch token that guards its API (item 88). Items are numbered from 68, the next free spec number; once agreed they move into the spec, and the UI goes into `designs/Switchboard-v4.html` before it is built (the spec's Design rule).
 
 Guiding principle, as in the spec: **streamline the user's work, don't delegate their control.** The chat stays the lightweight way to steer an agent. The terminals and the editor are for doing things yourself, or with a Claude session of your own, without leaving the app for an IDE.
 
@@ -105,6 +105,13 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 86. The TODO's agent does not see the terminals and is not told about anything done in them. Shells, Claude sessions and the agent can work in the same worktree at the same time, as in any terminal. Nothing guards against two of them running git at the same moment (as the spec's "Not built on purpose" does for shared worktrees). For Claude, the context file says so.
 87. Files and terminals belong to a TODO. The overview, the operator and the Projects page have neither.
 
+### Access
+
+88. The app requires a **launch token**, a random secret the server picks at each start. Every request under `/api/` must carry it, including the SSE stream and the terminal WebSockets; without it the server answers 401. The page itself (`/`) and the favicon stay open, because they hold no data.
+    - The window app gets the token itself, also when it attaches to a server that is already running (item 65), so nothing changes for the user.
+    - In browser mode, `bun server.ts` prints `http://127.0.0.1:4477/#token=…` at start (this changes item 64). Opening that link stores the token in the page, so reloads keep working. After a server restart the old token stops working, and the page asks the user to open the new link.
+    - This shuts out programs that can reach the port but cannot see the token. Examples are another user's programs on a shared machine, or a Linux Docker container started with `--network host`. Without the token such a program can already create and start TODOs; with terminals it would get a shell directly.
+
 ## How it is built
 
 - **PTY in the Bun server.** `Bun.spawn(cmd, { terminal: { cols, rows, data, exit } })`, then `proc.terminal.write()` and `resize()`.
@@ -123,14 +130,14 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 - **Scrollback.** The server keeps the last 256 KB of each terminal's output.
   - On attach it sends a terminal reset, then that buffer, then live output. It then re-sends the size, so full-screen programs (vim, htop, Claude Code) redraw.
   - If replaying the raw buffer garbles too often, the fallback is Orca's approach: mirror each terminal into `@xterm/headless` on the server and send `addon-serialize` snapshots.
-- **WebSocket security.**
-  - The upgrade is accepted only when `Origin` is `http://127.0.0.1:<port>` or `http://localhost:<port>`, on top of today's Host check. This matters because browsers do not apply CORS to WebSockets. Any website can open `ws://127.0.0.1:4477`, and its Host header is then correct, so the Host and content-type checks alone would hand every website a shell.
-  - The Origin check stops websites, but not programs. Any program that can reach `127.0.0.1:4477` and simply skips the Origin header gets in. Examples are another user's programs on a shared machine, or a Linux Docker container started with `--network host`. Today such a program can already drive the whole API (create and start TODOs); a terminal gives it a shell directly.
-  - A **launch token** closes that gap (open question 1). It works like this:
-    - At each start the server picks a random secret and keeps it only in memory.
-    - Every API request and WebSocket must carry it in a cookie. Without it the server answers 401.
-    - The window app sets the cookie before loading the page. In browser mode the server prints `http://127.0.0.1:4477/?token=…` once at start; the page moves the token into the cookie and drops it from the URL. Jupyter does the same.
-    - A program that cannot see the secret, such as another user's program or a container, is shut out.
+- **Security.**
+  - **Origin check.** A WebSocket upgrade is accepted only when `Origin` is `http://127.0.0.1:<port>` or `http://localhost:<port>`, on top of today's Host check. Browsers do not apply CORS to WebSockets: any website can open `ws://127.0.0.1:4477`, and its Host header is then correct. The Origin check stops websites; the token stops programs, which can simply leave the Origin header out.
+  - **Launch token (item 88).**
+    - The token is 32 random bytes (`crypto.getRandomValues`), hex-encoded and kept in memory.
+    - The server also writes it to `~/.switchboard/token` with mode 0600 and removes the file on shutdown. That is how the window app reads it, including when it attaches to a running server. On Windows the user's profile folder is private to the user by default.
+    - The Electron window loads `http://127.0.0.1:<port>/#token=<token>`. A URL fragment is never sent to a server, and the page moves it into localStorage and clears it from the address bar. localStorage is separate per port.
+    - `call()` in `index.html` sends the token as an `X-Switchboard-Token` header. `EventSource` and `WebSocket` cannot set headers, so their URLs carry `?token=`, and so do attachment URLs in images and links.
+    - It is not a cookie, because browsers do not separate cookies by port. A cookie for `127.0.0.1` would also go to every other server there, such as a dev server or a container's published port, and that server could read the token.
 - **Files API.** Every request names a root (`worktree` or `project`) and a relative path, checked as in item 78.
   - `GET /api/todos/<id>/tree?root=` returns `{paths, changed}`.
   - `GET /api/todos/<id>/fs?root=&path=` returns `{content, mtime, size, binary}`.
@@ -165,10 +172,6 @@ The TODO's own session stays in the app and is only steered through the chat. Cl
 - Showing ignored files.
 - A browser preview pane (Orca and Kanban Code have one).
 - Telling the agent about edits or terminal commands. The user says it in chat.
-
-## Open questions
-
-1. Should the app-wide launch token (see WebSocket security) ship with the terminals, or separately?
 
 ## Reference: how others build this
 
