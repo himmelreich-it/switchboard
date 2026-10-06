@@ -1,19 +1,19 @@
-# Files, editing and terminal
+# Files, editing and terminals
 
-Proposal, 2026-10-06. Extends `feature-spec-switchboard.md` with browsing the files of a TODO's worktree or its project's main folder, light editing in the style of Orca, and a terminal per TODO. Items are numbered from 68, the next free spec number; once agreed they move into the spec, and the UI goes into `designs/Switchboard-v4.html` before it is built (the spec's Design rule).
+Proposal, 2026-10-06. Extends `feature-spec-switchboard.md` with browsing the files of a TODO's worktree or its project's main folder, light editing in the style of Orca, and terminals per TODO: clean shells, or Claude Code started with the TODO's context. Items are numbered from 68, the next free spec number; once agreed they move into the spec, and the UI goes into `designs/Switchboard-v4.html` before it is built (the spec's Design rule).
 
-Guiding principle, as in the spec: **streamline the user's work, don't delegate their control.** The chat stays the lightweight way to steer an agent. The terminal and the editor are for looking and doing small things yourself, without leaving the app for an IDE.
+Guiding principle, as in the spec: **streamline the user's work, don't delegate their control.** The chat stays the lightweight way to steer an agent. The terminals and the editor are for doing things yourself, or with a Claude session of your own, without leaving the app for an IDE.
 
-## Replacing the Events tab with a terminal
+## Replacing the Events tab with terminals
 
 Yes. The Events tab is an audit trail (runs, hooks, attention changes with their actor, denials) that is opened rarely, mostly to find out why a TODO is in its state. A terminal is used often. So the Focus view tabs become **Chat · Files · Terminal**, and Events moves to a button in the Focus head that opens the same list in a side panel (item 68). Nothing is lost.
 
-"Choosing between the lightweight and the terminal" can mean two things, and this design does both, in separate phases:
+The Terminal tab holds as many terminals as you need, each in its own tab. A new terminal is one of two kinds:
 
-- **A shell in the TODO's worktree** (items 79 to 84). You run tests, look at `git log`, or start a dev server yourself, next to the agent's chat. It is independent of the agent and safe to build first.
-- **The TODO's own session in the full Claude Code UI** (item 85). `claude --resume <session_id>` runs in the terminal while the TODO is not running, so you can drive that session directly and come back to chat afterwards. It is a handoff, not a live view. An app run cannot be watched in a terminal, because the Agent SDK runs Claude Code without its terminal UI. While you are in Claude Code, the session also lacks the app's MCP tools and hooks.
+- **Shell**: a clean shell in the worktree, for docker, git, tests or a dev server.
+- **Claude**: a new Claude Code session in the worktree that starts with the TODO's context: what its agent is doing, its branch, the recent chat and its files.
 
-**Recommendation:** build the shell first. Decide on the Claude Code handoff after using the shell for a while (open question 1).
+The TODO's own session stays in the app and is only steered through the chat. Claude in a terminal is always a separate session.
 
 ## Functionality
 
@@ -61,51 +61,66 @@ Yes. The Events tab is an audit trail (runs, hooks, attention changes with their
 
 ### Terminal
 
-79. The Terminal tab shows one shell per TODO, started the first time the tab is opened.
-    - The shell starts in the TODO's worktree if one is registered, else in the project's local folder.
-    - When the shell's folder is not the worktree, a hint offers **Restart in worktree**, for example after the agent registers a worktree later.
-80. The shell's lifetime:
-    - It keeps running when the user switches tabs, closes the browser tab or reloads. Reopening shows the recent output and then the live shell.
-    - It ends when the TODO is removed (with item 12's 10-second kill if it does not exit), when the app shuts down (item 56), or when the shell itself exits. When it exits, the tab shows the exit code and a **Restart** button.
-    - Restoring a TODO does not restore its shell.
-81. The shell program:
-    - On macOS and Linux it is the user's login shell (`$SHELL -l`).
-    - On Windows it is `pwsh` if installed, else Windows PowerShell.
-    - `SWITCHBOARD_SHELL` overrides the program on every OS.
-    - Its environment is the server's (the login shell's in the window app, item 66), plus `TERM=xterm-256color` and `COLORTERM=truecolor`.
-82. Keys and clipboard:
-    - While the terminal has focus, every key goes to the shell, including Esc and N.
-    - On macOS the ⌘ shortcuts keep working, because ⌘ never reaches a shell.
-    - On Windows and Linux, Ctrl combinations go to the shell (Ctrl+J, Ctrl+E and Ctrl+S mean something there). Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V.
+79. The Terminal tab holds any number of terminals for the TODO, each in its own tab with a × to close it. The Terminal tab's label shows how many are open.
+    - A **+** button opens a new terminal, as a **Shell** or as **Claude** (item 81).
+    - Both kinds start in the TODO's worktree if one is registered, else in the project's local folder. When there is a worktree, the + menu also offers both kinds in the project folder, for example for a git command on the main checkout.
+80. A terminal tab is labelled with the title its program sets (shells and Claude Code set one). Without a title it reads `Shell 2` or `Claude 1`. A terminal in the project folder while a worktree exists also gets `· project`.
+81. **Claude with context.** New Claude opens a short form with the folder and an editable first message, prefilled with:
+
+    > I'm working on the Switchboard TODO "&lt;title&gt;". What its agent is doing, its branch and PR, the recent chat and its files are in `<context file>`. Read it, then wait for my instructions.
+
+    The user can add their own ask, and ⌘↵ starts. The app then:
+    - writes the context file (item 82);
+    - runs `claude --add-dir <artifact folder> "<first message>"` in the chosen folder. The `--add-dir` lets Claude read and write the TODO's files without permission prompts.
+
+    This is a new session, separate from the TODO's:
+    - It runs with the user's normal Claude Code settings and permission mode, without the app's MCP tools or hooks.
+    - Nothing it does appears in the TODO's chat, and the app does not store its session id. Claude Code keeps its transcript as for any session, so `claude --resume` in a shell finds it.
+82. The context file is `<artifact folder>/terminal/context.md`, rewritten at each Claude launch. It is not listed under TODO files. It is a snapshot, taken at launch, of:
+    - the TODO's title, project, status and first instruction;
+    - the worktree path, branch, git line and PR line (item 5);
+    - the last 30 chat messages, with author and time;
+    - the TODO's files, with absolute paths, so Claude can read them;
+    - the TODO's session id, so Claude can find the full transcript under `~/.claude/projects/` if it needs more history;
+    - a note that the TODO's agent may be working in the same worktree at the same time, so Claude checks with the user before committing, switching branches or rewriting history.
+83. A terminal's lifetime:
+    - It keeps running when the user switches tabs or TODOs, closes the browser tab, or reloads. Reopening shows its recent output, then the live terminal.
+    - It ends when its tab is closed (asking first while its process is alive), when the TODO is removed, or when the app shuts down (item 56).
+    - When its process exits, the tab stays with the exit code and a **Restart** button; a Claude tab also gets **Shell here**.
+    - Removing a TODO that has open terminals asks for confirmation and says how many will close, the same as item 12 does while the agent runs. Restoring a TODO does not bring its terminals back.
+84. The programs:
+    - **Shell**: on macOS and Linux, the user's login shell (`$SHELL -l`). On Windows, `pwsh` if installed, else Windows PowerShell. `SWITCHBOARD_SHELL` overrides the shell on every OS.
+    - **Claude**: `claude`, found on PATH. In the window app, PATH comes from the login shell (item 66).
+    - **Environment** for both: the server's, plus `TERM=xterm-256color` and `COLORTERM=truecolor`.
+85. Keys and clipboard:
+    - While a terminal has focus, every key goes to it, including Esc and N.
+    - On macOS the ⌘ shortcuts keep working, because ⌘ never reaches a terminal.
+    - On Windows and Linux, Ctrl combinations go to the terminal (Ctrl+J, Ctrl+E and Ctrl+S mean something there). Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V.
     - Clicking outside the terminal hands the keys back to the app.
-83. The agent does not see the terminal and is not told about commands typed there. The user's commands share the worktree with the agent, as in any terminal, and nothing guards against both running git at the same moment (as the spec's "Not built on purpose" does for shared worktrees).
-84. The overview, the operator and the Projects page have no terminal.
-
-### Claude Code in the terminal (phase 3, needs a decision)
-
-85. While a TODO is started and not `running`, the Terminal tab offers **Open in Claude Code**. It runs `claude --resume <session_id> --permission-mode auto` in the project's local folder. That is the folder the session was launched from, which `--resume` needs (item 44); the worktree is still named in the transcript.
-    - While Claude Code runs, the TODO counts as `running` (item 30), so the existing rules apply. Start and deliveries wait. Committed messages queue and go out when the user quits Claude Code (item 20). The card's last tool reads `Claude Code in terminal`.
-    - It cannot be opened while an app run is going. Removing the TODO stops it, as in item 12.
-    - Quitting Claude Code ends the "run". The app posts an `app` message, `Continued in Claude Code, 14:02 to 14:20`, and the TODO goes `idle` (or `waiting on you`).
-    - **Limits**:
-      - In Claude Code the session has no app MCP tools and no app hooks, because those exist only inside the app's `query()` runs (item 28). It cannot post messages, raise attention or register a worktree, and the chat shows nothing from that stretch except the app message.
-      - The session's history shows the app's tools in use, so the agent may try them and get errors until the user tells it they are not available here.
+86. The TODO's agent does not see the terminals and is not told about anything done in them. Shells, Claude sessions and the agent can work in the same worktree at the same time, as in any terminal. Nothing guards against two of them running git at the same moment (as the spec's "Not built on purpose" does for shared worktrees). For Claude, the context file says so.
+87. The overview, the operator and the Projects page have no terminals.
 
 ## How it is built
 
 - **PTY in the Bun server.** `Bun.spawn(cmd, { terminal: { cols, rows, data, exit } })`, then `proc.terminal.write()` and `resize()`.
   - This needs Bun 1.3.5 on macOS and Linux and Bun 1.3.14 on Windows, where it uses ConPTY. The server checks `Bun.version` at start; with an older Bun, the Terminal tab names the version it needs.
   - node-pty is not an option: under Bun its PTY closes after the first output (tested with Bun 1.4.2), and putting it in Electron would leave browser mode without terminals.
-- **One WebSocket per open terminal.** `GET /api/todos/<id>/terminal` is upgraded with `server.upgrade()`, using the `websocket` handler of `Bun.serve`.
+  - A Claude terminal runs `claude` directly, with its arguments as an array, not through a shell. The first message therefore needs no quoting on any OS, but shell aliases for `claude` do not apply.
+  - On Windows, `claude` can be a `.cmd` shim from an npm install, which has to run through `cmd /c`.
+- **Terminals API.** Terminals are kept in the server's memory, not in the database.
+  - `GET /api/todos/<id>/terminals` lists them as `{id, kind, cwd, exited, code}`.
+  - `POST /api/todos/<id>/terminals` takes `{kind: "shell" | "claude", root: "worktree" | "project", message}` and returns the new terminal's id. `message` is only used for Claude.
+  - `POST /api/todos/<id>/terminals/<tid>/close` ends one.
+  - Opening, closing and exits reach other open pages as an SSE event (item 61).
+- **One WebSocket per open terminal.** `GET /api/todos/<id>/terminals/<tid>/ws` is upgraded with `server.upgrade()`, using the `websocket` handler of `Bun.serve`.
   - Binary frames carry terminal bytes in both directions.
   - Text frames carry JSON control messages: `{type:"resize",cols,rows}` from the browser, `{type:"exit",code}` from the server.
-  - Everything else stays on the SSE stream (item 61).
-- **Scrollback.** The server keeps the last 256 KB of each shell's output.
+- **Scrollback.** The server keeps the last 256 KB of each terminal's output.
   - On attach it sends a terminal reset, then that buffer, then live output. It then re-sends the size, so full-screen programs (vim, htop, Claude Code) redraw.
-  - If replaying the raw buffer garbles too often, the fallback is Orca's approach: mirror each shell into `@xterm/headless` on the server and send `addon-serialize` snapshots.
+  - If replaying the raw buffer garbles too often, the fallback is Orca's approach: mirror each terminal into `@xterm/headless` on the server and send `addon-serialize` snapshots.
 - **WebSocket security.**
   - The upgrade is accepted only when `Origin` is `http://127.0.0.1:<port>` or `http://localhost:<port>`, on top of today's Host check. This matters because browsers do not apply CORS to WebSockets. Any website can open `ws://127.0.0.1:4477`, and its Host header is then correct, so the Host and content-type checks alone would hand every website a shell.
-  - Other local users on a shared machine can reach the loopback port and already drive the whole API; a terminal turns that into a direct shell. A per-launch token for the whole app fixes it (open question 2): the window app passes it, and browser mode prints it in the URL, as Jupyter does.
+  - Other local users on a shared machine can reach the loopback port and already drive the whole API; a terminal turns that into a direct shell. A per-launch token for the whole app fixes it (open question 1): the window app passes it, and browser mode prints it in the URL, as Jupyter does.
 - **Files API.** Every request names a root (`worktree` or `project`) and a relative path, checked as in item 78.
   - `GET /api/todos/<id>/tree?root=` returns `{paths, changed}`.
   - `GET /api/todos/<id>/fs?root=&path=` returns `{content, mtime, size, binary}`.
@@ -131,26 +146,27 @@ Yes. The Events tab is an audit trail (runs, hooks, attention changes with their
 
 ## Not built on purpose
 
-- More than one terminal per TODO, split panes, and terminals on the overview or the Projects page.
+- Driving the TODO's own session in a terminal (`claude --resume`). A Claude terminal is always a new session with the TODO's context. An app run cannot be shown in a terminal anyway, because the SDK runs Claude Code without its terminal UI.
+- Refreshing a running Claude terminal's context. Its context is a snapshot from launch, and Claude can re-read the TODO's files and git state itself.
+- Split panes, and terminals on the overview or the Projects page.
 - Terminals that survive quitting the app (a separate daemon as in Orca, or tmux as in Kanban Code). Quitting stops terminals, as it stops agents.
 - Creating, renaming and deleting files; search across files; LSP; git actions (stage, commit, discard) from the UI.
 - Showing ignored files.
 - A browser preview pane (Orca and Kanban Code have one).
 - Telling the agent about edits or terminal commands. The user says it in chat.
-- Mirroring an app run in a terminal. The SDK runs Claude Code without its terminal UI, so there is nothing to mirror.
 
 ## Phases
 
 1. **Files**: the root switcher, tree, Changed filter, Diff, and CodeMirror replacing the textarea (items 69 to 78). No PTY, so it is the lowest risk, and it works the same on every OS.
-2. **Terminal**: the shell tab, the Events panel, the WebSocket with its Origin check, and the Bun version check (items 68 and 79 to 84).
-3. **Claude Code in the terminal** (item 85), if wanted.
+2. **Terminals**: shell tabs, the Events panel, the WebSocket with its Origin check, and the Bun version check (items 68, 79, 80 and 83 to 87).
+3. **Claude with context**: the Claude kind, its launch form and the context file (items 81 and 82). It is small once phase 2 exists.
 
 ## Open questions
 
-1. Is item 85 wanted, given that the session has no app tools and the chat stays silent while you are in Claude Code?
-2. Should the app-wide launch token against other local users ship with the terminal, or separately?
-3. Events: a side panel (proposed), or a "Show events" toggle that interleaves events into the chat timeline?
-4. Should the files and the terminal also be reachable for a project without a TODO, for example from the Projects page?
+1. Should the app-wide launch token against other local users ship with the terminals, or separately?
+2. Events: a side panel (proposed), or a "Show events" toggle that interleaves events into the chat timeline?
+3. Should the files and terminals also be reachable for a project without a TODO, for example from the Projects page?
+4. Is the last 30 chat messages the right amount of context, or should the context file hold the whole chat?
 
 ## Reference: how others build this
 
