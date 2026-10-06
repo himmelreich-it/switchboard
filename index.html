@@ -17,12 +17,17 @@ function applyTheme() {
 }
 applyTheme();
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
+// The window app on macOS draws its traffic lights over the title bar (item 121), which then leaves room for them.
+if (/Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform)) document.documentElement.classList.add("electron-mac");
+// Launch token (item 120): the server prints http://127.0.0.1:<port>/#token=…; keep it, then clear it from the address bar.
+(function () {
+  const m = location.hash.match(/token=([0-9a-f]+)/);
+  if (m) { try { localStorage.setItem("switchboard-token", m[1]); } catch (e) {} history.replaceState(null, "", location.pathname); }
+})();
 </script>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<link rel="stylesheet" href="/vendor/fonts.css">
+<script src="/vendor/markdown.js"></script>
 <style>
 /* ---------- Mobbins tokens (from designs/Switchboard-v2.html) ---------- */
 :root {
@@ -34,7 +39,8 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyThem
   --text-primary: #F0EEFA; --text-secondary: #BDB9DE; --text-muted: #928DBC; --text-disabled: #565080;
   --text-on-primary: #0D0A18; --text-on-danger: #0D0A18;
   --accent-lime: #B6FF3A; --accent-lime-hover: #C9FF6B; --accent-cyan: #3DE8DC; --accent-violet: #9D6BFF;
-  --accent-amber: #FFB224; --accent-blue: #4D8DFF; --accent-red: #FF5C5C;
+  --accent-amber: #FFB224; --accent-blue: #4D8DFF; --accent-red: #FF5C5C; --accent-magenta: #FF3D8A;
+  --tint-magenta: rgba(255,61,138,.12); --tint-success: rgba(61,220,133,.12);
   --tint-lime: rgba(182,255,58,.12); --line-lime: rgba(182,255,58,.40);
   --tint-cyan: rgba(61,232,220,.12); --line-cyan: rgba(61,232,220,.40);
   --tint-violet: rgba(157,107,255,.12); --line-violet: rgba(157,107,255,.40);
@@ -74,7 +80,8 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyThem
   --text-primary: #15112A; --text-secondary: #433E66; --text-muted: #625D88; --text-disabled: #A8A4C4;
   --text-on-primary: #B6FF3A; --text-on-danger: #FFFFFF;
   --accent-lime: #457500; --accent-lime-hover: #3A6300; --accent-cyan: #00787C; --accent-violet: #6B3FE0;
-  --accent-amber: #9A5B00; --accent-blue: #1F5FD6; --accent-red: #C42B3A;
+  --accent-amber: #9A5B00; --accent-blue: #1F5FD6; --accent-red: #C42B3A; --accent-magenta: #C8125E;
+  --tint-magenta: rgba(200,18,94,.09); --tint-success: rgba(23,130,74,.10);
   --tint-lime: rgba(69,117,0,.10); --line-lime: rgba(69,117,0,.35);
   --tint-cyan: rgba(0,120,124,.10); --line-cyan: rgba(0,120,124,.35);
   --tint-violet: rgba(107,63,224,.09); --line-violet: rgba(107,63,224,.35);
@@ -104,8 +111,10 @@ body {
   background: var(--bg-void); color: var(--text-primary);
   font-family: var(--font-sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
 }
-h1 { margin: 0; font-family: var(--font-display); font-weight: 600; line-height: 1.25; }
-a { color: var(--accent-lime); }
+h1, h2, h3, h4 { margin: 0; font-family: var(--font-display); font-weight: 600; line-height: 1.15; }
+a { color: var(--accent-lime); text-decoration: none; }
+a:hover { color: var(--accent-lime-hover); text-decoration: underline; }
+code, kbd, pre, samp { font-family: var(--font-mono); }
 :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 ::selection { background: var(--tint-lime); color: var(--accent-lime); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -141,13 +150,25 @@ a { color: var(--accent-lime); }
 .mb-btn--danger:hover:not(:disabled) { background: var(--status-danger-hover); }
 /* clip-path cuts off an outline, so the chamfered buttons draw their focus ring inside */
 .mb-btn--primary:focus-visible, .mb-btn--danger:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--text-on-primary); }
+/* design-system naming: transparent by default, --outline adds the surface and border */
 .mb-iconbtn {
-  display: inline-flex; align-items: center; justify-content: center; width: var(--control-sm); height: var(--control-sm);
-  background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-1); color: var(--text-secondary); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: var(--control-sm); height: var(--control-sm);
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-secondary); cursor: pointer;
+  transition: background var(--fast) var(--ease-out), color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out);
 }
-.mb-iconbtn:hover { background: var(--surface-2); color: var(--text-primary); border-color: var(--border-strong); }
-.mb-iconbtn--plain { background: transparent; border-color: transparent; }
+.mb-iconbtn:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
+.mb-iconbtn--outline { background: var(--surface-1); border-color: var(--border-default); }
+.mb-iconbtn--outline:hover:not(:disabled) { border-color: var(--border-strong); }
 .mb-iconbtn--md { width: var(--control-md); height: var(--control-md); }
+.mb-iconbtn:disabled { opacity: .45; cursor: not-allowed; }
+/* switch with a square knob (design: Events toggle) */
+.mb-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.mb-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.mb-switch__track { flex: none; width: 36px; height: 20px; padding: 2px; background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--radius-1); transition: background var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out); }
+.mb-switch__knob { display: block; width: 14px; height: 14px; background: var(--text-secondary); border-radius: var(--radius-1); transition: transform var(--fast) var(--ease-out), background var(--fast) var(--ease-out); }
+.mb-switch input:checked + .mb-switch__track { background: var(--interactive-primary); border-color: var(--interactive-primary); }
+.mb-switch input:checked + .mb-switch__track .mb-switch__knob { transform: translateX(16px); background: var(--text-on-primary); }
+.mb-switch input:focus-visible + .mb-switch__track { outline: var(--focus-ring); outline-offset: 2px; }
 
 .mb-input, .mb-textarea, .mb-select {
   width: 100%; font-family: var(--font-sans); font-size: 14px; color: var(--text-primary);
@@ -160,7 +181,6 @@ a { color: var(--accent-lime); }
 .mb-input:hover:not(:disabled), .mb-textarea:hover:not(:disabled), .mb-select:hover:not(:disabled) { border-color: var(--border-strong); }
 .mb-input:focus, .mb-textarea:focus, .mb-select:focus { outline: none; border-color: var(--accent-lime); box-shadow: var(--glow-lime); }
 .mb-input:disabled, .mb-textarea:disabled, .mb-select:disabled { opacity: .45; cursor: not-allowed; }
-.mb-input[readonly] { color: var(--text-secondary); border-style: dashed; }
 .mb-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .mb-field__label { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
 .mb-field__hint { font-size: 12px; color: var(--text-muted); }
@@ -208,6 +228,11 @@ a { color: var(--accent-lime); }
 .mb-toast--info .mb-toast__square { background: var(--status-info); box-shadow: 0 0 8px var(--line-info); }
 .mb-toast__title { font-family: var(--font-display); font-size: 13px; font-weight: 600; }
 .mb-toast__message { font-size: 12px; color: var(--text-secondary); margin-top: 2px; overflow-wrap: anywhere; }
+.mb-toast > .mb-btn { flex: none; align-self: center; }
+/* item 120: the page has no valid launch token */
+.gate { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg-aurora); }
+.gate > div { max-width: 520px; display: flex; flex-direction: column; gap: 12px; padding: 24px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-top: 2px solid var(--accent-amber); border-radius: var(--radius-2); box-shadow: var(--shadow-2); }
+.gate p { margin: 0; color: var(--text-secondary); line-height: 1.55; }
 pre.box { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); padding: 10px 12px; }
 
 /* ---------- header ---------- */
@@ -528,7 +553,7 @@ nav.views { display: flex; gap: 4px; margin-left: 12px; }
             <div class="composer-row">
               <label class="sr-only" for="composer">Message</label>
               <textarea id="composer" class="mb-textarea" rows="2"></textarea>
-              <button type="button" id="attachBtn" class="mb-iconbtn mb-iconbtn--md" data-act="pick-files" data-id="composer" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+              <button type="button" id="attachBtn" class="mb-iconbtn mb-iconbtn--outline mb-iconbtn--md" data-act="pick-files" data-id="composer" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
               <button type="button" id="commitBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="commit" disabled>Commit</button>
             </div>
             <div id="composerFiles" class="atts"></div>
@@ -710,14 +735,28 @@ const btn = (label, act, { v = "secondary", id = "", dis = false } = {}) =>
 const tabs = (list, active, act) => list.map(([id, label, count]) =>
   `<button type="button" role="tab" class="mb-tab" aria-selected="${id === active}" data-act="${act}" data-id="${id}" data-fk="${act}:${id}">${esc(label)}${count == null ? "" : `<span class="mb-tab__count">${count}</span>`}</button>`).join("");
 
+let TOKEN = "";
+try { TOKEN = localStorage.getItem("switchboard-token") ?? ""; } catch (e) {}
+// EventSource, <img> and download links cannot send a header, so their URLs carry the token.
+const withToken = (url) => url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN);
 async function call(method, path, body, keepalive = false) {
   // The server rejects non-GET requests without a JSON content type, so even bodiless POSTs send {}.
-  const r = await fetch(path, { method, keepalive, headers: { "content-type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) });
+  const r = await fetch(path, { method, keepalive, headers: { "content-type": "application/json", "x-switchboard-token": TOKEN }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) });
+  if (r.status === 401) showGate();
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error || j.warning || `${r.status} ${r.statusText}`), { status: r.status, body: j });
   return j;
 }
 const act = (p, title = "Failed") => p.catch((e) => toast("danger", title, e.message));
+// Item 120: no token, or one from before the server restarted. Nothing else on the page can work, so it is replaced.
+function showGate() {
+  if ($("gate")) return;
+  try { es.close(); } catch (e) {}   // stops the reconnect loop; es is declared further down
+  document.body.insertAdjacentHTML("beforeend", `<div id="gate" class="gate" role="alert"><div>
+    <span class="panel-title">This page needs a new link</span>
+    <p>Switchboard picks a new launch token each time it starts. Open the link the server printed when it started (<code>bun server.ts</code> prints <code>http://127.0.0.1:${esc(location.port)}/#token=…</code>). The window app opens it on its own.</p>
+  </div></div>`);
+}
 
 // ---------- state ----------
 const S = {
@@ -1081,20 +1120,21 @@ function renderDialog() {
   $("app").inert = !!d;
   document.querySelector("header.top").inert = !!d;
   $("dialog").innerHTML = !d ? "" : `<div class="mb-dialog-overlay"><div class="mb-dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
-    <div class="mb-dialog__header"><span class="mb-dialog__title" id="dlgTitle">${esc(d.title)}</span><button type="button" class="mb-iconbtn mb-iconbtn--plain" data-act="dlg" data-id="-1" aria-label="Close">${SVG(CLOSE, 14)}</button></div>
+    <div class="mb-dialog__header"><span class="mb-dialog__title" id="dlgTitle">${esc(d.title)}</span><button type="button" class="mb-iconbtn" data-act="dlg" data-id="-1" aria-label="Close">${SVG(CLOSE, 14)}</button></div>
     <div class="mb-dialog__body"><p>${esc(d.body)}</p>${d.detail ? `<pre class="box">${esc(d.detail)}</pre>` : ""}
       <div class="row" style="justify-content:flex-end">${d.buttons.map(([label, v], i) => `<button type="button" class="mb-btn mb-btn--${v} mb-btn--md" data-act="dlg" data-id="${i}">${esc(label)}</button>`).join("")}</div>
     </div></div></div>`;
 }
 let toastSeq = 0;
-function toast(status, title, message) {
-  const t = { id: ++toastSeq, status, title, message };
+// action: [label, fn], a small ghost button; clicking it runs fn and closes the toast (item 125). Toasts with one stay longer.
+function toast(status, title, message, action = null) {
+  const t = { id: ++toastSeq, status, title, message, action };
   S.toasts = [...S.toasts, t].slice(-3);
   renderToasts();
-  setTimeout(() => { S.toasts = S.toasts.filter((x) => x !== t); renderToasts(); }, 4200);
+  setTimeout(() => { S.toasts = S.toasts.filter((x) => x !== t); renderToasts(); }, action ? 6500 : 4200);
 }
 function renderToasts() {
-  $("toasts").innerHTML = S.toasts.map((t) => `<div class="mb-toast mb-toast--${t.status}" role="status"><span class="mb-toast__square"></span><div style="flex:1; min-width:0"><div class="mb-toast__title">${esc(t.title)}</div>${t.message ? `<div class="mb-toast__message">${esc(t.message)}</div>` : ""}</div></div>`).join("");
+  $("toasts").innerHTML = S.toasts.map((t) => `<div class="mb-toast mb-toast--${t.status}" role="status"><span class="mb-toast__square"></span><div style="flex:1; min-width:0"><div class="mb-toast__title">${esc(t.title)}</div>${t.message ? `<div class="mb-toast__message">${esc(t.message)}</div>` : ""}</div>${t.action ? `<button type="button" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="toast" data-id="${t.id}">${esc(t.action[0])}</button>` : ""}</div>`).join("");
 }
 
 // ---------- render ----------
@@ -1235,7 +1275,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
     status = badge(st.label, st.badge, true);
     if (t.status === "not_started") actions += btn("Start", "start", { v: "primary", id: t.id });
     if (t.attention && t.status !== "running") actions += btn("Clear attention", "clear", { id: t.id });
-    actions += `<button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO" title="Remove TODO">${SVG(TRASH, 15)}</button>`;
+    actions += `<button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO" title="Remove TODO">${SVG(TRASH, 15)}</button>`;
   }
   const showTabs = !operator && !fileOpen;
   const head = $("focusHead");
@@ -1267,7 +1307,7 @@ function msgHtml(m, operator) {
 
 // A sent attachment ({id, name, size}) links to the server copy; one still sending ({name, url, size}) shows its local data: URL.
 function attachmentHtml(a) {
-  const src = esc(a.id ? `/api/attachments/${a.id}` : a.url), name = esc(a.name);
+  const src = esc(a.id ? withToken(`/api/attachments/${a.id}`) : a.url), name = esc(a.name);
   if (!IMAGE.test(a.name)) return `<a class="att-file" href="${src}" download="${name}">${SVG(CLIP, 13)}${name}${a.size ? `<span>${fmtSize(a.size)}</span>` : ""}</a>`;
   const img = `<img src="${src}" alt="${name}">`;
   return a.id ? `<a class="thumb" href="${src}" target="_blank" rel="noopener" title="${name}">${img}</a>` : `<span class="thumb">${img}</span>`;
@@ -1402,6 +1442,7 @@ const ACTIONS = {
   },
   theme: (id) => { try { localStorage.setItem("switchboard-theme", id); } catch (e) {} applyTheme(); },
   dlg: (id) => { const b = S.dlg?.buttons[Number(id)]; closeDialog(); b?.[2]?.(); },
+  toast: (id) => { const t = S.toasts.find((x) => x.id === Number(id)); S.toasts = S.toasts.filter((x) => x !== t); renderToasts(); t?.action[1](); },
 };
 document.addEventListener("click", (e) => {
   if (e.target.classList?.contains("mb-dialog-overlay")) return closeDialog();   // click on the backdrop
@@ -1455,9 +1496,11 @@ function onEvent(ev) {
     if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   } else if (ev.type === "projects") need("projects");
 }
-const es = new EventSource("/api/events");
+const es = new EventSource(withToken("/api/events"));
 es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.warn(err); } };
 es.onopen = refreshVisible;   // on every (re)connect, catch up on what was missed
+// A restarted server answers the stream with 401 (new token), which EventSource only reports as an error; ask once to find out.
+es.onerror = () => setTimeout(() => call("GET", "/api/meta").catch(() => {}), 1500);
 
 render();
 need("meta", "projects", "todos", "operator");

@@ -1,10 +1,10 @@
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
-  ghOutcome, parseGitStatus, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, uniqueSlug,
+  ghOutcome, isInside, parseGitStatus, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type Pr, type Status,
 } from "./lib";
 import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, start, stopAll } from "./runner";
@@ -579,6 +579,12 @@ async function api(req: Request, path: string): Promise<Response> {
   return fail("not found", 404);
 }
 
+// Item 120: a random secret per start. Every /api/ request must carry it, so a program that can reach the port but
+// cannot read ~/.switchboard/token (another user, a container on the host network) gets no data and no shell.
+const TOKEN = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
+const TOKEN_FILE = join(HOME, "token");
+const VENDOR = join(import.meta.dir, "vendor");
+
 Bun.serve({
   hostname: HOST,
   port: PORT,
@@ -589,8 +595,15 @@ Bun.serve({
     if (![`${HOST}:${PORT}`, `localhost:${PORT}`].includes(req.headers.get("host") ?? "")) return fail("bad host", 403);
     // Cross-site forms can only send simple content types; requiring JSON forces a CORS preflight, which this server never answers.
     if (req.method !== "GET" && !req.headers.get("content-type")?.startsWith("application/json")) return fail("JSON body required", 415);
+    // The page, the icon and the bundled libraries hold no data, so they stay open.
     if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")));
-    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/switchboard-icon-small.svg")));
+    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/flat/switchboard-flat-small.svg")));
+    if (url.pathname.startsWith("/vendor/")) {
+      const file = resolve(VENDOR, "." + decodeURIComponent(url.pathname.slice(7)));
+      if (!isInside(file, VENDOR) || file.startsWith(join(VENDOR, "src")) || !existsSync(file)) return fail("not found", 404);
+      return new Response(Bun.file(file), { headers: { "cache-control": "no-cache" } });
+    }
+    if (!tokenOk(TOKEN, req.headers.get("x-switchboard-token"), url.searchParams.get("token"))) return fail("open the link the server printed at start", 401);
     try {
       return await api(req, url.pathname);
     } catch (e: any) {
@@ -598,7 +611,10 @@ Bun.serve({
     }
   },
 });
-console.log(`switchboard on http://${HOST}:${PORT} (data in ${HOME})`);
+// Written only once the port is bound: a second copy that exits on EADDRINUSE never replaces the live server's token.
+writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
+chmodSync(TOKEN_FILE, 0o600); // mode above applies only when the file is new
+console.log(`switchboard on http://${HOST}:${PORT}/#token=${TOKEN} (data in ${HOME})`);
 
 // A run cannot survive a restart. Queued messages stay queued until the user presses Deliver.
 // Only after Bun.serve has bound the port: a second copy that fails with EADDRINUSE must not touch the live app's TODOs.
@@ -616,6 +632,7 @@ async function shutdown() {
   stopping = true;
   console.log("stopping: interrupting running agents");
   await Promise.race([stopAll(), Bun.sleep(5000)]);
+  try { if (readFileSync(TOKEN_FILE, "utf8") === TOKEN) unlinkSync(TOKEN_FILE); } catch {}
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
