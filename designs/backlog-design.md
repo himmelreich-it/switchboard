@@ -1,6 +1,6 @@
 # Backlog — design
 
-Status: proposal, 2026-10-06. Once agreed, the items below go into `feature-spec-switchboard.md` (new items take the next free numbers, 68 onward) and the changed items there are updated.
+Status: proposal, 2026-10-06. Once agreed, the items below go into `feature-spec-switchboard.md` (new items 86–99, after the sessions spec's 68–85 in `feature-spec-sessions.md`) and the changed items there are updated.
 
 ## Problem
 
@@ -24,12 +24,12 @@ The TODOs screen gets two views, **Board** and **Backlog**. The backlog holds ev
 
 ### Board and backlog
 
-68. The TODOs screen has a **Board / Backlog** switch at the top, each side with its count. `B` toggles it. The pick is kept in localStorage, like the project filter. Below the switch, the board shows the pinned operator card, the project filter row and the lanes; the backlog shows the New TODO card next to the operator card, the project filter row and the backlog list. The board has no New TODO card.
-69. The **board** shows the lanes `Waiting on you`, `Running` and `Idle`, in that order (item 40 without the Not started lane). With no started TODOs it says so and names how many are in the backlog, with a button that switches to it.
-70. The **backlog** lists every TODO that has not started, most recently touched first, as compact rows rather than cards, so many ideas fit on one screen. A row shows the title (the first instruction until the TODO starts, clamped to two lines), the project, how long ago it was created, the number of notes and attachments waiting for the start, and a Draft badge. Each row has **Start** and **Remove** (no confirmation, as for any TODO that is not running, item 12). Clicking the row opens the Focus view.
-71. Starting a TODO from the backlog leaves the user in the backlog, so they can keep browsing; a toast says it started, with a button to open it. Starting from the Focus view stays in the Focus view, as today.
-72. The project filter (item 63) applies to both views. Its chip counts and the "in other projects" line count the TODOs of the current view. The amber square still marks projects with TODOs waiting on you in both views, because waiting is the signal that matters wherever the user is.
-73. The Focus view's back button returns to the view the user came from and is labelled after it (`← Board`, `← Backlog`). `⌘J`, the "1 of 2 waiting" counter and the tab title count are unchanged: they only concern `waiting on you`, which only exists on the board.
+86. The TODOs screen has a **Board / Backlog** switch at the top, each side with its count. `B` toggles it. The pick is kept in localStorage, like the project filter. Below the switch, the board shows the pinned operator card, the project filter row and the lanes; the backlog shows the New TODO card next to the operator card, the project filter row and the backlog list. The board has no New TODO card.
+87. The **board** shows the lanes `Waiting on you`, `Running` and `Idle`, in that order (item 40 without the Not started lane). With no started TODOs it says so and names how many are in the backlog, with a button that switches to it.
+88. The **backlog** lists every TODO that has not started, most recently touched first, as compact rows rather than cards, so many ideas fit on one screen. A row shows the title (the first instruction until the TODO starts, clamped to two lines), the project, how long ago it was created, the number of notes and attachments waiting for the start, and a Draft badge. Each row has **Start** and **Remove** (no confirmation, as for any TODO that is not running, item 12). Clicking the row opens the Focus view.
+89. Starting a TODO from the backlog leaves the user in the backlog, so they can keep browsing; a toast says it started, with a button to open it. Starting from the Focus view stays in the Focus view, as today.
+90. The project filter (item 63) applies to both views. Its chip counts and the "in other projects" line count the TODOs of the current view. The amber square still marks projects with TODOs waiting on you in both views, because waiting is the signal that matters wherever the user is.
+91. The Focus view's back button returns to the view the user came from and is labelled after it (`← Board`, `← Backlog`). `⌘J`, the "1 of 2 waiting" counter and the tab title count are unchanged: they only concern `waiting on you`, which only exists on the board.
 
 ```
  TODOs ─────────────────────────────────────────────────────────────
@@ -45,20 +45,20 @@ The TODOs screen gets two views, **Board** and **Backlog**. The backlog holds ev
 
 ### Adding
 
-74. TODOs are added only in the backlog view. The New TODO card has **Add** (`⌘↵`) and **Add & start** (`⌘⇧↵`). Add creates the TODO as `not started yet`, as today (item 6), at the top of the backlog; the card's note reads "Lands in the backlog. Nothing launches until you start it." Add & start creates it and starts it in one request, so it leaves the backlog and appears on the board as `running`, with the same toast as item 71. Both record their events (`created`, then the start's run events) as separate actions would.
-75. `N` focuses the New TODO input (item 59). On the board it switches to the backlog first.
+92. TODOs are added only in the backlog view. The New TODO card has **Add** (`⌘↵`) and **Add & start** (`⌘⇧↵`). Add creates the TODO as `not started yet`, as today (item 6), at the top of the backlog; the card's note reads "Lands in the backlog. Nothing launches until you start it." Add & start creates it and starts it in one request, so it leaves the backlog and appears on the board as `running`, with the same toast as item 89. Both record their events (`created`, then the start's run events) as separate actions would.
+93. `N` focuses the New TODO input (item 59). On the board it switches to the backlog first.
 
 ### Editing before start
 
-76. While a TODO has not started, its Focus view lets the user edit the first instruction and change the project. The first-instruction message in the chat has an **Edit** action that turns it into a textarea (`⌘↵` saves, `Esc` cancels), and the Project field in the Focus header becomes a select. Both are gone once the TODO starts.
-77. Saving a new first instruction updates that message's body and the TODO's title, because the title is the first instruction until the agent sets one (item 7). It also counts as a touch and moves the TODO to the top of the backlog.
-78. Changing the project moves the TODO's artifact folder from `data/<old-slug>/<id>/` to `data/<new-slug>/<id>/` and rewrites the stored attachment paths, so the first instruction's attachments go with it. Nothing else is stored per project before the start: no session, worktree or registered files exist yet.
-79. The server refuses an edit once the TODO has started (409), for example after a start from another browser tab. The browser then keeps the unsaved text in the textarea and shows the refusal.
-80. Attachments of the first instruction are not edited. More files and context go in as notes (messages that wait for the start, item 20), as today.
+94. While a TODO has not started, its Focus view lets the user edit the first instruction and change the project. The first-instruction message in the chat has an **Edit** action that turns it into a textarea (`⌘↵` saves, `Esc` cancels), and the Project field in the Focus header becomes a select. Both are gone once the TODO starts.
+95. Saving a new first instruction updates that message's body and the TODO's title, because the title is the first instruction until the agent sets one (item 7). It also counts as a touch and moves the TODO to the top of the backlog.
+96. Changing the project moves the TODO's artifact folder from `data/<old-slug>/<id>/` to `data/<new-slug>/<id>/` and rewrites the stored attachment paths, so the first instruction's attachments go with it. Nothing else is stored per project before the start: no session, worktree or registered files exist yet.
+97. The server refuses an edit once the TODO has started (409), for example after a start from another browser tab. The browser then keeps the unsaved text in the textarea and shows the refusal.
+98. Attachments of the first instruction are not edited. More files and context go in as notes (messages that wait for the start, item 20), as today.
 
 ### Operator
 
-81. TODOs the operator creates land in the backlog (item 36 unchanged in substance). The operator's system prompt (`runner.ts`) says "backlog" instead of "not started yet", so its answers match what the user sees. `list_sessions` needs no change: the status already tells backlog from board. The operator gets no tool to edit or start backlog TODOs (item 35).
+99. TODOs the operator creates land in the backlog (item 36 unchanged in substance). The operator's system prompt (`runner.ts`) says "backlog" instead of "not started yet", so its answers match what the user sees. The operator's list tool (`list_sessions`, renamed `list_todos` by the sessions spec) needs no change: the status already tells backlog from board. The operator gets no tool to edit or start backlog TODOs (item 35).
 
 ## How it is built
 
