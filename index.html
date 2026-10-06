@@ -16,7 +16,8 @@ function applyTheme() {
   if (auto) auto.title = `Follow system · now ${os}`;
   const hint = document.getElementById("themeHint");
   if (hint) hint.textContent = pick === "auto" ? `Auto follows the system setting. Now ${os}.` : `Fixed to ${pick}. Applies to every window.`;
-  window.dispatchEvent(new Event("sb-theme"));   // terminals take colors as values, not variables
+  const now = document.documentElement.dataset.theme ?? "dark";
+  if (applyTheme.last !== now) { applyTheme.last = now; window.dispatchEvent(new Event("sb-theme")); }   // terminals take colors as values
 }
 applyTheme();
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
@@ -809,9 +810,9 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
       <div class="panel" style="flex-direction:row; flex-wrap:wrap; align-items:center; padding:20px; gap:16px 24px">
         <div style="flex:1 1 260px; display:flex; flex-direction:column; gap:6px"><span class="microlabel">Theme</span><span id="themeHint" style="font-size:14px; color:var(--text-secondary)"></span></div>
         <div class="seg" role="radiogroup" aria-label="Theme" style="height:36px">
-          <button type="button" role="radio" data-act="theme" data-id="auto">Auto</button>
-          <button type="button" role="radio" data-act="theme" data-id="dark" title="Dark theme">Dark</button>
-          <button type="button" role="radio" data-act="theme" data-id="light" title="Light theme">Light</button>
+          <button type="button" role="radio" data-act="theme" data-id="auto" data-fk="theme:auto">Auto</button>
+          <button type="button" role="radio" data-act="theme" data-id="dark" data-fk="theme:dark" title="Dark theme">Dark</button>
+          <button type="button" role="radio" data-act="theme" data-id="light" data-fk="theme:light" title="Light theme">Light</button>
         </div>
       </div>
     </div>
@@ -828,7 +829,9 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener"); } });
-const md = (s) => DOMPurify.sanitize(marked.parse(String(s ?? "")));
+// No data-* or style: markdown from a repo or an agent must not carry data-act (it would run app actions on click)
+// or cover the page.
+const md = (s) => DOMPurify.sanitize(marked.parse(String(s ?? "")), { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"] });
 const short = (s, n = 34) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const basename = (p) => String(p ?? "").split("/").filter(Boolean).pop() ?? "";
@@ -1141,10 +1144,11 @@ const loaders = {
       if (disk && disk.mtime !== f.mtime) await reloadFile(f);
     }
   },
-  async terms() {
-    const id = S.sel;
+  async terms(id = S.sel) {
     if (typeof id !== "number") return;
-    const r = await call("GET", `/api/todos/${id}/terminals`);
+    let r;
+    try { r = await call("GET", `/api/todos/${id}/terminals`); }
+    catch (e) { S.terms[id] ??= []; throw e; }   // known as empty, so the tab does not ask again in a loop
     S.terms[id] = r.terminals; S.termsUnsupported = r.unsupported;
     for (const x of r.terminals) { const v = xterms.get(x.id); if (v) v.info = x; }
     for (const [tid, v] of xterms) if (v.todoId === id && !r.terminals.some((x) => x.id === tid)) { v.gone = true; if (v.ws?.readyState !== 1) dropXterm(tid); }
@@ -1200,16 +1204,17 @@ function openSettings() {
 window.openSettings = openSettings;   // the window app's menu item "Settings… ⌘,"
 function closeSettings() { S.settingsOpen = false; setView(S.view === "settings" ? S.settingsFrom : S.view); }
 // Leaving the Focus view returns to the side it was opened from (item 91).
-function goOverview() { flushDraft(); if (S.mode === "focus" && S.focusFrom) S.board = S.focusFrom; S.view = "todos"; S.mode = "overview"; S.file = null; render(); need("operator"); }
+function goOverview() { flushDraft(); if (S.mode === "focus" && S.focusFrom) S.board = S.focusFrom; S.view = "todos"; S.mode = "overview"; dropFile(); render(); need("operator"); }
 function select(id) {
   flushDraft();
   if (!(S.view === "todos" && S.mode === "focus")) S.focusFrom = S.board;   // ⌘J inside Focus keeps where you came from
-  if (S.sel !== id) { S.detail = null; S.file = null; S.tab = "chat"; S.termMenu = false; S.cform = null; }
+  if (S.sel !== id) { S.detail = null; dropFile(); S.tab = "chat"; S.termMenu = false; S.cform = null; }
   S.sel = id; S.view = "todos"; S.mode = "focus";
   composer.value = drafts[draftKey()] ?? "";
   chatLog.dataset.sig = "";   // scroll the chat to the newest message
   render();
   need(id === "operator" ? "operator" : "detail");
+  if (id !== "operator") need("terms");   // the Terminal count and Remove's question need them
 }
 function nextWaiting() {
   const curId = S.mode === "focus" ? S.sel : null;
@@ -1335,8 +1340,9 @@ function removeText(running, n) {
   return [running && "The agent is running. Removing interrupts it (Esc).", n && `${plural(n, "open terminal")} will close.`,
     "The TODO is hidden with its messages and files. Restore resumes the same session" + (n ? "; terminals don't come back." : ".")].filter(Boolean).join(" ");
 }
-function askRemove(id) {
+async function askRemove(id) {
   const t = (S.detail?.todo.id === id && S.detail.todo) || S.todos.find((x) => x.id === id);
+  await loaders.terms(id).catch(() => {});   // after a reload the page may not know this TODO's terminals yet
   const running = t?.status === "running", n = liveTerms(id);
   if (!running && !n) return doRemove(id);
   openDialog({ title: "Remove TODO", body: removeText(running, n), detail: t.title, buttons: [["Cancel", "ghost"], ["Remove", "danger", () => doRemove(id)]] });
@@ -1346,7 +1352,7 @@ async function doRemove(id) {
   const t = S.todos.find((x) => x.id === id);
   try { await call("POST", `/api/todos/${id}/remove`); }
   catch (e) { return toast("danger", "Not removed", e.message); }
-  if (S.sel === id) { S.sel = null; S.detail = null; S.file = null; S.mode = "overview"; }
+  if (S.sel === id) { S.sel = null; S.detail = null; dropFile(); S.mode = "overview"; }
   for (const [tid, v] of xterms) if (v.todoId === id) dropXterm(tid);
   delete S.terms[id];
   toast("info", "Removed", `${short(t?.title ?? "TODO")}. Restore it from Removed.`);
@@ -1391,6 +1397,7 @@ async function openFile(fid, root = "todo", rel = null, mode = null) {
       content: r.content, mtime: e ? e.mtime : r.mtime, text: e ? e.text : r.content, mark, saved: false,
       mode: mode ?? (e ? "edit" : "read"),
     });
+    dropFile();
     S.file = f; S.tab = "files"; S.fileRoot[id] = root;
     if (f.mode === "diff") await loadDiff(f);
     render();
@@ -1405,6 +1412,7 @@ async function openTreeFile(rel) {
 async function openDeleted(rel) {
   const t = cur(), root = S.fileRoot[t.id];
   const f = { todoId: t.id, root, id: null, rel, name: basename(rel), abs: null, size: 0, binary: false, image: false, large: false, content: null, text: "", mtime: null, mark: "D", mode: "diff", deleted: true };
+  dropFile();
   S.file = f;
   await loadDiff(f);
   render();
@@ -1485,6 +1493,7 @@ let editorLib = null;
 const loadScript = (src) => new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => no(new Error("could not load " + src)); document.head.append(el); });
 function loadEditor() { return (editorLib ??= loadScript("/vendor/editor.js").then(() => window.SBEditor)); }
 function destroyEditor() { S.cm?.handle?.destroy(); S.cm = null; }
+function dropFile() { S.file = null; destroyEditor(); }
 
 // ---------- projects ----------
 const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
@@ -1527,6 +1536,7 @@ function renderDialog() {
   const d = S.dlg;
   $("app").inert = !!d;
   document.querySelector("header.top").inert = !!d;
+  $("toasts").inert = !!d;   // toast buttons must not act behind a dialog
   $("dialog").innerHTML = !d ? "" : `<div class="mb-dialog-overlay"><div class="mb-dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
     <div class="mb-dialog__header"><span class="mb-dialog__title" id="dlgTitle">${esc(d.title)}</span><button type="button" class="mb-iconbtn" data-act="dlg" data-id="-1" aria-label="Close">${SVG(CLOSE, 14)}</button></div>
     <div class="mb-dialog__body"><p>${esc(d.body)}</p>${d.detail ? `<pre class="box">${esc(d.detail)}</pre>` : ""}
@@ -1744,17 +1754,17 @@ function renderFocusHead(operator, t, d, fileOpen) {
   const head = $("focusHead");
   head.classList.toggle("notabs", !showTabs);
   const evCount = d ? d.events.length : 0;
-  head.innerHTML = `<div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
+  setHtml(head, `<div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
     <div class="info"><div class="l">${left}</div>${right ? `<div class="r">${right}</div>` : ""}</div>${extra}
     ${showTabs ? `<div class="tabs-row"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", d ? d.files.length : t.file_count], ["terminal", "Terminal", termCount(t.id)]], S.tab, "tab")}</div>
-      ${S.tab === "chat" ? `<label class="mb-switch" title="Mix this TODO's events into the chat. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Events ${evCount}</span></label>` : ""}</div>` : ""}`;
+      ${S.tab === "chat" ? `<label class="mb-switch" title="Mix this TODO's events into the chat. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Events ${evCount}</span></label>` : ""}</div>` : ""}`);
 }
 
 function msgHtml(m, operator) {
   const [who, color] = AUTHOR[m.author] ?? [m.author, "var(--text-muted)"];
   const t = operator ? null : cur();
   const firstOf = !operator && t?.status === "not_started" && S.detail?.messages[0]?.id === m.id;   // items 94-98
-  const editing = firstOf && S.editing?.msgId === m.id;
+  const editing = !operator && S.editing?.msgId === m.id;   // stays after a start, so a refused save keeps the text
   const flags = [];
   if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
   if (m.state === "queued") flags.push(badge("Queued · delivers on idle", "blue", true));
@@ -1803,7 +1813,8 @@ function eventsHtml(evs) {
 // Messages and (with the switch on) events of one session, in time order. Pending and queued messages come last.
 function streamHtml(msgs, evs, operator) {
   const items = msgs.map((m) => ({ at: m.at, m })).concat(evs.map((e) => ({ at: e.at, e })));
-  items.sort((a, b) => (a.m && a.m.session_no == null) - (b.m && b.m.session_no == null) || a.at.localeCompare(b.at));
+  const waiting = (x) => (x.m && x.m.session_no == null && x.m.state !== "delivered" ? 1 : 0);
+  items.sort((a, b) => waiting(a) - waiting(b) || a.at.localeCompare(b.at));
   let html = "", block = [];
   for (const x of items) {
     if (x.e) { block.push(x.e); continue; }
@@ -1931,7 +1942,7 @@ function renderTree(t, root) {
   const fileRow = (path, depth, showDir) => {
     const m = marks[path], name = showDir ? basename(path) : path.split("/").pop();
     const dir = showDir && path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" data-act="open-tree" data-id="${esc(path)}" style="padding-left:${10 + depth * 18}px"><span class="cv"></span>${SVG(FILE, 15, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main folder</span>' : ""}${markHtml(m)}</div>`;
+    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" data-act="open-tree" data-id="${esc(path)}" data-fk="tree:${esc(path)}" style="padding-left:${10 + depth * 18}px"><span class="cv"></span>${SVG(FILE, 15, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main folder</span>' : ""}${markHtml(m)}</div>`;
   };
   if (S.changedOnly) {
     const list = Object.keys(marks).sort();
@@ -1950,7 +1961,7 @@ function renderTree(t, root) {
   const walk = (node, depth) => {
     for (const [dir, child] of [...node.dirs].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
       const isOpen = open.has(dir);
-      rows.push(`<div class="tr" role="treeitem" tabindex="0" aria-expanded="${isOpen}" data-act="tree-dir" data-id="${esc(dir)}" style="padding-left:${10 + depth * 18}px"><span class="cv">${SVG(isOpen ? CHEV_D : CHEV_R, 14)}</span>${SVG(FOLDER, 15, "var(--accent-violet)")}<span class="nm">${esc(dir.split("/").pop())}</span>${!isOpen && changedUnder(dir) ? '<span class="chgdot" title="Contains changes"></span>' : ""}</div>`);
+      rows.push(`<div class="tr" role="treeitem" tabindex="0" aria-expanded="${isOpen}" data-act="tree-dir" data-id="${esc(dir)}" data-fk="tree:${esc(dir)}" style="padding-left:${10 + depth * 18}px"><span class="cv">${SVG(isOpen ? CHEV_D : CHEV_R, 14)}</span>${SVG(FOLDER, 15, "var(--accent-violet)")}<span class="nm">${esc(dir.split("/").pop())}</span>${!isOpen && changedUnder(dir) ? '<span class="chgdot" title="Contains changes"></span>' : ""}</div>`);
       if (isOpen) walk(child, depth + 1);
     }
     for (const p of node.files.sort()) rows.push(fileRow(p, depth, false));
@@ -2028,7 +2039,8 @@ const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed
 // One CodeMirror view at a time, rebuilt when the file, its host or read/write changes.
 function mountEditor(f, host, rw, locked) {
   const key = `${fileKey(f)}:${host.id}:${rw}`;
-  if (S.cm?.key === key && S.cm.handle) { S.cm.handle.setReadOnly(locked || rw === "ro"); return; }
+  // Reused only for the same file object: its onChange writes into that object.
+  if (S.cm?.key === key && S.cm.f === f && S.cm.handle) { S.cm.handle.setReadOnly(locked || rw === "ro"); return; }
   if (!window.SBEditor) { host.innerHTML = '<div style="padding:12px 16px" class="muted">Loading editor…</div>'; loadEditor().then(() => S.file === f && render(), (e) => toast("danger", "Editor not loaded", e.message)); return; }
   destroyEditor();
   host.innerHTML = "";
@@ -2036,7 +2048,7 @@ function mountEditor(f, host, rw, locked) {
     f.text = text; syncEdit(f);
     renderFile(cur());   // header badges, preview and status bar; the editor itself is kept
   } });
-  S.cm = { key, handle };
+  S.cm = { key, handle, f };
 }
 
 // ---------- terminals (items 111-118) ----------
@@ -2144,7 +2156,7 @@ function connectTerm(v) {
     // The terminal may be gone (closed in another tab, or the app restarted): the list says which; otherwise retry.
     setTimeout(async () => {
       if (v.closed) return;
-      await loaders.terms().catch(() => {});
+      await loaders.terms(v.todoId).catch(() => {});
       if (v.gone) { v.ended = true; render(); return; }
       if (!v.exit) connectTerm(v);
     }, 2000);
@@ -2365,12 +2377,13 @@ document.addEventListener("keydown", (e) => {
   if (mod && k === "j") { e.preventDefault(); return nextWaiting(); }
   const fileShown = !!S.file && !$("vFocus").hidden && !$("fileView").hidden;
   if (mod && k === "e" && fileShown) { e.preventDefault(); return setFileMode(S.file.mode === "edit" ? "read" : "edit"); }
-  if (mod && k === "f" && fileShown && S.cm?.handle) { e.preventDefault(); return S.cm.handle.search(); }
+  if (mod && k === "f" && fileShown && S.file.mode === "edit" && S.cm?.handle) { e.preventDefault(); return S.cm.handle.search(); }
   if (mod && k === "s" && fileShown) { e.preventDefault(); return saveFile(); }
   // Esc closes the innermost thing first (design v4): … Settings, then an open file, then Focus.
   if (e.key === "Escape") {
     if (S.termMenu) { e.preventDefault(); S.termMenu = false; return render(); }
     if (S.cform) { e.preventDefault(); S.cform = null; return render(); }
+    if (S.editing && S.mode === "focus") { e.preventDefault(); S.editing = null; return render(); }
     if (S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" && S.nsMode[S.sel]) { e.preventDefault(); delete S.nsMode[S.sel]; return render(); }
     if (S.view === "settings" && !typing) { e.preventDefault(); return closeSettings(); }
     if (fileShown) { e.preventDefault(); return closeFile(); }
@@ -2382,7 +2395,7 @@ document.addEventListener("keydown", (e) => {
   if (/^Arrow/.test(e.key) && e.target.matches?.('[role="radio"]')) {
     const all = [...e.target.closest('[role="radiogroup"]').querySelectorAll('[role="radio"]:not([disabled])')];
     const next = all[(all.indexOf(e.target) + (/Right|Down/.test(e.key) ? 1 : all.length - 1)) % all.length];
-    if (next) { e.preventDefault(); next.click(); next.focus(); }
+    if (next) { e.preventDefault(); next.click(); (document.querySelector(`[data-fk="${CSS.escape(next.dataset.fk ?? "")}"]`) ?? next).focus(); }
     return;
   }
   if (!typing && !mod && !e.altKey && k === "b" && S.view === "todos" && S.mode === "overview") { e.preventDefault(); return setBoard(S.board === "board" ? "backlog" : "board"); }
