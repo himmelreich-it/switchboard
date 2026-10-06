@@ -336,22 +336,88 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .focus-bar { flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 20px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-base); }
 .focus-bar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .focus-body { flex: 1; min-height: 0; display: flex; justify-content: center; }
+/* the chat is a reading column; Files and Terminal use the full width (design v4) */
 .focus-sec { width: 100%; max-width: 1120px; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle); box-shadow: var(--shadow-2); }
-.focus-head { flex: none; padding: 16px 20px 0; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border-subtle); }
-.focus-head.notabs { padding-bottom: 14px; }
-.meta-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.meta-row span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
-.meta-row b { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-secondary); }
-.git-rows { display: flex; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
-.git-row { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
-.git-row > .k { flex: 0 0 28px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
-.git-row > .v { min-width: 0; text-wrap: pretty; color: var(--text-muted); }
-.git-row > .v.err { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--text-secondary); }
-.git-row a { text-decoration: none; }
-.git-row a:hover { text-decoration: underline; }
-.title-row { display: flex; align-items: flex-start; gap: 10px 12px; flex-wrap: wrap; }
-.title-row h1 { flex: 1 1 240px; min-width: 0; font-size: 22px; overflow-wrap: anywhere; }
-.title-row .actions { display: flex; gap: 8px; flex: none; align-items: center; padding-top: 2px; }
+.focus-sec.wide { max-width: none; }
+.focus-head { flex: none; padding: 12px 20px 0; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--border-subtle); }
+.focus-head.notabs { padding-bottom: 12px; }
+.title-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.title-row h1 { flex: 1 1 280px; min-width: 0; font-size: 18px; line-height: 1.3; overflow-wrap: anywhere; text-wrap: pretty; }
+.title-row .actions { display: flex; gap: 8px; flex: none; align-items: center; }
+/* item 124: one mono line under the title; git, PR and context show their details in a popover */
+.info { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 16px; min-width: 0; font-family: var(--font-mono); font-size: 12px; line-height: 22px; color: var(--text-muted); }
+.info > .l { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; }
+.info > .r { margin-left: auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-width: 0; }
+.info .sep { padding: 0 6px; }
+.info .sec { color: var(--text-secondary); white-space: nowrap; }
+.info .sec svg { vertical-align: -1px; margin-right: 4px; }
+.info select { height: 22px; padding: 0 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-strong); border-radius: 2px; cursor: pointer; }
+.copy { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 2px; padding: 0; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-muted); cursor: pointer; }
+.copy:hover { border-color: var(--border-default); color: var(--text-primary); }
+.more { padding: 0 4px; line-height: 18px; border: 1px solid var(--border-default); border-radius: 2px; color: var(--text-secondary); cursor: default; }
+.pop { position: relative; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; outline-offset: 2px; }
+.pop > .tip { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 400; width: max-content; max-width: min(440px, 80vw); padding: 10px 12px; flex-direction: column; gap: 4px; white-space: normal; background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-1); box-shadow: var(--shadow-3); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--text-muted); text-wrap: pretty; }
+.pop.right > .tip { left: auto; right: 0; }
+.pop:hover > .tip, .pop:focus-within > .tip { display: flex; }
+.tip .h { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.pop a { color: var(--accent-lime); }
+.ctxbar { position: relative; width: 56px; height: 6px; flex: none; background: var(--surface-3); border: 1px solid var(--border-default); }
+.ctxbar > i { position: absolute; left: 0; top: 0; bottom: 0; }
+.gh-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.tabs-row { display: flex; align-items: flex-end; gap: 12px; margin-top: 2px; margin-bottom: -1px; }
+.tabs-row > .mb-tabs { flex: 1; min-width: 0; border-bottom: none; }
+.tabs-row > .mb-switch { flex: none; padding-bottom: 10px; font-size: 14px; }
+/* session timeline (item 76) */
+.sess { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
+.sess + .sess, .msg + .sess, .evs + .sess, .sess-sum + .sess { margin-top: 10px; }
+.sess-row { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; min-height: 28px; }
+.sess-btn { flex: 1 1 280px; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0; background: transparent; border: none; color: var(--text-primary); text-align: left; cursor: pointer; }
+.sess-btn[aria-disabled="true"] { cursor: default; }
+.sess-btn > svg { flex: none; color: var(--text-muted); }
+.sess-no { flex: none; font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.sess-label { min-width: 0; font-size: 13px; color: var(--text-secondary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sess-range { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.sid-btn { height: 24px; padding: 0 6px; display: flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); cursor: pointer; }
+.sid-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.sess-resume { padding-left: 24px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); text-wrap: pretty; }
+.sess-sum { display: flex; align-items: baseline; gap: 6px 12px; flex-wrap: wrap; padding: 0 0 4px 24px; }
+.sess-sum > .who { flex: none; color: var(--accent-cyan); }
+.sess-sum > .b { flex: 1 1 240px; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); text-wrap: pretty; }
+.file-chip.sm { height: 26px; padding: 0 8px; }
+/* events mixed into the chat (item 100) */
+.evs { display: flex; flex-direction: column; padding: 2px 0; }
+.evl { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; padding: 1px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 18px; color: var(--text-muted); }
+.evl:hover { color: var(--text-secondary); }
+.evl.fold { cursor: pointer; }
+.evl .k { min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; }
+.evl .k > svg { flex: none; color: var(--accent-lime); }
+.evl .k > .sp { width: 12px; flex: none; }
+.evl .k > b { flex: none; font-weight: 400; color: var(--text-secondary); }
+.evl .k > i { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-style: normal; }
+.ev-box { margin: 2px 12px 6px 120px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--text-secondary); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.evres { margin: 4px 0 6px; display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 12px; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; line-height: 18px; }
+.evres > .t { text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); }
+.evres > .res-md, .evres > .foot { grid-column: 2 / span 2; min-width: 0; }
+.evres > .foot { color: var(--text-muted); }
+/* a result's text: light markdown (design v4) */
+.res-md { font-family: var(--font-sans); font-size: 13px; line-height: 1.55; color: var(--text-primary); overflow-wrap: anywhere; }
+.res-md > * { margin: 0 0 2px; }
+.res-md :is(h1, h2, h3, h4, h5, h6) { margin: 6px 0 0; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); }
+.res-md > :first-child { margin-top: 0; }
+.res-md ul { list-style: none; padding: 0; }
+.res-md ul > li { display: flex; gap: 8px; }
+.res-md ul > li::before { content: "–"; flex: none; color: var(--text-muted); }
+.res-md ol { padding-left: 20px; }
+.res-md code { padding: 0 4px; font-family: var(--font-mono); font-size: 12px; background: var(--surface-3); border-radius: 2px; }
+.res-md pre { padding: 8px; background: var(--surface-2); overflow: auto; }
+.res-md pre code { background: none; padding: 0; }
+.res-md strong { font-weight: 600; }
+.res-md table { border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
+.res-md th, .res-md td { border: 1px solid var(--border-default); padding: 2px 8px; }
+.tools-line { font-family: var(--font-mono); font-size: 12px; color: var(--accent-violet); overflow-wrap: anywhere; }
+.ns-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.ns-head > .sq { width: 8px; height: 8px; flex: none; background: var(--accent-lime); }
+.ns-head > .t { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .tool-chip { font-family: var(--font-mono); font-size: 11px; padding: 2px 6px; color: var(--accent-violet); background: var(--tint-violet); border: 1px solid var(--line-violet); border-radius: var(--radius-1); }
 .pane { flex: 1; min-height: 0; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
 .chatwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -394,11 +460,6 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .file-row { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); }
 .file-row svg { flex: none; }
 .file-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.ev-table { display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: var(--radius-2); background: var(--surface-1); }
-.ev { display: grid; grid-template-columns: 84px minmax(0, 1fr) 96px; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 12px; }
-.ev:last-child { border-bottom: 0; }
-.ev-detail { display: block; color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
-.ev-actor { text-align: right; }
 
 /* ---------- file view ---------- */
 .fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px; gap: 10px; }
@@ -530,7 +591,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
   <!-- Focus: one TODO or the operator -->
   <div id="vFocus" class="focus-view" hidden>
     <div class="focus-bar">
-      <span class="row"><button type="button" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="back">← Overview</button><span class="kbd">Esc</span></span>
+      <span class="row"><button type="button" id="backBtn" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="back">← Board</button><span class="kbd">Esc</span></span>
       <span id="focusPos" class="microlabel"></span>
       <span class="right">
         <span id="nextHint" class="small ellipsis"></span>
@@ -565,6 +626,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           <div id="chatLog" class="pane" aria-live="polite"></div>
           <div class="composer">
             <div id="deliverBar" hidden></div>
+            <div id="nsHead" class="ns-head" hidden></div>
             <div class="composer-row">
               <label class="sr-only" for="composer">Message</label>
               <textarea id="composer" class="mb-textarea" rows="2"></textarea>
@@ -577,7 +639,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
         </div>
 
         <div id="filesView" class="pane" hidden></div>
-        <div id="eventsView" class="pane" hidden></div>
+        <div id="termView" class="pane" hidden></div>
       </section>
     </div>
   </div>
@@ -695,8 +757,10 @@ const AUTHOR = {
   operator: ["Operator", "var(--accent-violet)"],
   app: ["App", "var(--accent-amber)"],
 };
-const ACTOR = { user: "var(--text-secondary)", agent: "var(--accent-cyan)", operator: "var(--accent-violet)", app: "var(--text-muted)" };
-const OPERATOR_TOOLS = ["list_sessions", "read_session", "read_file", "create_todo", "send_message"];
+const ACTOR = { user: "var(--text-secondary)", "user via operator": "var(--accent-violet)", agent: "var(--accent-cyan)", operator: "var(--accent-violet)", app: "var(--text-muted)" };
+const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message"];
+const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>';
+const CHEV_R = '<path d="m9 18 6-6-6-6"/>', CHEV_D = '<path d="m6 9 6 6 6-6"/>';
 const RUNNING_LOCK = ["Read-only", "The agent is running. Edit unlocks when it stops."];
 
 // ---------- git and PR facts (design v3: an ordered list of [text, color]; the card shows a short form) ----------
@@ -747,18 +811,49 @@ function cardGitHtml(t) {
   const gitLine = g ? `<div class="ellipsis" title="${esc(factsText(gitFactsOf(g, true)))}">${factsHtml(gitFactsOf(g, false))}</div>` : "";
   return `<div class="card-git"${g ? "" : ' style="margin-top:0"'}>${gitLine}${prLine}</div>`;
 }
-function focusGitHtml(t) {
+// Item 124: the git and PR parts of the Focus info line. Each shows its most important fact plus "+N", and every fact
+// in a popover on hover or keyboard focus.
+const tipHtml = (head, facts, foot, grey) => `<span class="tip" role="tooltip"><span class="h">${esc(head)}</span>${facts.map((f) => `<span style="color:${grey ? GC.muted : f.color}">${esc(f.text)}</span>`).join("")}<span>${esc(foot)}</span></span>`;
+const moreHtml = (n) => (n > 0 ? `<span class="more">+${n}</span>` : "");
+function infoGitHtml(t) {
+  const g = t.git;
+  if (!g) return "";
+  const facts = gitFactsOf(g, true);
+  if (!facts.length) return "";
+  const head = facts.find((f) => f.color === GC.amber || f.color === GC.red) ?? facts[0];
+  return `<span class="sep">·</span><span class="pop" tabindex="0"><span style="color:${head.color}">${esc(head.text)}</span>${moreHtml(facts.length - 1)}${tipHtml("Git · " + (t.branch ?? ""), facts, "local · uncommitted plus commits since the merge base with origin/HEAD")}</span>`;
+}
+function infoPrHtml(t) {
   const g = t.git, pr = t.pr, err = t.gh_error, age = t.pr_checked_at ? ago(t.pr_checked_at) : "";
-  const row = (k, v, cls = "") => `<div class="git-row"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
-  let out = g ? row("Git", factsHtml(gitFactsOf(g, true)))
-    : !t.worktree_path && t.status !== "not_started" ? row("Git", "project folder · shared with other TODOs, not shown") : "";
-  const when = err ? ` · as of ${age}` : ` · checked ${age}`;
-  if (pr) out += row("PR", `<a href="${esc(pr.url)}" target="_blank" rel="noopener" title="Open on GitHub">#${pr.number} ↗</a>`
-    + factsHtml(prFactsOf(pr, true).map((f, i) => (i ? f : { ...f, sep: " " })), !!err) + esc((pr.via ? " · registered by agent via " + pr.via : "") + when));
-  else if (g?.push === "pushed" && t.pr_checked_at) out += row("PR", err ? `no PR · as of ${esc(age)}` : "no PR · branch pushed");
-  if (err && (pr || t.pr_number || g?.push === "pushed"))
-    out += row("", `<span>${esc(err.why)} Showing the last result. Retrying every 2 min; the git line is local and stays current.</span>${btn(S.ghRetrying ? "Retrying…" : "Retry now", "gh-retry", { v: "ghost" })}`, "err");
-  return out && `<div class="git-rows">${out}</div>`;
+  if (!pr) return g?.push === "pushed" && t.pr_checked_at ? `<span>${err ? "no PR · as of " + esc(age) : "no PR · branch pushed"}</span>` : "";
+  const facts = prFactsOf(pr, true), rest = facts.slice(1), head = rest[0];
+  const foot = (pr.via ? `registered by agent via ${pr.via} · ` : "") + (err ? `as of ${age}` : `checked ${age}`);
+  return `<span class="pop right"><a href="${esc(pr.url)}" target="_blank" rel="noopener" title="Open PR #${pr.number} on GitHub">PR #${pr.number} ↗</a>${head ? `<span style="color:${err ? GC.muted : head.color}">${esc(head.text)}</span>` : ""}${moreHtml(rest.length - 1)}${tipHtml(`PR #${pr.number} · ${facts[0]?.text ?? pr.state}`, rest, foot, !!err)}</span>`;
+}
+// Item 123: the live session's context, from the last model call of its last run.
+const kTok = (n) => (n >= 1e6 ? +(n / 1e6).toFixed(1) + "M" : n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
+function ctxHtml(c, title, running) {
+  if (!c?.used) return "";
+  const max = c.window || 200000, p = c.used / max, pct = Math.min(100, Math.round(p * 100));
+  const col = p >= 0.85 ? "var(--accent-red)" : p >= 0.6 ? "var(--accent-amber)" : "var(--accent-cyan)";
+  const advice = p >= 0.85 ? "Close to full. Claude Code compacts on its own soon and older detail gets summarised. Start a new session if this one has done its job."
+    : p >= 0.6 ? "Getting full. A good point for a new session once this step is done." : "Plenty of room.";
+  const rows = [
+    { text: `${c.used.toLocaleString("en-US")} of ${max.toLocaleString("en-US")} tokens · ${pct}%`, color: col },
+    { text: `last turn: ${kTok(c.last_in || 0)} in · ${kTok(c.last_out || 0)} out`, color: "var(--text-secondary)" },
+    c.turns != null && { text: plural(c.turns, "turn") + " in this session", color: "var(--text-secondary)" },
+  ].filter(Boolean);
+  return `<span class="pop right" tabindex="0"><span style="font-size:11px; text-transform:uppercase; letter-spacing:.08em">Context</span><span class="ctxbar"><i style="width:${pct}%; background:${col}"></i></span><span style="color:${p >= 0.6 ? col : "var(--text-secondary)"}">${kTok(c.used)} / ${kTok(max)}</span>${tipHtml(title + " · context" + (running ? " · updates after the turn" : ""), rows, advice + " Read from the last model call (input + cache tokens).")}</span>`;
+}
+async function copyText(text, title, message) {
+  try { await navigator.clipboard.writeText(text); toast("success", title, message); }
+  catch (e) { toast("danger", "Not copied", e.message); }
+}
+const copyBtn = (text, title, label = "Copy session id") => `<button type="button" class="copy" data-act="copy" data-id="${esc(text)}" data-title="${esc(label)}" aria-label="${esc(label)}" title="${esc(title)}">${SVG(COPY_ICON, 12)}</button>`;
+// "2 min 10 s · 9 tool calls" under a result (item 128)
+function fmtDur(ms) {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
 const badge = (text, color = "neutral", dot = false) =>
@@ -800,7 +895,12 @@ const S = {
   newProject: null, projSel: null, projErr: "",
   filter: "all",         // project filter: "all" or a project id as text, kept in localStorage
   settingsOpen: false, settingsFrom: "todos", setSec: "projects",   // Settings tab (item 122): open, the view it came from, its section
+  board: "board", focusFrom: "board",   // overview side (item 86) and the side the Focus view returns to (item 91)
+  events: false,                        // events mixed into the chat (item 100), kept in localStorage
+  nsMode: {},                           // TODO id -> composer in new-session mode (item 71); browser only
+  openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
 };
+try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catch (e) {}
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
@@ -938,9 +1038,10 @@ function openSettings() {
 }
 window.openSettings = openSettings;   // the window app's menu item "Settings… ⌘,"
 function closeSettings() { S.settingsOpen = false; setView(S.view === "settings" ? S.settingsFrom : S.view); }
-function goOverview() { flushDraft(); S.view = "todos"; S.mode = "overview"; S.file = null; render(); need("operator"); }
+function goOverview() { flushDraft(); S.view = "todos"; S.mode = "overview"; S.file = null; if (S.focusFrom) S.board = S.focusFrom; render(); need("operator"); }
 function select(id) {
   flushDraft();
+  if (!(S.view === "todos" && S.mode === "focus")) S.focusFrom = S.board;   // ⌘J inside Focus keeps where you came from
   if (S.sel !== id) { S.detail = null; S.file = null; S.tab = "chat"; }
   S.sel = id; S.view = "todos"; S.mode = "focus";
   composer.value = drafts[draftKey()] ?? "";
@@ -985,15 +1086,19 @@ addEventListener("pagehide", () => flushDraft(true));
 async function commit(key, el) {
   const body = el.value.trim();
   const files = uploads[key] ?? [];
-  if ((!body && !files.length) || S.sending) return;
+  const nsOn = key !== "operator" && S.nsMode[Number(key.slice(5))];   // an empty first message of a new session sends "continue"
+  if ((!body && !files.length && !nsOn) || S.sending) return;
   if (draftPending?.key === key) { clearTimeout(draftTimer); draftPending = null; }   // the server clears the draft on commit
   drafts[key] = "";
   el.value = "";
   delete uploads[key];
-  S.sending = { key, body, files };
+  const tid = key === "operator" ? null : Number(key.slice(5)), ns = tid !== null && S.nsMode[tid];
+  const nsNo = ns ? (S.detail?.sessions?.length ?? 1) + 1 : 0;
+  S.sending = { key, body: body || (ns ? "continue" : ""), files };
   render();
   try {
-    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${key.slice(5)}/messages`, { body, attachments: files.map(wire) });
+    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire) });
+    if (ns) { delete S.nsMode[tid]; toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`); }
   } catch (e) {
     drafts[key] = body;
     if (!el.value && (el === operatorIn || draftKey() === key)) el.value = body;
@@ -1295,42 +1400,58 @@ function renderFocus() {
   const d = S.detail?.todo.id === S.sel ? S.detail : null;
   const fileOpen = !operator && S.file?.todoId === t.id;
   const tab = operator ? "chat" : S.tab;
+  $("backBtn").textContent = S.focusFrom === "backlog" ? "← Backlog" : "← Board";
+  document.querySelector(".focus-sec").classList.toggle("wide", tab !== "chat");
   renderFocusHead(operator, t, d, fileOpen);
   $("fileView").hidden = !fileOpen;
   $("chatView").hidden = fileOpen || tab !== "chat";
   $("filesView").hidden = fileOpen || tab !== "files";
-  $("eventsView").hidden = fileOpen || tab !== "events";
+  $("termView").hidden = fileOpen || tab !== "terminal";
   if (fileOpen) renderFile(t);
   else if (tab === "chat") renderChat(operator, t, d);
   else if (tab === "files") renderFiles(t, d);
-  else renderEvents(d);
+  else renderTerminals(t, d);
 }
 
 function renderFocusHead(operator, t, d, fileOpen) {
-  let meta, title, status, actions = "";
+  let title, status, actions = "", left = "", right = "", extra = "";
   if (operator) {
-    meta = [["Session", S.operator?.session_id || "—"], ["Scope", "all projects"]];
+    const o = S.operator;
     title = "Operator";
-    status = S.operator?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
+    status = o?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true);
     actions = btn("New session", "new-session");
+    left = `<span class="sec">operator</span><span class="sep">·</span><span>all projects</span>`
+      + (o?.session_id ? `<span class="sep">·</span><span>session ${esc(o.session_id.slice(0, 8))}</span>${copyBtn(o.session_id, "Copy session id", "Operator session id")}` : "");
+    right = ctxHtml(o?.ctx, "Operator session", o?.status === "running");
+    extra = `<div class="row wrap" style="gap:8px 12px; padding:2px 0 0"><span style="font-size:13px; color:var(--text-secondary)">Answers about every TODO and acts only when you tell it. It can create TODOs and message them, never start them.</span>
+      <span class="row wrap" style="gap:6px">${OPERATOR_TOOLS.map((x) => `<span class="tool-chip">${x}</span>`).join("")}</span></div>`;
   } else {
-    const st = STATUS[t.status] ?? STATUS.idle;
-    meta = [["Project", t.project_name], ["Session", t.session_id || "—"], ["Branch", t.branch || (t.worktree_path ? basename(t.worktree_path) : t.status === "not_started" ? "—" : "none")]];
+    const st = STATUS[t.status] ?? STATUS.idle, running = t.status === "running";
+    const sessions = d?.sessions ?? [], n = sessions.length || t.session_count || 0;
     title = t.title;
     status = badge(st.label, st.badge, true);
     if (t.status === "not_started") actions += btn("Start", "start", { v: "primary", id: t.id });
-    if (t.attention && t.status !== "running") actions += btn("Clear attention", "clear", { id: t.id });
+    if (t.attention && !running) actions += btn("Clear attention", "clear", { id: t.id });
+    if (t.session_id) actions += `<span title="${running ? "Available once the agent stops" : `End session ${n} and start session ${n + 1} with a hand-over`}" style="display:flex">${btn("New session", "open-ns", { id: t.id, dis: running })}</span>`;
     actions += `<button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO" title="Remove TODO">${SVG(TRASH, 15)}</button>`;
+    left = `<span class="sec">${esc(t.project_name)}</span>`;
+    if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, "Copy session id · resume outside with claude --resume")}`;
+    if (t.branch) left += `<span class="sep">·</span><span class="sec">${SVG(BRANCH, 12)}${esc(t.branch)}</span>`;
+    left += infoGitHtml(t);
+    if (!t.worktree_path && t.status !== "not_started") left += `<span class="sep">·</span><span>project folder, shared with other TODOs</span>`;
+    right = infoPrHtml(t) + ctxHtml(t.ctx, `Session ${n || 1}`, running);
+    const err = t.gh_error;
+    if (err && (t.pr || t.pr_number || t.git?.push === "pushed"))
+      extra = `<div class="gh-line"><span style="text-wrap:pretty">${esc(err.why)} Showing the last result. Retrying every 2 min; the git line is local and stays current.</span>${btn(S.ghRetrying ? "Retrying…" : "Retry now", "gh-retry", { v: "ghost" })}</div>`;
   }
   const showTabs = !operator && !fileOpen;
   const head = $("focusHead");
   head.classList.toggle("notabs", !showTabs);
-  head.innerHTML = `<div class="meta-row">${meta.map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join("")}</div>
-    ${operator ? "" : focusGitHtml(t)}
-    <div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
-    ${operator ? `<span style="font-size:13px; color:var(--text-secondary)">Answers about every session and acts only when you tell it. It can create TODOs and message them, never start them.</span>
-      <div class="row wrap" style="gap:6px">${OPERATOR_TOOLS.map((x) => `<span class="tool-chip">${x}</span>`).join("")}</div>` : ""}
-    ${showTabs ? `<div class="mb-tabs" role="tablist" aria-label="TODO sections" style="margin-bottom:-1px">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", d ? d.files.length : t.file_count], ["events", "Events"]], S.tab, "tab")}</div>` : ""}`;
+  const evCount = d ? d.events.length : 0;
+  head.innerHTML = `<div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
+    <div class="info"><div class="l">${left}</div>${right ? `<div class="r">${right}</div>` : ""}</div>${extra}
+    ${showTabs ? `<div class="tabs-row"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", d ? d.files.length : t.file_count], ["terminal", "Terminal", termCount(t.id)]], S.tab, "tab")}</div>
+      ${S.tab === "chat" ? `<label class="mb-switch" title="Mix this TODO's events into the chat. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Events ${evCount}</span></label>` : ""}</div>` : ""}`;
 }
 
 function msgHtml(m, operator) {
@@ -1342,7 +1463,8 @@ function msgHtml(m, operator) {
   if (m.state === "sending") flags.push(badge(!operator && ["idle", "waiting"].includes(cur()?.status) ? "Resuming" : "Sending", "blue"));
   if (m.file_id && !operator) flags.push(`<button type="button" class="file-chip" data-act="open-file" data-id="${m.file_id}" data-fk="chip:${m.id}">${SVG(FILE, 13)}${esc(m.file_name ?? "file")}</button>`);
   // R54: operator replies are full markdown; worker, app and user messages are short plain text
-  const body = m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : m.body ? `<div class="msg-body">${esc(m.body)}</div>` : "";
+  const body = (m.tools?.length ? `<span class="tools-line">→ ${m.tools.map(esc).join(" · ")}</span>` : "")
+    + (m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : m.body ? `<div class="msg-body">${esc(m.body)}</div>` : "");
   const files = (m.attachments ?? []).map(attachmentHtml).join("");
   return `<div class="msg${m.author.startsWith("user") ? " msg--user" : ""}">
     <div class="msg-side"><span class="who" style="color:${color}">${esc(who)}</span><span class="mono muted" style="font-size:11px">${fmtTime(m.at)}</span></div>
@@ -1358,21 +1480,84 @@ function attachmentHtml(a) {
   return a.id ? `<a class="thumb" href="${src}" target="_blank" rel="noopener" title="${name}">${img}</a>` : `<span class="thumb">${img}</span>`;
 }
 
+// Item 100: events between two messages form one block of dim rows. A detail longer than one line folds open on click;
+// a result is always shown as a box with its text and footer.
+function eventsHtml(evs) {
+  if (!evs.length) return "";
+  return `<div class="evs">${evs.map((e) => {
+    const actor = `<span style="color:${ACTOR[e.actor] ?? "inherit"}">${esc(e.actor)}</span>`;
+    if (e.kind === "result") {
+      const meta = e.meta ? [e.meta.duration_ms != null && fmtDur(e.meta.duration_ms), e.meta.tools != null && plural(e.meta.tools, "tool call")].filter(Boolean).join(" · ") : "";
+      const text = String(e.detail ?? "").replace(/^\*\*([^*\n]+)\*\*:?\s*$/gm, "#### $1");
+      return `<div class="evres"><span class="muted">${fmtTime(e.at)}</span><span class="t">Result</span>${actor}<div class="res-md">${md(text)}</div>${meta ? `<span class="foot">${esc(meta)}</span>` : ""}</div>`;
+    }
+    const lines = String(e.detail ?? "").split("\n"), fold = lines.length > 1, open = fold && S.openEv.has(e.id);
+    const mark = fold ? SVG(open ? CHEV_D : CHEV_R, 12) : '<span class="sp"></span>';
+    return `<div class="evl${fold ? " fold" : ""}"${fold ? ` data-act="ev-toggle" data-id="${e.id}" aria-expanded="${open}"` : ""}><span>${fmtTime(e.at)}</span><span class="k">${mark}<b>${esc(e.kind)}</b>${!open && e.detail ? `<i>${esc(lines[0])}</i>` : ""}</span>${actor}</div>${open ? `<pre class="ev-box">${esc(e.detail)}</pre>` : ""}`;
+  }).join("")}</div>`;
+}
+// Messages and (with the switch on) events of one session, in time order. Pending and queued messages come last.
+function streamHtml(msgs, evs, operator) {
+  const items = msgs.map((m) => ({ at: m.at, m })).concat(evs.map((e) => ({ at: e.at, e })));
+  items.sort((a, b) => (a.m && a.m.session_no == null) - (b.m && b.m.session_no == null) || a.at.localeCompare(b.at));
+  let html = "", block = [];
+  for (const x of items) {
+    if (x.e) { block.push(x.e); continue; }
+    html += eventsHtml(block) + msgHtml(x.m, operator);
+    block = [];
+  }
+  return html + eventsHtml(block);
+}
+const sessLabel = (msgs) => (msgs.find((m) => m.author.startsWith("user"))?.body ?? "").split("\n")[0];
+const sessRange = (s) => {
+  const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const hm = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${day(s.started_at)} · ${hm(s.started_at)}–${s.ended_at ? (day(s.ended_at) === day(s.started_at) ? "" : day(s.ended_at) + " ") + hm(s.ended_at) : ""}`;
+};
+// Item 76: with two or more sessions the chat is a timeline. The live session is open; earlier ones show their last
+// agent message and files, and open read-only.
+function timelineHtml(t, d) {
+  const sessions = d.sessions, live = sessions.length, path = S.projects.find((p) => p.id === t.project_id)?.local_path ?? "the project folder";
+  const evsOf = (no) => (S.events ? d.events.filter((e) => (e.session_no ?? 1) === no) : []);
+  return sessions.map((s) => {
+    const isLive = s.no === live, key = `${t.id}:${s.no}`, open = isLive || S.openSess.has(key);
+    const msgs = d.messages.filter((m) => (m.session_no ?? (isLive ? live : -1)) === s.no);
+    const head = `<div class="sess"><div class="sess-row">
+        <button type="button" class="sess-btn"${isLive ? ' aria-disabled="true"' : ` data-act="sess-toggle" data-id="${key}"`} aria-expanded="${open}">${SVG(open ? CHEV_D : CHEV_R, 14)}<span class="sess-no">Session ${s.no}</span><span class="sess-label">${esc(sessLabel(msgs))}</span></button>
+        ${isLive ? badge("Live", "neutral", true) : ""}<span class="sess-range">${esc(sessRange(s))}</span>
+        <button type="button" class="sid-btn" data-act="copy" data-id="${esc(s.session_id)}" data-title="Session ${s.no} id" title="Copy id · claude --resume ${esc(s.session_id)} from ${esc(path)}">${esc(s.session_id.slice(0, 8))}${SVG(COPY_ICON, 12)}</button>
+      </div>${open && !isLive ? `<span class="sess-resume">Read-only here. Resume it outside the app: claude --resume ${esc(s.session_id)}, run from ${esc(path)}</span>` : ""}</div>`;
+    if (open) return head + streamHtml(msgs, evsOf(s.no), false).replaceAll('data-act="edit-first"', "");
+    const last = [...msgs].reverse().find((m) => m.author === "agent");
+    const files = d.files.filter((f) => f.session_no === s.no);
+    return head + `<div class="sess-sum"><span class="who">Agent</span><span class="b">${last ? esc(last.body) : "No agent message in this session."}</span>${files.map((f) => `<button type="button" class="file-chip sm" data-act="open-file" data-id="${f.id}">${SVG(FILE, 13)}${esc(f.name)}</button>`).join("")}</div>`;
+  }).join("");
+}
+
 function renderChat(operator, t, d) {
   const key = draftKey();
   const msgs = operator ? S.operator?.messages ?? [] : d?.messages ?? [];
   const running = operator ? S.operator?.status === "running" : t.status === "running";
-  let html = msgs.map((m) => msgHtml(m, operator)).join("");
+  let html = operator || !d ? msgs.map((m) => msgHtml(m, operator)).join("")
+    : d.sessions.length > 1 ? timelineHtml(t, d) : streamHtml(msgs, S.events ? d.events : [], false);
   if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, operator);
   if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working"))}</div>`;
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
-  const sig = `${key}:${msgs.length}:${!!S.sending}`;
+  const sig = `${key}:${msgs.length}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
   if (chatLog._html !== html) { chatLog.innerHTML = html; chatLog._html = html; }
   if (chatLog.dataset.sig !== sig || atBottom) chatLog.scrollTop = chatLog.scrollHeight;
   chatLog.dataset.sig = sig;
 
-  composer.placeholder = operator ? "Ask about sessions, or tell it to create or message a TODO" : "One line to the agent";
+  const nSess = d?.sessions?.length ?? t?.session_count ?? 0, ns = !operator && !!S.nsMode[t.id];
+  composer.placeholder = operator ? "Ask about TODOs, or tell it to create or message one"
+    : ns ? `First message for session ${nSess + 1}` : nSess > 1 ? `One line to session ${nSess}` : "One line to the agent";
+  // Item 71: the composer in new-session mode; the draft and attachments stay.
+  const nsHead = $("nsHead");
+  nsHead.hidden = !ns;
+  setHtml(nsHead, ns ? `<span class="sq"></span><span class="t">New session ${nSess + 1}</span><span class="small">⌘↵ starts session ${nSess + 1}. Session ${nSess} ends and stays above as history.</span>
+    <span class="push row" style="gap:6px"><span class="kbd">Esc</span>${btn("Cancel", "cancel-ns", { v: "ghost", id: t.id })}</span>` : "");
+  $("commitBtn").textContent = ns ? "Start session" : "Commit";
   // R56: after an app restart queued messages wait for the user; nothing is delivered on its own
   const q = operator ? 0 : t.queued_count;
   const bar = $("deliverBar");
@@ -1384,15 +1569,18 @@ function renderChat(operator, t, d) {
 function renderHint() {
   const operator = S.sel === "operator", t = operator ? null : cur();
   // R20 delivery hint, worded as in the design
+  const ns = !operator && t && S.nsMode[t.id];
+  const handed = ns && [t.worktree_path && "worktree", t.pr_number || t.pr ? `PR #${t.pr?.number ?? t.pr_number}` : "", ...(S.detail?.files ?? []).map((f) => f.name)].filter(Boolean);
   const hint = operator ? "Delivers now. The operator acts only on what you ask."
-    : !t ? "" : t.status === "running" ? "Agent is running. Your message is queued and delivered once, when the turn ends."
+    : !t ? "" : ns ? (handed.length ? "Handed over: " + handed.join(", ") : "Nothing to hand over yet.")
+    : t.status === "running" ? "Agent is running. Your message is queued and delivered once, when the turn ends."
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
   const key = operator ? null : draftKey();   // the operator chat takes no attachments
   $("composerHint").innerHTML = `${composer.value.trim() ? badge("Draft") : ""}<span>${esc(hint)}</span><span class="push row" style="gap:6px">${key ? '<span class="kbd">⌘V</span><span style="margin-right:6px">image</span>' : ""}<span class="kbd">⌘↵</span>commit</span>`;
   $("attachBtn").hidden = !key;
   setHtml($("composerFiles"), key ? uploadChips(key) : "");
-  $("commitBtn").disabled = (!composer.value.trim() && !uploads[key]?.length) || !!S.sending;
+  $("commitBtn").disabled = (!composer.value.trim() && !uploads[key]?.length && !ns) || !!S.sending;
 }
 
 function renderFiles(t, d) {
@@ -1405,10 +1593,10 @@ function renderFiles(t, d) {
       </div>`).join("");
 }
 
-function renderEvents(d) {
-  const evs = d ? d.events.slice().reverse() : [];
-  $("eventsView").innerHTML = !d ? '<span class="empty">Loading…</span>' : !evs.length ? '<span class="empty">No events yet.</span>'
-    : `<div class="ev-table">${evs.map((e) => `<div class="ev"><span class="muted">${fmtTime(e.at)}</span><span>${esc(e.kind)}${e.detail ? `<span class="ev-detail">${esc(e.detail)}</span>` : ""}</span><span class="ev-actor" style="color:${ACTOR[e.actor] ?? "inherit"}">${esc(e.actor)}</span></div>`).join("")}</div>`;
+// ponytail: terminals arrive in step 8 of the v4 plan; until then the tab shows its empty state only.
+const termCount = (todoId) => 0;
+function renderTerminals(t, d) {
+  $("termView").innerHTML = '<span class="empty">No terminals.</span>';
 }
 
 function setMd(el, text) { if (el._src !== text) { el.innerHTML = md(text); el._src = text; } }
@@ -1433,7 +1621,7 @@ function renderRemoved() {
     const branch = r.branch || (r.worktree_path ? basename(r.worktree_path) : "");
     return `<div class="rm-row"><div class="rm-main">
         <div style="font-size:14px; font-weight:500; overflow-wrap:anywhere">${esc(r.title)}</div>
-        <div class="rm-meta"><span style="color:var(--text-secondary)">${esc(r.project_name)}</span><span>removed ${ago(r.removed_at)} by ${esc(r.removed_by)}</span><span>session ${esc(r.session_id || "—")}</span><span>${plural(r.message_count, "message")} · ${plural(r.file_count, "file")}</span>${branch ? `<span>${esc(branch)}</span>` : ""}</div>
+        <div class="rm-meta"><span style="color:var(--text-secondary)">${esc(r.project_name)}</span><span>removed ${ago(r.removed_at)} by ${esc(r.removed_by)}</span><span>${r.session_id ? `session ${esc(r.session_id.slice(0, 8))}${r.session_count > 1 ? ` · ${r.session_count} sessions` : ""}` : "not started"}</span><span>${plural(r.message_count, "message")} · ${plural(r.file_count, "file")}</span>${branch ? `<span>${esc(branch)}</span>` : ""}</div>
       </div>${r.has_draft ? badge("Draft") : ""}${btn("Restore", "restore", { id: r.id })}</div>`;
   }).join("");
 }
@@ -1472,6 +1660,12 @@ const ACTIONS = {
   back: goOverview,
   next: nextWaiting,
   tab: (id) => { S.tab = id; render(); },
+  events: (id, el) => { S.events = el.checked; try { localStorage.setItem("switchboard-chat-events", S.events ? "1" : "0"); } catch (e) {} render(); },
+  "ev-toggle": (id) => { const k = Number(id); S.openEv.has(k) ? S.openEv.delete(k) : S.openEv.add(k); render(); },
+  "sess-toggle": (id) => { S.openSess.has(id) ? S.openSess.delete(id) : S.openSess.add(id); render(); },
+  copy: (id, el) => copyText(id, "Copied", `${el.dataset.title ?? "Session id"} ${id}`),
+  "open-ns": (id) => { S.nsMode[Number(id)] = true; S.tab = "chat"; render(); composer.focus(); },
+  "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
   clear: (id) => act(call("POST", `/api/todos/${id}/clear-attention`)),
   deliver: (id) => act(call("POST", `/api/todos/${id}/deliver`), "Not delivered"),
@@ -1519,6 +1713,7 @@ document.addEventListener("keydown", (e) => {
   if (mod && k === "s" && fileShown) { e.preventDefault(); return saveFile(); }
   // Esc closes the innermost thing first (design v4): … Settings, then an open file, then Focus.
   if (e.key === "Escape") {
+    if (S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" && S.nsMode[S.sel]) { e.preventDefault(); delete S.nsMode[S.sel]; return render(); }
     if (S.view === "settings" && !typing) { e.preventDefault(); return closeSettings(); }
     if (fileShown) { e.preventDefault(); return closeFile(); }
     if (S.view === "todos" && S.mode === "focus") { if (typing) e.target.blur(); return goOverview(); }

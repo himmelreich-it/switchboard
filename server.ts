@@ -465,7 +465,7 @@ async function api(req: Request, path: string): Promise<Response> {
       sessions: sessionsOf(id),
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
-      events: (db.query("SELECT kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").all(id) as any[])
+      events: (db.query("SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").all(id) as any[])
         .map((e) => ({ ...e, meta: e.meta ? JSON.parse(e.meta) : null })),
       draft: getDraft(`todo:${id}`),
     });
@@ -568,11 +568,19 @@ async function api(req: Request, path: string): Promise<Response> {
 
   if (path === "/api/operator" && method === "GET") {
     const since = getMeta("operator_since") ?? "";
+    const messages = db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE todo_id IS NULL AND committed_at >= ? ORDER BY id").all(since) as any[];
+    // Item 127: each reply lists the tools the operator used since the message before it.
+    const used = db.query("SELECT kind, detail, at FROM events WHERE todo_id IS NULL AND actor = 'operator' AND at >= ? ORDER BY id").all(since) as any[];
+    let prev = since;
+    for (const m of messages) {
+      if (m.author === "operator") m.tools = used.filter((e) => e.at > prev && e.at <= m.at).map((e) => `${e.kind}(${e.detail ?? ""})`);
+      prev = m.at;
+    }
     return json({
       status: isRunning("operator") ? "running" : "idle",
       session_id: getMeta("operator_session_id") ?? null,
       ctx: getMeta("operator_ctx") ? JSON.parse(getMeta("operator_ctx")!) : null,
-      messages: db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE todo_id IS NULL AND committed_at >= ? ORDER BY id").all(since),
+      messages,
       draft: getDraft("operator"),
     });
   }
