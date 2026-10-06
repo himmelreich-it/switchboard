@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, isInside, lineCount, parseGitStatus, parseGithubRemote, parseRefCounts,
+  cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseGithubRemote, parseRefCounts, usageStep,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
@@ -116,4 +116,63 @@ test("tokenOk", () => {
   expect(tokenOk(tok, null, null)).toBe(false);
   expect(tokenOk(tok, "ab", null)).toBe(false);
   expect(tokenOk(tok, "cd".repeat(32), tok)).toBe(false); // the header wins over the query
+});
+
+test("handOver leaves out lines without a value", () => {
+  const full = handOver({
+    no: 3, title: "Implement MCPs (AI-1234)", worktree: "/w/ai-1234", pr: 512,
+    last: { no: 2, body: "Server done,\nclient stubs left." },
+    files: [{ path: "/d/plan.md", session_no: 1 }, { path: "/d/notes.md", session_no: null }],
+  });
+  expect(full).toBe([
+    "This TODO continues earlier work (session 3). Title: Implement MCPs (AI-1234). Keep this title.",
+    "Your worktree: /w/ai-1234. Work there.",
+    "Pull request: #512.",
+    "Last message of session 2: Server done, client stubs left.",
+    "Files from earlier sessions (open with Read what you need):",
+    "/d/plan.md (session 1)",
+    "/d/notes.md (added outside a session)",
+  ].join("\n"));
+  expect(handOver({ no: 2, title: "T", worktree: null, pr: null, last: null, files: [] }))
+    .toBe("This TODO continues earlier work (session 2). Title: T. Keep this title.");
+  // the header names the worktree, so the usual worktree line is not repeated
+  expect(deliveryPrompt("/w", ["go"], "HEADER")).toBe("HEADER\n\ngo");
+});
+
+test("usageStep reads the context from the last main-loop model call", () => {
+  const msgs = [
+    { type: "system", subtype: "init", model: "claude-opus-5-5" },
+    { type: "assistant", parent_tool_use_id: null, message: { usage: { input_tokens: 2, cache_read_input_tokens: 9000, cache_creation_input_tokens: 1000, output_tokens: 50 } } },
+    { type: "assistant", parent_tool_use_id: "toolu_1", message: { usage: { input_tokens: 5, cache_read_input_tokens: 99999, cache_creation_input_tokens: 0, output_tokens: 1 } } },
+    { type: "assistant", parent_tool_use_id: null, message: { usage: { input_tokens: 3, cache_read_input_tokens: 12000, cache_creation_input_tokens: 500, output_tokens: 200 } } },
+    { type: "result", usage: { output_tokens: 250 }, modelUsage: { "claude-haiku-4-5": { contextWindow: 200000 }, "claude-opus-5-5": { contextWindow: 1000000 } } },
+  ];
+  const c = msgs.reduce<any>((c, m) => usageStep(c, m), null);
+  expect(c).toMatchObject({ used: 12703, last_in: 12503, last_out: 250, window: 1000000, turns: 1 });
+  const after = usageStep(c, { type: "system", subtype: "compact_boundary", compact_metadata: { pre_tokens: 12703, post_tokens: 3000 } });
+  expect(after!.used).toBe(3000);
+  expect(usageStep(null, { type: "user" })).toBe(null);
+});
+
+test("migrateDb makes earlier TODOs session 1 and runs twice without harm", () => {
+  const { Database } = require("bun:sqlite");
+  const db = new Database(":memory:");
+  // a database from before sessions
+  db.exec(`CREATE TABLE todos (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL, attention INTEGER NOT NULL DEFAULT 0,
+    session_id TEXT, worktree_path TEXT, last_tool TEXT, last_read_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
+    CREATE TABLE messages (id INTEGER PRIMARY KEY, todo_id INTEGER, author TEXT NOT NULL, body TEXT NOT NULL, state TEXT NOT NULL, file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT);
+    CREATE TABLE events (id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL, actor TEXT NOT NULL, detail TEXT, at TEXT NOT NULL);
+    CREATE TABLE files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE);
+    INSERT INTO todos VALUES (1, 1, 'started', 'idle', 0, 'sid-1', NULL, NULL, NULL, 't0', 't9', NULL, NULL);
+    INSERT INTO todos VALUES (2, 1, 'idea', 'not_started', 0, NULL, NULL, NULL, NULL, 't0', 't0', NULL, NULL);
+    INSERT INTO messages (todo_id, author, body, state, committed_at) VALUES (1, 'user', 'go', 'delivered', 't1'), (1, 'user', 'later', 'queued', 't5'), (2, 'user', 'idea', 'pending', 't0');
+    INSERT INTO events (todo_id, kind, actor, at) VALUES (1, 'created', 'user', 't0'), (1, 'launch', 'app', 't2'), (1, 'run ended', 'app', 't3');
+    INSERT INTO files (todo_id, path) VALUES (1, '/d/plan.md');`);
+  migrateDb(db);
+  migrateDb(db);
+  expect(db.query("SELECT todo_id, no, session_id, started_at FROM sessions").all()).toEqual([{ todo_id: 1, no: 1, session_id: "sid-1", started_at: "t2" }]);
+  expect(db.query("SELECT body, session_no FROM messages ORDER BY id").all().map((m: any) => m.session_no)).toEqual([1, null, null]);
+  expect(db.query("SELECT kind, session_no FROM events ORDER BY id").all().map((e: any) => e.session_no)).toEqual([null, 1, 1]);
+  expect((db.query("SELECT session_no FROM files").get() as any).session_no).toBe(1);
+  expect(db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'ctx'").get()).toBeTruthy();
 });

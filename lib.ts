@@ -1,4 +1,5 @@
-// Pure helpers. No I/O here, so lib.test.ts can cover them.
+// Pure helpers. No I/O here, so lib.test.ts can cover them (migrateDb takes the database, so the tests give it one in memory).
+import type { Database } from "bun:sqlite";
 import { basename, isAbsolute, relative } from "node:path";
 
 export type Status = "not_started" | "running" | "waiting" | "idle";
@@ -28,9 +29,48 @@ export const lineCount = (text: string) => text.trim().split("\n").filter((l) =>
 
 // The prompt for one turn: the worktree line (while one is registered), then every delivered message.
 // With no messages, as on a restore with nothing queued and no draft, the prompt is "continue".
-export function deliveryPrompt(worktree: string | null, bodies: string[]): string {
+// The first turn of a later session starts with the hand-over header instead, which names the worktree itself.
+export function deliveryPrompt(worktree: string | null, bodies: string[], header = ""): string {
   const text = bodies.map((b) => b.trim()).filter(Boolean).join("\n\n") || "continue";
+  if (header) return `${header}\n\n${text}`;
   return worktree ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
+}
+
+// Item 73: what a new session gets from the earlier ones, built from the TODO's data (no agent writes it).
+// Lines without a value are left out.
+export function handOver(o: {
+  no: number; title: string; worktree: string | null; pr: number | null;
+  last: { no: number; body: string } | null; files: { path: string; session_no: number | null }[];
+}): string {
+  return [
+    `This TODO continues earlier work (session ${o.no}). Title: ${o.title}. Keep this title.`,
+    o.worktree && `Your worktree: ${o.worktree}. Work there.`,
+    o.pr && `Pull request: #${o.pr}.`,
+    o.last && `Last message of session ${o.last.no}: ${o.last.body.replace(/\s*\n\s*/g, " ")}`,
+    o.files.length && "Files from earlier sessions (open with Read what you need):\n"
+      + o.files.map((f) => `${f.path} (${f.session_no ? `session ${f.session_no}` : "added outside a session"})`).join("\n"),
+  ].filter(Boolean).join("\n");
+}
+
+// The context meter (item 123), updated from each SDK message of a run. Context = what went into the last model call
+// of the main loop (input + cache read + cache write) plus what it wrote. result.usage is summed over the turn's calls,
+// so it would overstate the context. ponytail: an assistant message's output_tokens can still be streaming; that is a
+// few percent of `used`, so it is shown as is.
+export type Ctx = { used: number; window: number | null; last_in: number; last_out: number; turns: number; model?: string };
+export function usageStep(c: Ctx | null, m: any): Ctx | null {
+  const cur: Ctx = c ?? { used: 0, window: null, last_in: 0, last_out: 0, turns: 0 };
+  if (m?.type === "system" && m.subtype === "init") return { ...cur, model: m.model };
+  if (m?.type === "assistant" && m.parent_tool_use_id == null && m.message?.usage) {
+    const u = m.message.usage, input = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+    return { ...cur, last_in: input, used: input + (u.output_tokens ?? 0) };
+  }
+  if (m?.type === "system" && m.subtype === "compact_boundary") return { ...cur, used: m.compact_metadata?.post_tokens ?? cur.used };
+  if (m?.type === "result") {
+    const models = Object.entries(m.modelUsage ?? {}) as [string, any][];
+    const main = models.find(([k]) => k === cur.model) ?? models.sort((a, b) => (b[1].contextWindow ?? 0) - (a[1].contextWindow ?? 0))[0];
+    return { ...cur, last_out: m.usage?.output_tokens ?? cur.last_out, window: main?.[1].contextWindow ?? cur.window, turns: cur.turns + 1 };
+  }
+  return c;
 }
 
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
@@ -174,4 +214,59 @@ export function ghOutcome(code: number | null, stdout: string, stderr: string):
   const text = (stderr || stdout).trim();
   if (/dial tcp|error connecting to|internet connection|no such host|i\/o timeout|TLS handshake/i.test(text)) return { error: "no network", detail: text };
   return { error: "unclear", detail: `exit ${code ?? "killed"}${text ? " · " + text.split("\n")[0]!.slice(0, 160) : ""}` };
+}
+
+// ---------- schema ----------
+
+// The whole schema plus its migrations. Every migration only adds, so an older build still reads the database.
+export function migrateDb(db: Database) {
+  const hadSessions = !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'").get();
+  db.exec(`
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL,
+  agent_prompt TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), title TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('not_started','running','waiting','idle')), attention INTEGER NOT NULL DEFAULT 0,
+  session_id TEXT, worktree_path TEXT, pr_number INTEGER, last_tool TEXT, last_read_at TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY, todo_id INTEGER,
+  author TEXT NOT NULL CHECK (author IN ('user','agent','user via operator','operator','app')), body TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('pending','queued','delivered')), file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT);
+CREATE TABLE IF NOT EXISTS drafts (key TEXT PRIMARY KEY, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL,
+  actor TEXT NOT NULL CHECK (actor IN ('user','agent','app','operator')), detail TEXT, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sessions (
+  id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, no INTEGER NOT NULL, session_id TEXT NOT NULL,
+  started_at TEXT NOT NULL, ended_at TEXT, UNIQUE (todo_id, no));
+CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
+CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
+CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
+`);
+  const addColumn = (table: string, col: string, type: string) => {
+    if (!db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+  };
+  addColumn("todos", "pr_number", "INTEGER");   // databases made before set_pr existed
+  addColumn("todos", "ctx", "TEXT");            // context meter of the live session (JSON, see usageStep)
+  addColumn("messages", "session_no", "INTEGER");
+  addColumn("events", "session_no", "INTEGER");
+  addColumn("events", "meta", "TEXT");           // a result's duration and tool count (JSON)
+  addColumn("files", "session_no", "INTEGER");
+  // Databases from before sessions: every started TODO was one session, which becomes session 1.
+  if (!hadSessions) db.transaction(() => {
+    db.exec(`
+INSERT INTO sessions (todo_id, no, session_id, started_at)
+  SELECT t.id, 1, t.session_id, COALESCE((SELECT MIN(e.at) FROM events e WHERE e.todo_id = t.id AND e.kind = 'launch'), t.created_at)
+  FROM todos t WHERE t.session_id IS NOT NULL;
+UPDATE messages SET session_no = 1 WHERE state = 'delivered' AND todo_id IN (SELECT todo_id FROM sessions);
+UPDATE events SET session_no = 1 WHERE todo_id IN (SELECT todo_id FROM sessions)
+  AND at >= (SELECT s.started_at FROM sessions s WHERE s.todo_id = events.todo_id);
+UPDATE files SET session_no = 1 WHERE todo_id IN (SELECT todo_id FROM sessions);
+`);
+  })();
 }
