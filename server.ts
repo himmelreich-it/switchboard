@@ -1,13 +1,13 @@
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { Database } from "bun:sqlite";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  ghOutcome, isInside, migrateDb, parseGitStatus, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type Pr, type Status,
 } from "./lib";
-import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, newSession, start, stopAll } from "./runner";
+import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, newSession, start, stopAll, worktreeRoot } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 const HOST = "127.0.0.1";
@@ -357,6 +357,47 @@ function uploadsIn(v: unknown): Upload[] {
   return v;
 }
 
+// ---------- worktree and project files (items 101-110) ----------
+
+// A request names a root and a path relative to it. The real path must lie inside the project's local folder or its
+// worktree root (item 110), so the worktree skill's symlinks into the main folder open and nothing else does.
+function rootDir(t: Todo, root: string) {
+  const base = root === "worktree" ? t.worktree_path : root === "project" ? projectRow(t.project_id)!.local_path : null;
+  if (!base || !existsSync(base)) throw httpError(404, root === "worktree" ? "this TODO has no worktree on disk" : "unknown root");
+  return base;
+}
+function fsTarget(t: Todo, root: string, rel: string, write = false) {
+  const p = projectRow(t.project_id)!;
+  const base = rootDir(t, root);
+  if (typeof rel !== "string" || !rel || isAbsolute(rel)) throw httpError(400, "path must be relative to the root");
+  const lexical = resolve(base, rel);
+  if (!isInside(lexical, resolve(base))) throw httpError(403, `${rel} is outside the ${root}`);
+  const real = existsSync(lexical) ? realpathSync(lexical) : join(realpathSync(dirname(lexical)), basename(lexical));
+  const allowed = [realpathSync(p.local_path), realpathSync(worktreeRoot(p.local_path))];
+  if (!allowed.some((d) => isInside(real, d))) throw httpError(403, `${rel} points outside the project`);
+  if (write && (rel.split("/").includes(".git") || real.split("/").includes(".git"))) throw httpError(403, "writes inside .git/ are refused");
+  return { base, real };
+}
+// The base the marks and Diff compare with: the merge base of HEAD with origin/HEAD, else HEAD.
+async function diffBase(dir: string) {
+  const mb = await sh(["git", "-C", dir, "merge-base", "HEAD", "origin/HEAD"]);
+  if (mb.ok) return { sha: mb.out, label: "merge-base" };
+  const head = await sh(["git", "-C", dir, "rev-parse", "HEAD"]);
+  return head.ok ? { sha: head.out, label: "HEAD" } : null;
+}
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i;
+const MAX_TEXT = 2 * 1024 * 1024;
+// ponytail: a whole read per request; fine for source files, the 2 MB cut keeps big files out of the JSON.
+function fileFacts(real: string) {
+  const st = statSync(real);
+  if (!st.isFile()) throw httpError(400, "not a file");
+  const image = IMAGE_EXT.test(real) && !/\.svg$/i.test(real);
+  if (image || st.size > MAX_TEXT) return { size: st.size, mtime: st.mtimeMs, image, large: !image, binary: false, content: null };
+  const buf = readFileSync(real);
+  const binary = buf.subarray(0, 8192).includes(0);
+  return { size: st.size, mtime: st.mtimeMs, image, large: false, binary, content: binary ? null : buf.toString("utf8") };
+}
+
 const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
 
 async function api(req: Request, path: string): Promise<Response> {
@@ -468,7 +509,8 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!f) return fail("no such file", 404);
     if (method === "GET") {
       if (!existsSync(f.path)) return fail(`${f.path} no longer exists on disk`, 404);
-      return json({ id: f.id, name: basename(f.path), path: f.path, content: readFileSync(f.path, "utf8"), mtime: statSync(f.path).mtimeMs });
+      if (new URL(req.url).searchParams.has("raw")) return new Response(Bun.file(f.path), { headers: { "content-security-policy": "sandbox" } });
+      return json({ id: f.id, name: basename(f.path), path: f.path, ...fileFacts(f.path) });
     }
     if (method === "PUT") {
       if (typeof body.content !== "string") return fail("content is required");
@@ -476,8 +518,67 @@ async function api(req: Request, path: string): Promise<Response> {
       const mtime = existsSync(f.path) ? statSync(f.path).mtimeMs : null;
       if (!body.force && mtime !== body.base_mtime) return json({ error: "changed", mtime }, 409);
       writeFileSync(f.path, body.content); // the agent is not told; the user hands work back with a chat message
-      changed(id);
+      addEvent(id, "file saved", "user", `${basename(f.path)} · agent not notified`);
       return json({ mtime: statSync(f.path).mtimeMs });
+    }
+  }
+
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(tree|fs|fs\/raw|diff)$/))) {
+    const t = todoOr404(Number(m[1])), what = m[2];
+    const url = new URL(req.url), root = url.searchParams.get("root") ?? body?.root, rel = url.searchParams.get("path") ?? body?.path;
+    if (what === "tree" && method === "GET") {
+      const base = rootDir(t, String(root));
+      const b = await diffBase(base);
+      const [files, others, diff] = await Promise.all([
+        sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]),
+        sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--others", "--exclude-standard", "-z"]),
+        b ? sh(["git", "-C", base, "--no-optional-locks", "diff", "--name-status", "-z", b.sha]) : Promise.resolve({ ok: true, out: "" }),
+      ]);
+      if (!files.ok) return fail(`git could not list ${base}`, 500);
+      const marks = parseMarks(diff.ok ? diff.out : "", others.out);
+      const paths = new Set(files.out.split("\0").filter(Boolean));
+      // The worktree skill links .env or CLAUDE.local.md into the main folder; git ignores them, the tree shows them.
+      // ponytail: only symlinks at the top of the root are found this way.
+      const links: string[] = [];
+      for (const n of readdirSync(base)) {
+        try { if (lstatSync(join(base, n)).isSymbolicLink()) { links.push(n); paths.add(n); } } catch {}
+      }
+      return json({ paths: [...paths].filter((p) => marks[p] !== "D" || existsSync(join(base, p))), marks, links, base: b, dir: base });
+    }
+    if (what === "fs" && method === "GET") {
+      const { real } = fsTarget(t, String(root), String(rel));
+      if (!existsSync(real)) return fail(`${rel} no longer exists on disk`, 404);
+      return json({ path: rel, abs: real, ...fileFacts(real) });
+    }
+    if (what === "fs/raw" && method === "GET") {
+      const { real } = fsTarget(t, String(root), String(rel));
+      if (!existsSync(real)) return fail("no such file", 404);
+      return new Response(Bun.file(real), { headers: { "content-security-policy": "sandbox" } });
+    }
+    if (what === "fs" && method === "PUT") {
+      const { real } = fsTarget(t, String(root), String(rel), true);
+      if (typeof body.content !== "string") return fail("content is required");
+      // Item 108: worktree files lock while the agent runs; the project folder has no lock, the mtime check guards it.
+      if (root === "worktree" && t.status === "running") return json({ error: "running" }, 409);
+      const mtime = existsSync(real) ? statSync(real).mtimeMs : null;
+      if (!body.force && mtime !== body.base_mtime) return json({ error: "changed", mtime }, 409);
+      writeFileSync(real, body.content);   // to the resolved file, so a symlink stays a symlink
+      addEvent(t.id, "file saved", "user", `${root} · ${rel} · agent not notified`);
+      return json({ mtime: statSync(real).mtimeMs });
+    }
+    if (what === "diff" && method === "GET") {
+      const { base, real } = fsTarget(t, String(root), String(rel));
+      const b = await diffBase(base);
+      const top = await sh(["git", "-C", base, "rev-parse", "--show-toplevel"]);
+      const inRepo = relative(top.ok ? realpathSync(top.out) : base, join(realpathSync(base), String(rel)));
+      // Not through sh(): it trims, and a diff needs the exact text. A file added since the base has no old version.
+      let old = "";
+      if (b) {
+        const pr = Bun.spawn(["git", "-C", base, "show", `${b.sha}:${inRepo}`], { stdout: "pipe", stderr: "ignore" });
+        const [text, code] = await Promise.all([new Response(pr.stdout).text(), pr.exited]);
+        if (code === 0) old = text;
+      }
+      return json({ base: old, base_sha: b?.sha ?? null, base_label: b?.label ?? null, current: existsSync(real) ? (fileFacts(real).content ?? "") : "" });
     }
   }
 

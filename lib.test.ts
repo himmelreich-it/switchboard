@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseGithubRemote, parseRefCounts, usageStep,
+  cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseGithubRemote, parseRefCounts, usageStep,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
@@ -175,4 +175,12 @@ test("migrateDb makes earlier TODOs session 1 and runs twice without harm", () =
   expect(db.query("SELECT kind, session_no FROM events ORDER BY id").all().map((e: any) => e.session_no)).toEqual([null, 1, 1]);
   expect((db.query("SELECT session_no FROM files").get() as any).session_no).toBe(1);
   expect(db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'ctx'").get()).toBeTruthy();
+});
+
+test("parseMarks", () => {
+  const ns = ["M", "src/a.ts", "A", "src/new.ts", "D", "old.md", "R087", "x/from.ts", "x/to.ts", ""].join("\0");
+  expect(parseMarks(ns, ["notes.txt", "tmp/u.log", ""].join("\0"))).toEqual({
+    "src/a.ts": "M", "src/new.ts": "A", "old.md": "D", "x/from.ts": "D", "x/to.ts": "A", "notes.txt": "U", "tmp/u.log": "U",
+  });
+  expect(parseMarks("", "")).toEqual({});
 });

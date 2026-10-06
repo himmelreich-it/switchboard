@@ -216,6 +216,26 @@ export function ghOutcome(code: number | null, stdout: string, stderr: string):
   return { error: "unclear", detail: `exit ${code ?? "killed"}${text ? " · " + text.split("\n")[0]!.slice(0, 160) : ""}` };
 }
 
+// ---------- files of a worktree or the project folder (items 102, 103) ----------
+
+// `git diff --name-status -z <base>` (the merge base against the working tree, so committed and uncommitted
+// changes) plus `git ls-files --others --exclude-standard -z` (untracked): one mark per path.
+// A rename marks the new path added and the old one deleted.
+export type Mark = "M" | "A" | "U" | "D";
+export function parseMarks(nameStatusZ: string, untrackedZ: string): Record<string, Mark> {
+  const marks: Record<string, Mark> = {};
+  const f = nameStatusZ.split("\0");
+  for (let i = 0; i < f.length - 1;) {
+    const st = f[i++]!;
+    if (!st) continue;
+    if (st[0] === "R" || st[0] === "C") { const from = f[i++]!, to = f[i++]!; if (st[0] === "R") marks[from] = "D"; marks[to] = "A"; continue; }
+    const path = f[i++]!;
+    marks[path] = st[0] === "D" ? "D" : st[0] === "A" ? "A" : "M";
+  }
+  for (const p of untrackedZ.split("\0")) if (p) marks[p] = "U";
+  return marks;
+}
+
 // ---------- schema ----------
 
 // The whole schema plus its migrations. Every migration only adds, so an older build still reads the database.

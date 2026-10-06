@@ -156,7 +156,7 @@ export function deliver(todoId: number, reason = "deliver") {
 }
 
 // `git config worktree.root`, else <local_path>/../worktrees. Created if missing, so --add-dir always gets a real folder.
-function worktreeRoot(localPath: string) {
+export function worktreeRoot(localPath: string) {
   const r = Bun.spawnSync(["git", "-C", localPath, "config", "worktree.root"]);
   const set = r.exitCode === 0 ? r.stdout.toString().trim() : "";
   const root = resolve(localPath, set ? set.replace(/^~(?=\/|$)/, homedir()) : "../worktrees");
