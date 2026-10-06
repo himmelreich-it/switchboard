@@ -1,0 +1,166 @@
+# Files, editing and terminal
+
+Proposal, 2026-10-06. Extends `feature-spec-switchboard.md` with browsing the files of a TODO's worktree or its project's main folder, light editing in the style of Orca, and a terminal per TODO. Items are numbered from 68, the next free spec number; once agreed they move into the spec, and the UI goes into `designs/Switchboard-v4.html` before it is built (the spec's Design rule).
+
+Guiding principle, as in the spec: **streamline the user's work, don't delegate their control.** The chat stays the lightweight way to steer an agent. The terminal and the editor are for looking and doing small things yourself, without leaving the app for an IDE.
+
+## Replacing the Events tab with a terminal
+
+Yes. The Events tab is an audit trail (runs, hooks, attention changes with their actor, denials) that is opened rarely, mostly to find out why a TODO is in its state. A terminal is used often. So the Focus view tabs become **Chat · Files · Terminal**, and Events moves to a button in the Focus head that opens the same list in a side panel (item 68). Nothing is lost.
+
+"Choosing between the lightweight and the terminal" can mean two things, and this design does both, in separate phases:
+
+- **A shell in the TODO's worktree** (items 79 to 84). You run tests, look at `git log`, or start a dev server yourself, next to the agent's chat. It is independent of the agent and safe to build first.
+- **The TODO's own session in the full Claude Code UI** (item 85). `claude --resume <session_id>` runs in the terminal while the TODO is not running, so you can drive that session directly and come back to chat afterwards. It is a handoff, not a live view. An app run cannot be watched in a terminal, because the Agent SDK runs Claude Code without its terminal UI. While you are in Claude Code, the session also lacks the app's MCP tools and hooks.
+
+**Recommendation:** build the shell first. Decide on the Claude Code handoff after using the shell for a while (open question 1).
+
+## Functionality
+
+### Focus view
+
+68. The Focus view of a TODO has the tabs Chat, Files and Terminal. Events (item 58) moves to an Events button in the Focus head that opens the same list, newest first with actors, in a side panel. The operator's Focus view has no tabs and is unchanged.
+
+### Files
+
+69. The Files tab has a root switcher:
+    - **TODO files**, the default: the artifact files of items 22 to 26, listed as today.
+    - **Worktree**: the TODO's registered worktree, labelled with its branch. It is shown only while a worktree is registered and exists on disk.
+    - **Project**: the project's local folder, which is the main checkout.
+
+    The pick is remembered per TODO until the page is reloaded.
+70. The Worktree and Project roots show a folder tree of the files git knows about: tracked files plus untracked files that are not ignored (`git ls-files --cached --others --exclude-standard`). Ignored files such as `node_modules` and build output are not shown. Folders expand on click.
+71. The tree marks changed files as modified, added, untracked or deleted:
+    - The marks combine uncommitted changes (`git --no-optional-locks status --porcelain=v2`) with the changes committed on the branch since its merge base with `origin/HEAD`, the same base the card's git line uses (item 5).
+    - A **Changed** filter lists only these files, flat, with a count. Deleted files appear only there.
+72. Opening a file shows it in the file view, the panel artifact files use today. The panel shows the path relative to the root, the size, and the Read and Edit modes.
+    - Markdown files keep the rendered preview (item 52).
+    - Other text files show syntax-highlighted source.
+    - Images show as an image, served with `Content-Security-Policy: sandbox` as attachments are (item 62).
+    - Binary files, and text files over 2 MB, show only their size.
+73. A changed file also has a **Diff** mode: the merge-base version against the file on disk, unified, with changed lines highlighted. It is read-only.
+74. The file view has **Copy path** and **Add to message**. Add to message inserts the path, relative to the worktree, into the TODO's message draft, so pointing the agent at a file takes one click.
+
+### Editing
+
+75. Edit mode uses a code editor (CodeMirror 6) for every file, including TODO files, and replaces the textarea. Markdown keeps its side-by-side preview. ⌘E and ⌘S work as today (item 59), and ⌘F searches within the file.
+    - Editing is light on purpose: there is no creating, renaming or deleting of files, no search across files, no LSP and no git actions. The agent or the terminal does those.
+76. Locking and conflicts:
+    - **TODO files**: item 25, unchanged.
+    - **Worktree files**: read-only while the TODO's agent is `running`, as in item 25. Read mode follows the file as it changes.
+    - **Project files**: editable at any time. TODOs without a worktree may work in the main folder, and the app cannot tell which files they touch, so the conflict check is the guard here.
+    - **Every save** sends the mtime the file was loaded with. If the file changed on disk since then, saving warns and offers Overwrite or Discard, as in item 25.
+    - Saving does not notify the agent (item 24).
+77. The tree and the open file refresh in two ways. While a Worktree or Project root is visible, git is polled every 5 seconds. The TODO's runs also trigger a refresh when they end.
+    - An open file without unsaved edits reloads when it changes on disk.
+    - There are no file-system watchers. A recursive watch on Linux takes one inotify watch per folder, including ignored ones like `node_modules`, and polling git behaves the same on every OS.
+78. File requests name a root and a path relative to it.
+    - The server resolves the real path and accepts only paths inside the project's local folder or its worktree root (item 47). Symlinks the worktree skill makes, such as `.env` or `CLAUDE.local.md` pointing into the main folder, therefore open, and nothing outside the project opens.
+    - Writes go to the resolved file, so symlinks are kept.
+    - Writes inside `.git/` are refused.
+
+### Terminal
+
+79. The Terminal tab shows one shell per TODO, started the first time the tab is opened.
+    - The shell starts in the TODO's worktree if one is registered, else in the project's local folder.
+    - When the shell's folder is not the worktree, a hint offers **Restart in worktree**, for example after the agent registers a worktree later.
+80. The shell's lifetime:
+    - It keeps running when the user switches tabs, closes the browser tab or reloads. Reopening shows the recent output and then the live shell.
+    - It ends when the TODO is removed (with item 12's 10-second kill if it does not exit), when the app shuts down (item 56), or when the shell itself exits. When it exits, the tab shows the exit code and a **Restart** button.
+    - Restoring a TODO does not restore its shell.
+81. The shell program:
+    - On macOS and Linux it is the user's login shell (`$SHELL -l`).
+    - On Windows it is `pwsh` if installed, else Windows PowerShell.
+    - `SWITCHBOARD_SHELL` overrides the program on every OS.
+    - Its environment is the server's (the login shell's in the window app, item 66), plus `TERM=xterm-256color` and `COLORTERM=truecolor`.
+82. Keys and clipboard:
+    - While the terminal has focus, every key goes to the shell, including Esc and N.
+    - On macOS the ⌘ shortcuts keep working, because ⌘ never reaches a shell.
+    - On Windows and Linux, Ctrl combinations go to the shell (Ctrl+J, Ctrl+E and Ctrl+S mean something there). Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V.
+    - Clicking outside the terminal hands the keys back to the app.
+83. The agent does not see the terminal and is not told about commands typed there. The user's commands share the worktree with the agent, as in any terminal, and nothing guards against both running git at the same moment (as the spec's "Not built on purpose" does for shared worktrees).
+84. The overview, the operator and the Projects page have no terminal.
+
+### Claude Code in the terminal (phase 3, needs a decision)
+
+85. While a TODO is started and not `running`, the Terminal tab offers **Open in Claude Code**. It runs `claude --resume <session_id> --permission-mode auto` in the project's local folder. That is the folder the session was launched from, which `--resume` needs (item 44); the worktree is still named in the transcript.
+    - While Claude Code runs, the TODO counts as `running` (item 30), so the existing rules apply. Start and deliveries wait. Committed messages queue and go out when the user quits Claude Code (item 20). The card's last tool reads `Claude Code in terminal`.
+    - It cannot be opened while an app run is going. Removing the TODO stops it, as in item 12.
+    - Quitting Claude Code ends the "run". The app posts an `app` message, `Continued in Claude Code, 14:02 to 14:20`, and the TODO goes `idle` (or `waiting on you`).
+    - **Limits**:
+      - In Claude Code the session has no app MCP tools and no app hooks, because those exist only inside the app's `query()` runs (item 28). It cannot post messages, raise attention or register a worktree, and the chat shows nothing from that stretch except the app message.
+      - The session's history shows the app's tools in use, so the agent may try them and get errors until the user tells it they are not available here.
+
+## How it is built
+
+- **PTY in the Bun server.** `Bun.spawn(cmd, { terminal: { cols, rows, data, exit } })`, then `proc.terminal.write()` and `resize()`.
+  - This needs Bun 1.3.5 on macOS and Linux and Bun 1.3.14 on Windows, where it uses ConPTY. The server checks `Bun.version` at start; with an older Bun, the Terminal tab names the version it needs.
+  - node-pty is not an option: under Bun its PTY closes after the first output (tested with Bun 1.4.2), and putting it in Electron would leave browser mode without terminals.
+- **One WebSocket per open terminal.** `GET /api/todos/<id>/terminal` is upgraded with `server.upgrade()`, using the `websocket` handler of `Bun.serve`.
+  - Binary frames carry terminal bytes in both directions.
+  - Text frames carry JSON control messages: `{type:"resize",cols,rows}` from the browser, `{type:"exit",code}` from the server.
+  - Everything else stays on the SSE stream (item 61).
+- **Scrollback.** The server keeps the last 256 KB of each shell's output.
+  - On attach it sends a terminal reset, then that buffer, then live output. It then re-sends the size, so full-screen programs (vim, htop, Claude Code) redraw.
+  - If replaying the raw buffer garbles too often, the fallback is Orca's approach: mirror each shell into `@xterm/headless` on the server and send `addon-serialize` snapshots.
+- **WebSocket security.**
+  - The upgrade is accepted only when `Origin` is `http://127.0.0.1:<port>` or `http://localhost:<port>`, on top of today's Host check. This matters because browsers do not apply CORS to WebSockets. Any website can open `ws://127.0.0.1:4477`, and its Host header is then correct, so the Host and content-type checks alone would hand every website a shell.
+  - Other local users on a shared machine can reach the loopback port and already drive the whole API; a terminal turns that into a direct shell. A per-launch token for the whole app fixes it (open question 2): the window app passes it, and browser mode prints it in the URL, as Jupyter does.
+- **Files API.** Every request names a root (`worktree` or `project`) and a relative path, checked as in item 78.
+  - `GET /api/todos/<id>/tree?root=` returns `{paths, changed}`.
+  - `GET /api/todos/<id>/fs?root=&path=` returns `{content, mtime, size, binary}`.
+  - `PUT /api/todos/<id>/fs` takes `{root, path, content, base_mtime, force}` and answers 409 on a conflict, like the existing file `PUT`.
+  - `GET /api/todos/<id>/diff?root=&path=` returns `{base, current}`, with the base read by `git show <merge-base>:<path>`.
+  - Each tree request runs two or three git processes of about 0.03 s each, the same kind of cost as `gitState()`.
+- **Libraries.**
+  - **Terminal:** xterm.js 6 (`@xterm/xterm` with `addon-fit`, `addon-webgl` and `addon-web-links`).
+  - **Editor:** CodeMirror 6 (`codemirror` and `@codemirror/merge`, plus `@codemirror/lang-*` for markdown, JS/TS, JSON, CSS, HTML, Python, YAML and shell).
+  - **Install and load:** both are installed with bun and bundled by `bun run vendor` into `vendor/terminal.js` and `vendor/editor.js`, which are minified, committed, and loaded by `index.html` on first use. `index.html` keeps no build step, the app works offline, and one copy of `@codemirror/state` is guaranteed; loading CodeMirror's packages separately from a CDN can produce two copies, which breaks its extensions.
+  - **Size:** about 90 KB gzipped for xterm.js, and about 125 KB plus the languages for CodeMirror.
+  - **Packaging:** the Electron `files` list gets `vendor/**`.
+  - **Why not Monaco:** its ESM build needs a bundler that handles CSS imports, it is about 2.5 MB, and it is built for a full editor, which this is not.
+- **Theming with the design system.**
+  - CodeMirror's theme uses the CSS variables directly (`--surface-inset`, `--text-primary`, `--font-mono`, a lime cursor, `--tint-lime` selection), so Auto, Dark and Light need no extra code.
+  - xterm.js needs color values instead. They are read with `getComputedStyle` at open time and again in `applyTheme()`. The ANSI colors map to the accent tokens: red to `--accent-red`, green to `--status-success`, yellow to `--accent-amber`, blue to `--accent-blue`, magenta to `--accent-violet`, cyan to `--accent-cyan`.
+  - The terminal opens after `document.fonts.ready`, so it measures JetBrains Mono rather than the fallback font.
+- **Windows and Linux.**
+  - Nothing in this feature is macOS-only.
+  - On Windows, ConPTY can reorder output, mouse tracking does not work on Windows 10, and closing a terminal is slow before Windows 11 24H2.
+  - `loginShellEnv()` in `electron/main.js` is skipped on Windows.
+  - Packaging for Windows and Linux (electron-builder `nsis` and `AppImage` targets) is a separate change; `install-local` is macOS-only today.
+
+## Not built on purpose
+
+- More than one terminal per TODO, split panes, and terminals on the overview or the Projects page.
+- Terminals that survive quitting the app (a separate daemon as in Orca, or tmux as in Kanban Code). Quitting stops terminals, as it stops agents.
+- Creating, renaming and deleting files; search across files; LSP; git actions (stage, commit, discard) from the UI.
+- Showing ignored files.
+- A browser preview pane (Orca and Kanban Code have one).
+- Telling the agent about edits or terminal commands. The user says it in chat.
+- Mirroring an app run in a terminal. The SDK runs Claude Code without its terminal UI, so there is nothing to mirror.
+
+## Phases
+
+1. **Files**: the root switcher, tree, Changed filter, Diff, and CodeMirror replacing the textarea (items 69 to 78). No PTY, so it is the lowest risk, and it works the same on every OS.
+2. **Terminal**: the shell tab, the Events panel, the WebSocket with its Origin check, and the Bun version check (items 68 and 79 to 84).
+3. **Claude Code in the terminal** (item 85), if wanted.
+
+## Open questions
+
+1. Is item 85 wanted, given that the session has no app tools and the chat stays silent while you are in Claude Code?
+2. Should the app-wide launch token against other local users ship with the terminal, or separately?
+3. Events: a side panel (proposed), or a "Show events" toggle that interleaves events into the chat timeline?
+4. Should the files and the terminal also be reachable for a project without a TODO, for example from the Projects page?
+
+## Reference: how others build this
+
+Researched 2026-10-06, from each project's source.
+
+| | Shell and UI | Terminal | Files and editing | Git |
+|---|---|---|---|---|
+| [Warp](https://github.com/warpdotdev/warp) | Rust, its own GPU UI framework (Metal on macOS, wgpu on Windows and Linux) | Its own emulator adapted from alacritty_terminal, with a forked ConPTY on Windows | Its own Rust editor, tree-sitter, LSP | git2 |
+| [Orca](https://github.com/stablyai/orca) | Electron, React 19, Tailwind, shadcn/ui | xterm.js 6 and node-pty in a detached daemon; @xterm/headless for reattach | A custom virtualized tree, @parcel/watcher, ripgrep, Monaco and its diff editor, no LSP | The `git` and `gh` CLIs |
+| [Kanban Code](https://github.com/langwatch/kanban-code) | Native Swift on macOS, plus a separate Tauri and React port for Windows | SwiftTerm attached to tmux; on Windows xterm.js with tauri-pty | No tree or editor; "Open in Zed/Cursor/VS Code" | The `git` and `gh` CLIs |
+| [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) | A local Rust server, React in the browser, an optional Tauri wrapper | xterm.js with portable-pty for the user's shell; agents as stream-json processes | A diff viewer and a tree of changed files, no editor | The `git` CLI and libgit2 |
+
+Switchboard sits closest to Vibe Kanban in shape: a local server, a browser UI, a thin desktop wrapper, and agents driven through a structured stream instead of a terminal. It takes its file and terminal features from Orca, using CodeMirror instead of Monaco and Bun's PTY instead of node-pty.
