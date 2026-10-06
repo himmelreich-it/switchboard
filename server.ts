@@ -1,13 +1,13 @@
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import { Database } from "bun:sqlite";
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
-  ghOutcome, isInside, parseGitStatus, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  ghOutcome, isInside, migrateDb, parseGitStatus, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type Pr, type Status,
 } from "./lib";
-import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, start, stopAll } from "./runner";
+import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, newSession, start, stopAll } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 const HOST = "127.0.0.1";
@@ -21,44 +21,21 @@ export const HOME = realpathSync(process.env.SWITCHBOARD_HOME ?? join(homedir(),
 const dbPath = join(HOME, "db.sqlite");
 const fresh = !existsSync(dbPath);
 export const db = new Database(dbPath);
-db.exec(`
-CREATE TABLE IF NOT EXISTS projects (
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL,
-  agent_prompt TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS todos (
-  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), title TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('not_started','running','waiting','idle')), attention INTEGER NOT NULL DEFAULT 0,
-  session_id TEXT, worktree_path TEXT, pr_number INTEGER, last_tool TEXT, last_read_at TEXT,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
-CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY, todo_id INTEGER,
-  author TEXT NOT NULL CHECK (author IN ('user','agent','user via operator','operator','app')), body TEXT NOT NULL,
-  state TEXT NOT NULL CHECK (state IN ('pending','queued','delivered')), file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT);
-CREATE TABLE IF NOT EXISTS drafts (key TEXT PRIMARY KEY, body TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE);
-CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL,
-  actor TEXT NOT NULL CHECK (actor IN ('user','agent','app','operator')), detail TEXT, at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
-CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
-CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
-`);
-// Databases made before set_pr existed.
-if (!db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'pr_number'").get()) db.exec("ALTER TABLE todos ADD COLUMN pr_number INTEGER");
+migrateDb(db);
 
 export type Todo = {
   id: number; project_id: number; title: string; status: Status; attention: number; session_id: string | null;
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
-  removed_at: string | null; removed_by: string | null;
+  removed_at: string | null; removed_by: string | null; ctx: string | null;
 };
+export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null };
 export type Project = { id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string };
 
 export const now = () => new Date().toISOString();
 export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = ?").get(id) as Todo | null;
 export const projectRow = (id: number) => db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null;
-export const filesOf = (todoId: number) => db.query("SELECT id, path FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string }[];
+export const filesOf = (todoId: number) =>
+  db.query("SELECT id, path, session_no FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null }[];
 export const artifactDir = (slug: string, todoId: number) => join(HOME, "data", slug, String(todoId));
 export const attachmentsOf = (messageId: number) =>
   db.query("SELECT id, name, path FROM attachments WHERE message_id = ? ORDER BY id").all(messageId) as { id: number; name: string; path: string }[];
@@ -111,18 +88,25 @@ export function setTodo(id: number, fields: Partial<Todo>, touch = true) {
   db.run(`UPDATE todos SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`, [...keys.map((k) => f[k]), id]);
   changed(id);
 }
+// The live session's number (items 68, 77): agent and app messages, events and files belong to the session they
+// happen in; a user message gets its session when it is delivered (take() in runner.ts).
+export const liveSessionNo = (todoId: number | null) =>
+  todoId === null ? null : ((db.query("SELECT MAX(no) AS n FROM sessions WHERE todo_id = ?").get(todoId) as any)?.n ?? null) as number | null;
+export const sessionsOf = (todoId: number) =>
+  db.query("SELECT no, session_id, started_at, ended_at FROM sessions WHERE todo_id = ? ORDER BY no").all(todoId) as Session[];
 export function addMessage(todoId: number | null, author: string, body: string, state = "delivered", fileId: number | null = null) {
   const at = now();
   const id = Number(db.run(
-    "INSERT INTO messages (todo_id, author, body, state, file_id, committed_at, delivered_at) VALUES (?,?,?,?,?,?,?)",
-    [todoId, author, body, state, fileId, at, state === "delivered" ? at : null],
+    "INSERT INTO messages (todo_id, author, body, state, file_id, committed_at, delivered_at, session_no) VALUES (?,?,?,?,?,?,?,?)",
+    [todoId, author, body, state, fileId, at, state === "delivered" ? at : null, state === "delivered" ? liveSessionNo(todoId) : null],
   ).lastInsertRowid);
   if (todoId !== null) db.run("UPDATE todos SET updated_at = ? WHERE id = ?", [at, todoId]);
   changed(todoId);
   return id;
 }
-export function addEvent(todoId: number | null, kind: string, actor: string, detail: string | null = null) {
-  db.run("INSERT INTO events (todo_id, kind, actor, detail, at) VALUES (?,?,?,?,?)", [todoId, kind, actor, detail, now()]);
+export function addEvent(todoId: number | null, kind: string, actor: string, detail: string | null = null, meta: object | null = null) {
+  db.run("INSERT INTO events (todo_id, kind, actor, detail, at, session_no, meta) VALUES (?,?,?,?,?,?,?)",
+    [todoId, kind, actor, detail, now(), liveSessionNo(todoId), meta && JSON.stringify(meta)]);
   changed(todoId);
 }
 
@@ -233,6 +217,9 @@ SELECT t.*, p.name AS project_name,
   (SELECT COUNT(*) FROM messages m WHERE m.todo_id = t.id) AS message_count,
   (SELECT COUNT(*) FROM messages m WHERE m.todo_id = t.id AND m.state = 'queued') AS queued_count,
   (SELECT COUNT(*) FROM messages m WHERE m.todo_id = t.id AND m.state = 'pending') AS pending_count,
+  (SELECT COUNT(*) FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.todo_id = t.id AND m.state = 'pending') AS pending_attachments,
+  (SELECT COUNT(*) FROM sessions s WHERE s.todo_id = t.id) AS session_count,
+  (SELECT author FROM messages m WHERE m.todo_id = t.id ORDER BY m.id LIMIT 1) AS creator,
   EXISTS (SELECT 1 FROM messages m WHERE m.todo_id = t.id AND m.author = 'agent'
           AND (t.last_read_at IS NULL OR m.committed_at > t.last_read_at)) AS unread,
   EXISTS (SELECT 1 FROM drafts d WHERE d.key = 'todo:' || t.id) AS has_draft,
@@ -248,7 +235,7 @@ FROM todos t JOIN projects p ON p.id = t.project_id`;
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -258,7 +245,7 @@ export async function summaries(where = "1", args: any[] = []) {
       ...r, attention: !!r.attention, unread: !!r.unread, has_draft: !!r.has_draft,
       last_message: r.last_message ? JSON.parse(r.last_message) : null,
       last_agent_message: r.last_agent_message ? JSON.parse(r.last_agent_message) : null,
-      file_names: names, file_count: names.length,
+      file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null,
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
     };
@@ -266,17 +253,30 @@ export async function summaries(where = "1", args: any[] = []) {
 }
 
 function messageOut(id: number) {
-  const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, f.path AS file_path
+  const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, m.session_no, f.path AS file_path
     FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.id = ?`).get(id) as any;
   const { file_path, ...rest } = m;
   return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name, path }) => ({ id, name, size: Bun.file(path).size })) };
 }
 
-function fileOut(f: { id: number; path: string }) {
+function fileOut(f: { id: number; path: string; session_no: number | null }) {
   try {
-    return { id: f.id, name: basename(f.path), path: f.path, lines: readFileSync(f.path, "utf8").trimEnd().split("\n").length, mtime: statSync(f.path).mtimeMs };
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines: readFileSync(f.path, "utf8").trimEnd().split("\n").length, mtime: statSync(f.path).mtimeMs };
   } catch {
-    return { id: f.id, name: basename(f.path), path: f.path, lines: null, mtime: null }; // deleted on disk
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines: null, mtime: null }; // deleted on disk
+  }
+}
+
+// Item 85: every file in the artifact folder is a TODO file, also one written from a terminal. Files no session
+// registered get session_no NULL ("added outside a session"). uploads/ (attachments) and terminal/ (context) are skipped.
+function registerDiskFiles(t: Todo) {
+  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  if (!existsSync(dir)) return;
+  const real = realpathSync(dir);
+  for (const rel of readdirSync(real, { recursive: true }) as string[]) {
+    if (/^(uploads|terminal)(\/|$)/.test(rel) || rel.split("/").some((p) => p.startsWith("."))) continue;
+    const path = join(real, rel);
+    if (statSync(path).isFile()) db.run("INSERT OR IGNORE INTO files (todo_id, path) VALUES (?, ?)", [t.id, path]);
   }
 }
 
@@ -458,12 +458,15 @@ async function api(req: Request, path: string): Promise<Response> {
     const id = Number(m[1]);
     const [todo] = await summaries("t.id = ?", [id]);
     if (!todo) return fail("no such TODO", 404);
+    registerDiskFiles(todoRow(id)!);
     const ids = db.query("SELECT id FROM messages WHERE todo_id = ? ORDER BY id").all(id) as { id: number }[];
     return json({
       todo,
+      sessions: sessionsOf(id),
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
-      events: db.query("SELECT kind, actor, detail, at FROM events WHERE todo_id = ? ORDER BY id").all(id),
+      events: (db.query("SELECT kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").all(id) as any[])
+        .map((e) => ({ ...e, meta: e.meta ? JSON.parse(e.meta) : null })),
       draft: getDraft(`todo:${id}`),
     });
   }
@@ -475,9 +478,26 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({});
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver)$/)) && method === "POST") {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session)$/)) && method === "POST") {
     const id = Number(m[1]);
     const action = m[2];
+
+    // Item 72: ends the live session and starts the next with the hand-over header, the queued messages and this one.
+    if (action === "new-session") {
+      const t = liveTodo(id);
+      if (t.status === "not_started") return fail("start the TODO first; its first session starts with Start", 409);
+      if (isRunning(id)) return fail("the agent is running; a new session can start once it stops", 409);
+      const text = String(body.body ?? "").trim();
+      const uploads = uploadsIn(body.attachments);
+      const mid = db.transaction(() => {
+        const mid = addMessage(id, "user", text || "continue", "queued");
+        saveAttachments(id, mid, uploads);
+        return mid;
+      })();
+      setDraft(`todo:${id}`, "");
+      newSession(id);
+      return json(messageOut(mid));
+    }
 
     if (action === "start") {
       if (liveTodo(id).status !== "not_started") return fail("this TODO has already started", 409);
@@ -551,6 +571,7 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({
       status: isRunning("operator") ? "running" : "idle",
       session_id: getMeta("operator_session_id") ?? null,
+      ctx: getMeta("operator_ctx") ? JSON.parse(getMeta("operator_ctx")!) : null,
       messages: db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE todo_id IS NULL AND committed_at >= ? ORDER BY id").all(since),
       draft: getDraft("operator"),
     });
@@ -571,6 +592,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (isRunning("operator")) return fail("the operator is running; wait for its reply", 409);
     // The next message starts a new session id. Older messages stay in the database but are hidden.
     setMeta("operator_session_id", null);
+    setMeta("operator_ctx", null);
     setMeta("operator_since", now());
     addEvent(null, "new operator session", "user");
     return json({});
