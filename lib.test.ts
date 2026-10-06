@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseGithubRemote, parseRefCounts, usageStep,
+  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, usageStep,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
@@ -183,4 +183,23 @@ test("parseMarks", () => {
     "src/a.ts": "M", "src/new.ts": "A", "old.md": "D", "x/from.ts": "D", "x/to.ts": "A", "notes.txt": "U", "tmp/u.log": "U",
   });
   expect(parseMarks("", "")).toEqual({});
+});
+
+test("terminal helpers", () => {
+  expect(parseOscTitle("abc\x1b]0;zsh — feat-x\x07more\x1b]2;Claude Code\x1b\\")).toBe("Claude Code");
+  expect(parseOscTitle("plain output")).toBe(null);
+  expect(versionAtLeast("1.3.14", "1.3.5")).toBe(true);
+  expect(versionAtLeast("1.3.4", "1.3.5")).toBe(false);
+  expect(versionAtLeast("1.4.0", "1.3.5")).toBe(true);
+  const ctx = contextFile({
+    title: "T", project: "p", status: "idle", first: "do it", worktree: "/w", branch: "b", git: "2 commits · pushed", pr: "#5 open",
+    sessions: [{ no: 1, session_id: "s1", started_at: "a", ended_at: "b" }, { no: 2, session_id: "s2", started_at: "c", ended_at: null }],
+    messages: [{ author: "user", body: "do it", at: "a", session_no: 1 }, { author: "agent", body: "done", at: "b", session_no: 2 }, { author: "user", body: "queued", at: "d", session_no: null }],
+    files: ["/d/plan.md"],
+  });
+  expect(ctx).toContain("- Worktree: /w");
+  expect(ctx).toContain("### Session 2\n\n**agent** (b): done\n\n**user** (d): queued");
+  expect(ctx).toContain("Check with the user before you commit");
+  expect(contextFile({ title: "T", project: "p", status: "not_started", first: "x", worktree: null, branch: null, git: null, pr: null, sessions: [], messages: [], files: [] }))
+    .toContain("not started (in the backlog)");
 });
