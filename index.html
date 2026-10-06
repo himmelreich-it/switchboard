@@ -1199,7 +1199,8 @@ function openSettings() {
 }
 window.openSettings = openSettings;   // the window app's menu item "Settings… ⌘,"
 function closeSettings() { S.settingsOpen = false; setView(S.view === "settings" ? S.settingsFrom : S.view); }
-function goOverview() { flushDraft(); S.view = "todos"; S.mode = "overview"; S.file = null; if (S.focusFrom) S.board = S.focusFrom; render(); need("operator"); }
+// Leaving the Focus view returns to the side it was opened from (item 91).
+function goOverview() { flushDraft(); if (S.mode === "focus" && S.focusFrom) S.board = S.focusFrom; S.view = "todos"; S.mode = "overview"; S.file = null; render(); need("operator"); }
 function select(id) {
   flushDraft();
   if (!(S.view === "todos" && S.mode === "focus")) S.focusFrom = S.board;   // ⌘J inside Focus keeps where you came from
