@@ -70,7 +70,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
     - The first message has an Edit action (tooltip "Edit the first instruction · until you start") that turns it into a textarea with the hint "Also updates the title. Attachments stay; add more as notes." ⌘↵ saves, Esc cancels.
     - The project in the Focus info line becomes a select (tooltip "Project · editable until you start"), and the line adds the note "not started · instruction and project editable until you start".
 95. Saving a new first instruction updates that message's body. The title follows only while it still equals the first instruction (item 7). The save counts as a touch and moves the TODO to the top of the backlog. It records an `edited` event with the detail "first instruction" and shows the toast "Saved" / "First instruction and title updated. It moved to the top of the backlog."
-96. Changing the project moves the TODO's artifact folder from `data/<old-slug>/<id>/` to `data/<new-slug>/<id>/` and rewrites the stored attachment paths, so the first instruction's attachments go with it. Nothing else is stored per project before the start: no session, worktree or registered files exist yet. It records an `edited` event with the detail "project A → B", "Moved …/A/<id>/ → …/B/<id>/" and "Attachment paths rewritten.", and shows the toast "Moved to <name>" / "Artifact folder moved to data/<slug>/<id>/ with its attachments."
+96. Changing the project is refused (409) while the TODO has a running terminal, because its folders point into the old project. Otherwise it moves the TODO's artifact folder from `data/<old-slug>/<id>/` to `data/<new-slug>/<id>/` and rewrites the stored attachment paths, so the first instruction's attachments go with it. Nothing else is stored per project before the start: no session, worktree or registered files exist yet. It records an `edited` event with the detail "project A → B", "Moved …/A/<id>/ → …/B/<id>/" and "Attachment paths rewritten.", and shows the toast "Moved to <name>" / "Artifact folder moved to data/<slug>/<id>/ with its attachments."
 97. The server refuses an edit once the TODO has started (409), for example after a start from another browser tab. The textarea then keeps the unsaved text and shows "409 · This TODO has started, maybe from another tab. Editing is closed; your text is kept here so you can copy it."
 98. Attachments of the first instruction are not edited. More files and context go in as notes: messages that wait for the start (item 20).
 8. The user starts each TODO explicitly, with Start on its backlog row or in the Focus view, or with Add & start (item 92). Starting launches session 1 with the first instruction and every message committed before the start, as one prompt. The TODO then moves from the backlog to the board. A start from a backlog row leaves the user in the backlog (item 89); a start from the Focus view stays there.
@@ -228,7 +228,8 @@ UI changes are checked against the running app on localhost, in Chrome or in the
 
      The form shows the command it will run (`cd <folder>`, then `claude --add-dir <artifact folder> "<first message>"`) and notes that it writes the context file first. ⌘↵ or Start starts; an emptied message falls back to the prefilled text. The app then:
      - writes the context file (item 114);
-     - runs `claude --add-dir <artifact folder> "<first message>"` in the chosen folder. The `--add-dir` lets Claude read and write the TODO's files without permission prompts.
+     - runs `claude --add-dir <artifact folder> -- "<first message>"` in the chosen folder. The `--add-dir` lets Claude read and write the TODO's files without permission prompts; the `--` ends its folder list, which would otherwise take the message as a second folder.
+     - Claude Code asks once whether it may trust a folder it has not seen before, as in any terminal; the first message follows the answer.
 
      This is a new session, separate from the TODO's:
      - It runs with the user's normal Claude Code settings and permission mode, without the app's MCP tools or hooks.
@@ -246,6 +247,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - When its process exits, the tab stays with "Process exited with code N." (a Claude tab adds " Its transcript stays; claude --resume finds it."), or "Process ended by signal SIGTERM." when a signal ended it. It offers **Restart**, and a Claude tab also **Shell here**, a new shell in the same folder.
      - Restart reruns the program in the same tab. A Claude terminal reruns with the same first message after the context file is rewritten, and its label goes back to `Claude N`.
      - A tab the page still shows after the server restarted reads "Ended: the app restarted."
+     - A program that cannot start (for example, the worktree was deleted after a merge) leaves the tab exited, and the error shows as a toast.
      - Restoring a TODO does not bring its terminals back.
 116. The programs:
      - **Shell**: the shell named by `SWITCHBOARD_SHELL`, else `$SHELL`, started as a login shell (`-l`).
