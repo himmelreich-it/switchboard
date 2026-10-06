@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, isInside, lineCount, parseGitStatus, parseGithubRemote, parseRefCounts,
-  prFromNode, safeFileName, slugify, statusAfterRun, toolArg, toolLine, uniqueSlug, withAttachments,
+  prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -107,4 +107,13 @@ test("prFromNode and ghOutcome", () => {
   expect(ghOutcome(1, partial, "")).toEqual({ repo: { b0: { nodes: [] }, n0: null } });
   expect(ghOutcome(1, "", 'Post "https://api.github.com/graphql": dial tcp 127.0.0.1:9: connect: connection refused')).toMatchObject({ error: "no network" });
   expect(ghOutcome(1, "", "gh: Something went wrong")).toEqual({ error: "unclear", detail: "exit 1 · gh: Something went wrong" });
+});
+
+test("tokenOk", () => {
+  const tok = "ab".repeat(32);
+  expect(tokenOk(tok, tok, null)).toBe(true);
+  expect(tokenOk(tok, null, tok)).toBe(true);
+  expect(tokenOk(tok, null, null)).toBe(false);
+  expect(tokenOk(tok, "ab", null)).toBe(false);
+  expect(tokenOk(tok, "cd".repeat(32), tok)).toBe(false); // the header wins over the query
 });

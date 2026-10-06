@@ -60,6 +60,16 @@ export function isInside(path: string, dir: string): boolean {
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
+// The launch token a request carries (item 120): the X-Switchboard-Token header, or ?token= where a header cannot be
+// set (EventSource, WebSocket, <img>). Compared in constant time.
+export function tokenOk(token: string, header: string | null, query: string | null): boolean {
+  const got = header ?? query ?? "";
+  if (got.length !== token.length) return false;
+  let diff = 0;
+  for (let i = 0; i < got.length; i++) diff |= got.charCodeAt(i) ^ token.charCodeAt(i);
+  return diff === 0;
+}
+
 // The interesting argument of a tool call: the Bash command, the file path, the search pattern...
 export const toolArg = (input: any): string =>
   String(input?.command ?? input?.file_path ?? input?.pattern ?? input?.skill ?? input?.path ?? input?.url ?? "").slice(0, 300);
