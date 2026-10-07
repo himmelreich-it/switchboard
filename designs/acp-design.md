@@ -239,9 +239,9 @@ Each phase is one branch and one review, and the app keeps working after every p
 
 | Phase | Content | Done when |
 |---|---|---|
-| **P0 Spike** | A throwaway script in a worktree, using the real adapter and a test HTTP MCP endpoint, that checks the list below. Results go to the spec's spike section. | Every check is recorded as pass or fail with notes |
-| **P1 Claude parity** | `acp.ts`, `apptools.ts` and `/mcp/app`; workers and operator on ACP; same UI; denials, the context meter, the result footer and hand-over all as today; Agent SDK dependency removed | Existing tests pass; the start, deliver, queue, new session, restore and remove flows are checked in headless Brave on port 4478 |
-| **P2 Live view** | Transcript store, stream SSE, Transcript view, diffs, plan line, Stop button | A running TODO's tool calls and text stream live |
+| **P0 Spike** (done) | A throwaway script in a worktree, using the real adapter and a test HTTP MCP endpoint, that checks the list below. Results go to the spec's spike section. | Every check is recorded as pass or fail with notes |
+| **P1 Claude parity** (done) | `acp.ts`, `apptools.ts` and `/mcp/app`; workers and operator on ACP; same UI; denials, the context meter, the result footer and hand-over all as today; Agent SDK dependency removed | Existing tests pass; the start, deliver, queue, new session, restore and remove flows are checked in headless Brave on port 4478 |
+| **P2 Live view** (done) | Transcript store, stream SSE, Transcript view, diffs, plan line, Stop button | A running TODO's tool calls and text stream live |
 | **P3 Permissions** | Mode per project and per TODO, `request_permission` UI, Waiting-lane rule | A `default`-mode TODO asks in the card, and both Allow and Reject work |
 | **P4 Config** | Model and effort selects, project defaults, slash-command autocomplete | Model switch takes effect on the live session |
 | **P5 Multi-agent** | Agent registry, Codex and Gemini, agent per TODO and per session, contract as text, auth flow, per-agent hints | A Codex TODO runs end to end with app tools, and hand-over moves it to Claude |
