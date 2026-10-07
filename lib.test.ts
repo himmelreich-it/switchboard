@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
+  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -35,7 +36,7 @@ test("withAttachments and safeFileName", () => {
   expect(safeFileName("../My Shot (1).png")).toBe("My-Shot-1-.png");
   expect(safeFileName("..")).toBe("file");
   expect(safeFileName(".env")).toBe("env");
-  expect(safeFileName("a/b\\c.txt")).toBe("b-c.txt");
+  expect(safeFileName("a/b\\c.txt")).toBe(process.platform === "win32" ? "c.txt" : "b-c.txt");   // a backslash separates on Windows only
   expect(safeFileName("x".repeat(300) + ".png")).toBe("x".repeat(116) + ".png");
 });
 
@@ -214,4 +215,40 @@ test("toolMeta merges a tool call's updates; planCount", () => {
   expect(toolMeta(null, { toolCallId: "t2", rawOutput: "x".repeat(9000), status: "completed" }).output.length).toBeLessThan(8100);
   expect(planCount(null)).toBe(null);
   expect(planCount([{ content: "a", status: "completed" }, { content: "b", status: "pending" }])).toBe("1/2");
+});
+
+test("permissionOf keeps what the UI shows of a request (P3)", () => {
+  const bash = permissionOf({
+    sessionId: "s", toolCall: { toolCallId: "t1", title: "rm -rf build", kind: "execute", status: "pending", rawInput: { command: "rm -rf build" }, _meta: { claudeCode: { toolName: "Bash" } } },
+    options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
+  } as any, "2026-10-07T10:00:00.000Z");
+  expect(bash).toEqual({
+    id: "t1", name: "Bash", title: "rm -rf build", kind: "execute", input: { command: "rm -rf build" }, diffs: [], at: "2026-10-07T10:00:00.000Z",
+    options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
+  });
+  const edit = permissionOf({
+    sessionId: "s", toolCall: { toolCallId: "t2", title: "Write a.txt", kind: "edit", content: [{ type: "diff", path: "/r/a.txt", oldText: null, newText: "x".repeat(300_000) }] },
+    options: [{ optionId: "allow-with-updates", name: "Allow all edits during this session", kind: "allow_always" }],
+  } as any, "2026-10-07T10:00:00.000Z");
+  expect(edit.name).toBe("Write a.txt");   // no Claude tool name in _meta: the title stands in
+  expect(edit.diffs[0]!.newText.length).toBeLessThan(200_100);
+  expect(edit.options[0]!.kind).toBe("allow_always");
+  // A bare tool call still gives something to show.
+  expect(permissionOf({ sessionId: "s", toolCall: { toolCallId: "t3" }, options: [] } as any, "now")).toMatchObject({ id: "t3", name: "tool", title: "", kind: "other", options: [] });
+});
+
+test("laneOf, attentionAfterAnswer and MODES (P3)", () => {
+  const perm: Permission = { id: "t", name: "Bash", title: "", kind: "execute", input: {}, diffs: [], options: [], at: "" };
+  expect(laneOf({ status: "waiting", permission: null })).toBe("waiting");
+  expect(laneOf({ status: "running", permission: perm })).toBe("waiting");   // a question the agent waits on needs the user now
+  expect(laneOf({ status: "running", permission: null })).toBe("running");
+  expect(laneOf({ status: "idle", permission: perm })).toBe("idle");         // stale column after a crash: the status wins
+  expect(laneOf({ status: "not_started", permission: null })).toBe("not_started");
+  // Answering clears the flag only when the request raised it.
+  expect(attentionAfterAnswer("permission")).toBe(0);
+  expect(attentionAfterAnswer("agent")).toBe(1);
+  expect(attentionAfterAnswer("app")).toBe(1);
+  expect(attentionAfterAnswer(null)).toBe(1);
+  expect(MODES[0]).toBe("auto");
+  expect(MODES).toContain("default");
 });

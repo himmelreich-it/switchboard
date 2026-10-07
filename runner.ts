@@ -3,10 +3,11 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { openSession as acpOpen, reopenSession, type Live, type PermissionRequest, type Update } from "./acp";
+import { openSession as acpOpen, reopenSession, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
 import { OPERATOR_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments, type Ctx, type ToolMeta,
+  attentionAfterAnswer, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  type Ctx, type Permission, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
@@ -61,6 +62,9 @@ const interrupting = new Map<Key, "user" | "app">();
 let shuttingDown = false;
 
 export const isRunning = (key: Key) => running.has(key);
+// A worker's open permission request (P3): the agent blocks on it, so there is at most one per TODO. The user's
+// answer, a Stop, a removal, a shutdown or the end of the turn settles it.
+const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutcome) => void }>();
 // TODOs whose agent posted a chat message in the current turn, so its final text is not posted as well. A set, not run
 // state, because the app tools' grant lives as long as the agent process, across runs.
 const posted = new Set<number>();
@@ -74,10 +78,70 @@ export function interrupt(key: Key, by: "user" | "app" = "app") {
     r.cancel = true;
     return;
   }
+  if (typeof key === "number") cancelPermission(key);
   r.live.cancel();
   clearTimeout(r.kill);
   r.kill = setTimeout(() => running.get(key) === r && r.live?.close(), 10_000);
 }
+
+// ---------- permission requests (P3) ----------
+
+// The user's answer to the open request: the agent gets the chosen option, the request leaves the card, and the
+// attention flag drops when the request raised it. False when no request is open (answered already, or the turn ended).
+export function answerPermission(todoId: number, optionId: string): boolean {
+  const p = pending.get(todoId);
+  const option = p?.perm.options.find((o) => o.optionId === optionId);
+  if (!p || !option) return false;
+  pending.delete(todoId);
+  const t = todoRow(todoId)!;
+  setTodo(todoId, { permission: null, attention: t.attention ? attentionAfterAnswer(t.attention_by) : 0, attention_by: t.attention_by === "permission" ? null : t.attention_by });
+  addEvent(todoId, "permission answered", "user", `${option.name}: ${toolLine(p.perm.name, p.perm.input)}`);
+  p.resolve({ outcome: "selected", optionId });
+  return true;
+}
+
+// An open request that can no longer be answered (Stop, remove, shutdown, the turn ended): the agent is told it was cancelled.
+function cancelPermission(todoId: number) {
+  const p = pending.get(todoId);
+  if (!p) return;
+  pending.delete(todoId);
+  const t = todoRow(todoId)!;
+  setTodo(todoId, { permission: null, attention: t.attention ? attentionAfterAnswer(t.attention_by) : 0, attention_by: t.attention_by === "permission" ? null : t.attention_by });
+  addEvent(todoId, "permission cancelled", "app", toolLine(p.perm.name, p.perm.input));
+  p.resolve({ outcome: "cancelled" });
+}
+
+// The agent asks (a mode other than auto, or something auto still asks about): the request goes on the card and in
+// the chat, the TODO shows in Waiting, and the turn waits for the user. A request while one is already open (it
+// should not happen: the agent blocks) replaces it, and the earlier one is cancelled.
+function askPermission(todoId: number, r: PermissionRequest): Promise<PermissionOutcome> {
+  cancelPermission(todoId);
+  const perm = permissionOf(r, now());
+  const t = todoRow(todoId)!;
+  if (!t.attention) addEvent(todoId, "attention raised", "app", `${perm.name} needs approval`);
+  setTodo(todoId, { permission: JSON.stringify(perm), attention: 1, attention_by: t.attention ? t.attention_by : "permission" });
+  addEvent(todoId, "permission asked", "agent", toolLine(perm.name, perm.input));
+  return new Promise((resolve) => pending.set(todoId, { perm, resolve }));
+}
+
+// The permission mode of a TODO's runs: its own, else the project's, else auto (item 27).
+export const modeOf = (t: { mode: string | null }, p: { mode: string | null }) => t.mode || p.mode || "auto";
+
+// Sets the agent's mode when it differs from what the agent reports. A new session starts in the agent's default
+// mode, a resumed one may too, and a kept process has the mode of its last run (spike finding 9), so this runs
+// before every turn. When the mode is not available (Claude has no auto mode for some models), the run goes on in
+// the agent's own mode and the user is told once: an unanswered question is then answered no (item 50).
+export async function applyMode(a: Agent, mode: string | null) {
+  if (!mode || a.live.configOptions.find((c) => c.id === "mode")?.currentValue === mode) return;
+  try {
+    await a.live.setConfig("mode", mode);
+  } catch (e: any) {
+    a.modeError = `Could not switch the agent to ${mode} mode; it runs in ${a.live.configOptions.find((c) => c.id === "mode")?.currentValue ?? "its own"} mode: ${e?.message ?? e}`;
+  }
+}
+
+// The live agent process of a TODO, when it is still alive (for a mode change between turns).
+export const liveAgent = (todoId: number) => { const a = agents.get(todoId); return a && a.live.alive ? a : null; };
 
 // Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
 export function closeAgent(key: Key) {
@@ -106,9 +170,8 @@ function take(todoId: number | null, state: "pending" | "queued") {
 }
 
 // The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
-// session/resume in a new process. `mode` is the permission mode to set (null: the agent's default).
-async function agentFor(key: Key, sessionId: string | null, o: { cwd: string; dirs: string[]; meta: Record<string, unknown>; grant: Parameters<typeof grant>[0] },
-  mode: string | null) {
+// session/resume in a new process. The permission mode is set afterwards, by applyMode().
+async function agentFor(key: Key, sessionId: string | null, o: { cwd: string; dirs: string[]; meta: Record<string, unknown>; grant: Parameters<typeof grant>[0] }) {
   const fingerprint = JSON.stringify([o.cwd, o.dirs, o.meta]);
   const had = agents.get(key);
   if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === fingerprint) {
@@ -127,18 +190,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { cwd: string; di
     revoke(g.secret);
     throw e;
   }
-  // A new session starts in the agent's default mode, and a resumed one may too: set it every time (spike finding 9).
-  // When the mode is not available (Claude has no auto mode for some models), the run goes on in the default mode,
-  // where every permission question is answered no and reported like a denial.
-  let modeError = "";
-  if (mode && live.configOptions.find((c) => c.id === "mode")?.currentValue !== mode) {
-    try {
-      await live.setConfig("mode", mode);
-    } catch (e: any) {
-      modeError = `Could not switch the agent to ${mode} mode, so it asks about more and those questions are answered no: ${e?.message ?? e}`;
-    }
-  }
-  const a: Agent = { live, secret: g.secret, sink, fingerprint, modeError };
+  const a: Agent = { live, secret: g.secret, sink, fingerprint };
   agents.set(key, a);
   return a;
 }
@@ -257,7 +309,7 @@ export function newSession(todoId: number) {
   const no = prev.no + 1;
   db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND no = ?", [now(), todoId, prev.no]);
   if (t.attention) {
-    setTodo(todoId, { attention: 0, status: t.status === "waiting" ? "idle" : t.status });
+    setTodo(todoId, { attention: 0, attention_by: null, status: t.status === "waiting" ? "idle" : t.status });
     addEvent(todoId, "attention cleared", "user");
   }
   closeAgent(todoId);
@@ -315,7 +367,8 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
           claudeCode: { options: { allowedTools: WORKER_TOOLS, extraArgs: { "system-prompt-snapshot": "off" } } },
         },
         grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId) },
-      }, "auto");
+      });
+      await applyMode(agent, modeOf(todoRow(todoId)!, p));
     } catch (e: any) {
       running.delete(todoId);
       interrupting.delete(todoId);
@@ -364,20 +417,16 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       if (denied.has(name + what)) return;
       denied.add(name + what);
       addMessage(todoId, "app", `Auto mode blocked ${name}: ${what}`);
-      setTodo(todoId, { attention: 1 });
+      const was = todoRow(todoId)!;
+      setTodo(todoId, { attention: 1, attention_by: was.attention ? was.attention_by : "app" });
       addEvent(todoId, "attention raised", "app", `${name} denied`);
     };
     const turn = turnState(todoId, deny);
     turn.t.ctx = cur.ctx ? JSON.parse(cur.ctx) : null;
     agent.sink.s = {
       onUpdate: turn.onUpdate,
-      // Workers run in auto mode; a question it still asks is answered no and reported like a denial (P3 asks the user).
-      onPermission: (r) => {
-        const tc: any = r.toolCall;
-        deny(tc._meta?.claudeCode?.toolName ?? tc.title ?? "tool", tc.rawInput ?? {}, tc.title ?? "");
-        const no = r.options.find((o) => o.kind === "reject_once") ?? r.options.find((o) => o.kind.startsWith("reject"));
-        return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
-      },
+      // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
+      onPermission: (r) => askPermission(todoId, r),
     };
 
     let error = "", stop = "";
@@ -398,6 +447,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     }
     // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
     // or sees the TODO idle and starts its own turn.
+    cancelPermission(todoId); // a request still open when the turn ended (the agent died, or gave up waiting)
     turn.finish();
     clearTimeout(run.kill);
     running.delete(todoId);
@@ -471,7 +521,7 @@ function runOperator() {
           },
         },
         grant: { kind: "operator" },
-      }, null);
+      });
     } catch (e: any) {
       // The messages stay queued and are not retried on their own, so a failing start does not loop. A session that
       // cannot be resumed (its transcript cleaned up) is dropped: the next message starts a new one.
