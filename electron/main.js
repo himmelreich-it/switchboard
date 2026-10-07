@@ -36,9 +36,9 @@ async function waitForServer() {
 const ICONS = join(import.meta.dirname, "../images/icons");
 const page = (js) => win?.webContents.executeJavaScript(js).catch(() => {});
 
-// Settings… ⌘, (item 122). The edit role keeps ⌘C/⌘V/⌘A working; a custom menu without it drops them.
+// Settings… ⌘, (item 122), Alt+, on Linux and Windows like the page's shortcuts. The edit role keeps ⌘C/⌘V/⌘A working; a custom menu without it drops them.
 function menu() {
-  const settings = { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => page("window.openSettings && window.openSettings()") };
+  const settings = { label: "Settings…", accelerator: mac ? "Cmd+," : "Alt+,", click: () => page("window.openSettings && window.openSettings()") };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     mac ? { role: "appMenu", submenu: [{ role: "about" }, { type: "separator" }, settings, { type: "separator" }, { role: "services" }, { type: "separator" },
       { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] }
