@@ -8,8 +8,11 @@
   "private": true,
   "scripts": {
     "app": "electron electron/main.js",
+    "app:linux": "electron electron/main.js --no-sandbox",
     "vendor": "bun vendor/build.ts",
     "package:mac": "electron-builder --mac --dir",
+    "package:linux": "electron-builder --linux --dir",
+    "install-local:linux": "bash scripts/install-linux.sh",
     "install-local": "osascript -e 'quit app \"Switchboard\"' || true; bun run package:mac && rm -rf /Applications/Switchboard.app && cp -R dist/mac*/Switchboard.app /Applications/ && rm -rf dist && echo 'Installed /Applications/Switchboard.app'"
   },
   "build": {
@@ -28,7 +31,8 @@
       "vendor/*.js",
       "vendor/*.css",
       "vendor/fonts/**",
-      "package.json"
+      "package.json",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*-musl/**"
     ],
     "asar": false,
     "npmRebuild": false,
@@ -36,6 +40,11 @@
       "target": "dir",
       "icon": "images/icons/macos/Switchboard.icns",
       "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": "dir",
+      "executableName": "switchboard",
+      "category": "Development"
     }
   },
   "devDependencies": {
