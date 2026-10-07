@@ -32,7 +32,7 @@ The design decides layout, labels and placement. This spec decides behaviour, an
   13. Dialogs: Esc closes them, other keys are blocked, and focus stays inside.
   14. The restore warning text comes from the server (item 15).
   15. Each view keeps its scroll position.
-  16. Clicking the `TODOs` tab from the Focus view returns to the overview.
+  16. Clicking the `Board` or `Backlog` tab from the Focus view returns to that side's overview.
 
 UI changes are checked against the running app on localhost, in Chrome or in the window app.
 
@@ -326,15 +326,15 @@ UI changes are checked against the running app on localhost, in Chrome or in the
 ### UI
 
 58. The screens:
-    - the title bar (item 121), with the `TODOs` and `Removed` tabs, a Settings tab while Settings is open, the PR status chip and the Settings gear;
-    - the TODOs screen, with the Board / Backlog switch (item 86), the pinned operator card, the project filter row, and the board's lanes or the backlog list;
+    - the title bar (item 121), with the `Backlog`, `Board` and `Removed` tabs, a Settings tab while Settings is open, the PR status chip and the Settings gear;
+    - the TODOs screen, Board or Backlog (item 86), with the pinned operator card, the project filter row, and the board's lanes or the backlog list;
     - the Focus view of a TODO: the title, the info line (item 124), the Chat, Files and Terminal tabs (item 100), its "1 of 2 waiting" counter and the next waiting TODO;
     - the Removed view;
     - Settings, with Projects and Appearance (item 122).
 
-    The `TODOs` tab counts started TODOs across all projects, not the backlog. `Removed` counts removed TODOs. The project count sits in the Settings nav.
+    `Backlog` counts not-started TODOs and `Board` started ones, across all projects. `Removed` counts removed TODOs. The project count sits in the Settings nav.
 121. **Title bar and window.** The top of the app is a title bar with the brand mark and wordmark, the view tabs, and on the right the PR status chip and a Settings gear (tooltip "Settings · ⌘,", outlined while Settings is shown).
-     - The `TODOs` tab counts live started TODOs in all projects. While any TODO waits, an amber square before the label carries the tooltip "N waiting on you". Clicking `TODOs` from the Focus view returns to the overview. Tabs activate on click, Enter or Space.
+     - The tabs read `BACKLOG n | BOARD n | REMOVED n`. `Backlog` counts live not-started TODOs and `Board` live started ones, in all projects whatever the filter. While any TODO waits, an amber square before `Board` carries the tooltip "N waiting on you". The Focus view sits under the tab it was opened from. Clicking that tab from Focus returns to its overview; clicking it from Settings or Removed returns to Focus. Tabs activate on click, Enter or Space.
      - The PR status chip shows while `gh` fails. Its tooltip reads "PR lines show the last result from N min ago, greyed. Git lines are local and stay current. Retries every 2 min. Click to retry now." Clicking it retries.
      - In the window app on macOS, the title bar replaces the window frame: the native traffic lights sit inside it, a spacer keeps them clear of the brand, and dragging the bar moves the window. In full screen and in the browser there is no spacer. The page knows it runs in Electron from its user agent.
      - On Windows and Linux the window keeps its native frame, with the title bar below it.
@@ -344,8 +344,8 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - Projects: item 1, with the app contract read-only at full width (item 31).
      - Appearance: a Theme choice of Auto, Dark and Light (tooltips "Follow system · now dark", "Dark theme", "Light theme"). Auto follows the OS setting, and the hint says which theme that is now ("Auto follows the system setting. Now dark."), also when the OS setting changes. Dark and Light say "Fixed to dark. Applies to every window." and "Fixed to light. Applies to every window." The pick is kept in localStorage.
      - Without projects, the New TODO card says "Add a project in Settings › Projects first."
-86. The TODOs screen has a **Board / Backlog** switch at the top, each side with its count: `BOARD n` (tooltip "Started work · B") and `BACKLOG n` (tooltip "Not started yet · B"). `B` toggles it. The pick is kept in localStorage; the board is the default. A hint next to it reads "Started work. Ideas wait in the backlog." or "Not started. Nothing launches until you start it." The counts follow the project filter. An amber square before Board shows while any TODO in any project waits on the user, whatever the filter.
-    - Below the switch, the board shows the pinned operator card at full width, the project filter row and the lanes. The board has no New TODO card.
+86. The TODOs screen has two sides, **Board** and **Backlog**, picked with the title bar tabs (item 121): `BOARD n` (tooltip "Started work · B") and `BACKLOG n` (tooltip "Not started yet · B"). `B` toggles them on the overview, and from Removed or Settings returns to the side last shown. The pick is kept in localStorage; the board is the default.
+    - The board shows the pinned operator card at full width, the project filter row and the lanes. The board has no New TODO card.
     - The backlog shows the New TODO card next to the operator card, the project filter row and the backlog list.
 87. The **board** shows the lanes of item 40. When no started TODO passes the project filter, one panel replaces the lanes: "No started TODOs[ in <project>]. <n> idea(s) in the backlog.", or "No started TODOs. The backlog is empty too.", with an Open backlog button.
 88. The **backlog** lists every TODO that has not started, most recently touched first, as compact rows rather than cards, so many ideas fit on one screen. Its header reads `BACKLOG` with the count and the hint "Recently touched first. A note or an edit moves an idea to the top."
@@ -382,7 +382,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
     - `⌘E` toggles file edit mode, `⌘S` saves the open file, and `⌘F` searches it in Edit mode. All three work only while the file is visible.
     - `⌘↵` commits the draft, or adds the TODO in the New TODO card, saves the first-instruction edit, starts the new session, or starts the New Claude form. `⌘⇧↵` adds and starts a TODO (item 92).
     - `Esc` closes one thing, in this order: a dialog, the terminal + menu, the New Claude form, the first-instruction edit, new-session mode, Settings (when not typing), the open file, and finally the Focus view, back to Board or Backlog.
-    - Enter or Space opens a focused card or backlog row, and activates view tabs, terminal tabs and tree rows. Arrow keys move within the radio groups (Board / Backlog, Files root, Theme).
+    - Enter or Space opens a focused card or backlog row, and activates view tabs, terminal tabs and tree rows. Arrow keys move within the radio groups (project filter, Files root, Theme).
     - In dialogs, Esc closes the dialog, other keys are blocked, and focus stays inside.
     - While a terminal has focus, keys go to it (item 117).
 60. The design's "Show flow" panel (scenarios, lifecycle trace, live event feed) and the "Launch · per turn" command preview in Settings › Projects are not built. Show flow plays the design's demo scenarios, not the app's data. The launch preview shows a command line such as `claude -p … --settings hooks.json --mcp-config …`, which is not how the app launches agents: the Agent SDK receives the hooks and the MCP server in-process (item 28), so there is no such command to show.
