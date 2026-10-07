@@ -5,7 +5,7 @@ Date: 2026-10-07. This follows `acp-investigation.md` and your answers there:
 - Claude moves to ACP as well;
 - the app tools move to an HTTP MCP endpoint.
 
-Everything below targets **stable ACP v1**. The P0 results are in `designs/acp-spike.md`, and every check passed. The open point is pushing a message into a running turn (item 20); see that file. The facts in §2 of the investigation come from reading the adapter's source, not from running it. Phase P0 verifies them before any spec change, which matches the spec's "verified in the spike" convention.
+Everything below targets **stable ACP v1**. The P0 results are in `designs/acp-spike.md`. Every check passed except pushing a message into a running turn (item 20), which is mixed: neither ACP path matches today's behaviour. See that file. The facts in §2 of the investigation come from reading the adapter's source, not from running it. Phase P0 verifies them before any spec change, which matches the spec's "verified in the spike" convention.
 
 ## 1. Architecture
 

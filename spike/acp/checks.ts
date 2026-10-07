@@ -95,13 +95,13 @@ const checks: Record<string, () => Promise<any>> = {
     const pr = a.req("session/prompt", { sessionId: s.sessionId, prompt: [{ type: "text", text: "Run `bun -e \"await Bun.sleep(60000); console.log(42)\"` with the Bash tool in the foreground (not in the background), then tell me what it printed." }] });
     while (!ups(a, from).some((u) => u.sessionUpdate === "tool_call" && u.kind === "execute") && performance.now() - t < 60_000) await sleep(100);
     await sleep(8000);
-    const runningBefore = Bun.spawnSync(["pgrep", "-f", "Bun.sleep.60000"]).stdout.toString().trim().split("\n").filter(Boolean).length;
+    const runningBefore = Bun.spawnSync(["pgrep", "-af", "Bun.sleep.60000"]).stdout.toString().trim().split("\n").filter(Boolean);
     const tc = performance.now();
     await a.conn.agent.notify("session/cancel", { sessionId: s.sessionId });
     const r1 = await pr;
     const cancelMs = Math.round(performance.now() - tc);
     await sleep(1000);
-    const runningAfter = Bun.spawnSync(["pgrep", "-f", "Bun.sleep.60000"]).stdout.toString().trim().split("\n").filter(Boolean).length;
+    const runningAfter = Bun.spawnSync(["pgrep", "-af", "Bun.sleep.60000"]).stdout.toString().trim().split("\n").filter(Boolean);
     const p2 = await prompt(a, s.sessionId, "What happened to your last command? One sentence.");
     const r = { stopReason: r1.stopReason, cancelMs, runningBefore, runningAfter, after: { stopReason: p2.stopReason, text: p2.text }, toolStatuses: ups(a, from).filter((u) => u.toolCallId).map((u) => `${u.sessionUpdate}:${u.status ?? ""}`) };
     a.kill();
