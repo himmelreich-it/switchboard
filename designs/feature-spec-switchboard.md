@@ -276,7 +276,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
 
 27. Agents run in auto permission mode (`permissionMode: 'auto'`).
 28. Agents run over the Agent Client Protocol (ACP): the app starts the agent (`claude-agent-acp`, on the Bun that runs the server) and speaks JSON-RPC to it over stdio. The app's MCP server is passed in the ACP session's `mcpServers`, as an HTTP server at `http://127.0.0.1:<port>/mcp/app` with an `X-Switchboard-Session` header, not via the repository's settings, so only app-launched agents report to the app and the user's normal Claude Code sessions in the same repo are unaffected.
-    - The header holds a random secret, 32 bytes, made for each agent process and dropped when it ends. The secret names the TODO (or the operator), so each tool call knows its TODO without matching session ids. A request without a known secret gets 403.
+    - The header holds a random secret, 32 bytes, made for each agent process and dropped when it ends. The MCP config reaches the Claude CLI in its argv, which other users can read in `/proc`, so the config only says `${SWITCHBOARD_MCP_SECRET}` and Claude Code expands it from the agent process's environment, which only the same user can read. The secret names the TODO (or the operator), so each tool call knows its TODO without matching session ids. A request without a known secret gets 403.
     - `/mcp/app` is stateless: each POST gets a fresh MCP server (`WebStandardStreamableHTTPServerTransport` with JSON responses); GET and DELETE get 405. The Host and content-type checks of item 120 apply as everywhere.
 29. Worker agents have these MCP tools: `post_message`, `set_title`, `set_attention` (raise and clear), `attach_file`, `set_worktree`, and `set_pr` (the pull request the TODO works on, also without a worktree; otherwise the PR is found by the worktree's branch). The contract names them by their full tool ids (`mcp__app__post_message` etc.), because with the user's many MCP servers the agent loads tool definitions on demand.
 30. Status follows the run lifecycle:
@@ -492,7 +492,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
 
 ## Spike findings (2026-10-02)
 
-Throwaway script run against a test repository, on `claude-sonnet-5-5` with the user's full Claude Code config loaded.
+Throwaway script run against a test repository, on `claude-sonnet-5-5` with the user's full Claude Code config loaded. These findings are about the Agent SDK `query()`, which the app used before ACP; `getSessionInfo` and the hooks are no longer used. The ACP spike is in `designs/acp-spike.md`.
 
 | Question | Result |
 |---|---|

@@ -17,6 +17,7 @@ export type SessionOpts = {
   additionalDirectories?: string[];
   mcpServers: McpServer[];
   meta?: Record<string, unknown>; // the agent's own `_meta` for session/new and session/resume
+  env?: Record<string, string>; // added to the agent process's environment
 };
 
 export type Live = {
@@ -41,8 +42,8 @@ const withTimeout = <T>(p: Promise<T>, ms: number, what: string) =>
 
 // One agent process and its ACP connection, initialized. `handlers` may be set later (session/load replays before
 // the caller has a Live), and stays swappable so the same process serves the next turn's run.
-async function spawnAgent(handlers: { h: Handlers | null }) {
-  const proc = Bun.spawn(CLAUDE, { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env });
+async function spawnAgent(handlers: { h: Handlers | null }, extraEnv: Record<string, string> = {}) {
+  const proc = Bun.spawn(CLAUDE, { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...extraEnv } });
   let log = "";
   (async () => {
     const dec = new TextDecoder(), r = proc.stderr.getReader();
@@ -105,7 +106,7 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
 // session/new in a new agent process. The agent makes the session id; for Claude it is the Claude Code session id.
 export async function openSession(o: SessionOpts, h: Handlers): Promise<Live> {
   const handlers = { h };
-  const a = await spawnAgent(handlers);
+  const a = await spawnAgent(handlers, o.env);
   try {
     const s = await a.conn.agent.request(acp.methods.agent.session.new, {
       cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta,
@@ -121,7 +122,7 @@ export async function openSession(o: SessionOpts, h: Handlers): Promise<Live> {
 // history is dropped: the app keeps its own record). MCP servers and `_meta` are given again, so they may differ.
 export async function reopenSession(sessionId: string, o: SessionOpts, h: Handlers): Promise<Live> {
   const handlers: { h: Handlers | null } = { h: null };
-  const a = await spawnAgent(handlers);
+  const a = await spawnAgent(handlers, o.env);
   try {
     const caps: any = a.init.agentCapabilities ?? {};
     const params = { sessionId, cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta };
