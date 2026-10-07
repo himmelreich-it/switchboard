@@ -21,8 +21,10 @@ function applyTheme() {
 }
 applyTheme();
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
+// Shortcuts use ⌘ on macOS and Alt on Linux and Windows, where Ctrl belongs to the browser and the terminal (item 59).
+const MAC = /Mac/.test(navigator.platform);
 // The window app on macOS draws its traffic lights over the title bar (item 121), which then leaves room for them.
-if (/Electron/.test(navigator.userAgent) && /Mac/.test(navigator.platform)) document.documentElement.classList.add("electron-mac");
+if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classList.add("electron-mac");
 // Launch token (item 120): the server prints http://127.0.0.1:<port>/#token=…; keep it, then clear it from the address bar.
 (function () {
   const m = location.hash.match(/token=([0-9a-f]+)/);
@@ -831,6 +833,11 @@ DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n
 // or cover the page.
 const md = (s) => DOMPurify.sanitize(marked.parse(String(s ?? "")), { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"] });
 const short = (s, n = 34) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+// Key labels are written for macOS; elsewhere ⌘ reads Alt+, except paste, which stays the system's Ctrl+V.
+const keys = (s) => (MAC ? s : s.replace(/⌘V\b/g, "Ctrl+V").replace(/⌘/g, "Alt+"));
+const modKey = (e) => (MAC ? e.metaKey || e.ctrlKey : e.altKey);
+// A focused terminal keeps every key except these. Alt is the shell's Meta key (Alt+B, Alt+.), so off macOS only Alt+J and Alt+, leave it.
+const termYields = (e) => (MAC ? e.metaKey : e.altKey && !e.ctrlKey && (e.key === "," || e.key.toLowerCase() === "j"));
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const basename = (p) => String(p ?? "").split("/").filter(Boolean).pop() ?? "";
 function fmtTime(iso) {
@@ -874,7 +881,7 @@ const STATUS = {
   idle: { label: "Idle", badge: "neutral", edge: "var(--border-default)" },
 };
 const LANES = [
-  { st: "waiting", label: "Waiting on you", color: "var(--accent-amber)", hint: "Handle one, then ⌘J for the next.", empty: "Nothing needs you right now." },
+  { st: "waiting", label: "Waiting on you", color: "var(--accent-amber)", hint: keys("Handle one, then ⌘J for the next."), empty: "Nothing needs you right now." },
   { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit are queued until the turn ends.", empty: "No agent is running." },
   { st: "idle", label: "Idle", color: "var(--text-secondary)", hint: "Resting state. Remove a TODO when it is done.", empty: "No idle TODOs." },
 ];
@@ -1774,7 +1781,7 @@ function msgHtml(m, operator) {
         <label class="sr-only" for="editFirst">First instruction</label><textarea id="editFirst" class="mb-textarea" rows="4">${esc(S.editing.start)}</textarea>
         ${S.editing.err ? `<span style="font-size:12px; line-height:1.5; color:var(--accent-red)">${esc(S.editing.err)}</span>` : ""}
         <div class="row wrap"><span class="small">Also updates the title. Attachments stay; add more as notes.</span>
-          <span class="push row"><span class="kbd">Esc</span>${btn("Cancel", "edit-cancel", { v: "ghost" })}<span class="kbd">⌘↵</span>${btn("Save", "edit-save", { v: "primary" })}</span></div></div>`
+          <span class="push row"><span class="kbd">Esc</span>${btn("Cancel", "edit-cancel", { v: "ghost" })}<span class="kbd">${keys("⌘↵")}</span>${btn("Save", "edit-save", { v: "primary" })}</span></div></div>`
     : m.author === "operator" ? `<div class="md">${md(m.body)}</div>` : m.body ? `<div class="msg-body">${esc(m.body)}</div>` : "");
   const files = (m.attachments ?? []).map(attachmentHtml).join("");
   return `<div class="msg${m.author.startsWith("user") ? " msg--user" : ""}">
@@ -1872,7 +1879,7 @@ function renderChat(operator, t, d) {
   // Item 71: the composer in new-session mode; the draft and attachments stay.
   const nsHead = $("nsHead");
   nsHead.hidden = !ns;
-  setHtml(nsHead, ns ? `<span class="sq"></span><span class="t">New session ${nSess + 1}</span><span class="small">⌘↵ starts session ${nSess + 1}. Session ${nSess} ends and stays above as history.</span>
+  setHtml(nsHead, ns ? `<span class="sq"></span><span class="t">New session ${nSess + 1}</span><span class="small">${keys("⌘↵")} starts session ${nSess + 1}. Session ${nSess} ends and stays above as history.</span>
     <span class="push row" style="gap:6px"><span class="kbd">Esc</span>${btn("Cancel", "cancel-ns", { v: "ghost", id: t.id })}</span>` : "");
   $("commitBtn").textContent = ns ? "Start session" : "Commit";
   // R56: after an app restart queued messages wait for the user; nothing is delivered on its own
@@ -1894,7 +1901,7 @@ function renderHint() {
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
   const key = operator ? null : draftKey();   // the operator chat takes no attachments
-  $("composerHint").innerHTML = `${composer.value.trim() ? badge("Draft") : ""}<span>${esc(hint)}</span><span class="push row" style="gap:6px">${key ? '<span class="kbd">⌘V</span><span style="margin-right:6px">image</span>' : ""}<span class="kbd">⌘↵</span>commit</span>`;
+  $("composerHint").innerHTML = `${composer.value.trim() ? badge("Draft") : ""}<span>${esc(hint)}</span><span class="push row" style="gap:6px">${key ? `<span class="kbd">${keys("⌘V")}</span><span style="margin-right:6px">image</span>` : ""}<span class="kbd">${keys("⌘↵")}</span>commit</span>`;
   $("attachBtn").hidden = !key;
   setHtml($("composerFiles"), key ? uploadChips(key) : "");
   $("commitBtn").disabled = (!composer.value.trim() && !uploads[key]?.length && !ns) || !!S.sending;
@@ -2186,7 +2193,7 @@ function ensureXterm(x, t) {
     term.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) { navigator.clipboard.writeText(term.getSelection()); return false; }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) { navigator.clipboard.readText().then((tx) => term.paste(tx)); return false; }
-      return !e.metaKey;   // ⌘ shortcuts belong to the app (⌘J, ⌘,); every other key goes to the terminal
+      return !termYields(e);   // app shortcuts (⌘J, ⌘,) belong to the app; every other key goes to the terminal
     });
     term.textarea?.addEventListener("focus", renderTermFoot);
     term.textarea?.addEventListener("blur", renderTermFoot);
@@ -2227,7 +2234,7 @@ function renderTerminals(t, d) {
       <pre>cd ${esc(f.cwd)}
 claude --add-dir ${esc(artifactPath(t))} "&lt;first message&gt;"</pre>
       <span class="small">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Runs with your own Claude Code settings, without the app's tools or hooks. Nothing it does appears in this chat.</span>
-      <div class="row" style="justify-content:flex-end">${btn("Cancel", "cform-cancel", { v: "ghost" })}<span class="kbd">⌘↵</span>${btn("Start", "cform-start", { v: "primary" })}</div></div>`);
+      <div class="row" style="justify-content:flex-end">${btn("Cancel", "cform-cancel", { v: "ghost" })}<span class="kbd">${keys("⌘↵")}</span>${btn("Start", "cform-start", { v: "primary" })}</div></div>`);
   } else if (!list.length) {
     setHtml(panel, `<div class="term-empty"><h2>No terminals</h2>${S.termsUnsupported ? `<p>${esc(S.termsUnsupported)}</p>`
       : `<p>Opens in ${esc(def[2])}. A shell for git, tests or a dev server, or Claude with this TODO's context. Both are your own processes: the agent isn't told about them and nothing shows in the chat.</p>
@@ -2363,12 +2370,12 @@ document.addEventListener("click", (e) => {
   ACTIONS[el.dataset.act]?.(el.dataset.id, el);
 });
 document.addEventListener("keydown", (e) => {
-  const k = (e.key || "").toLowerCase(), mod = e.metaKey || e.ctrlKey;
+  const k = (e.key || "").toLowerCase(), mod = modKey(e);
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
   if (S.dlg) { if (e.key === "Escape") { e.preventDefault(); closeDialog(); } return; }
   if (e.defaultPrevented) return;   // the editor or a terminal already took the key
-  // Item 117: while a terminal has focus every key goes to it, except ⌘ shortcuts.
-  if (e.target.closest?.(".term-hosts") && !e.metaKey) return;
+  // Item 117: while a terminal has focus every key goes to it, except the app shortcuts.
+  if (e.target.closest?.(".term-hosts") && !termYields(e)) return;
   if (e.target.id === "cfMsg" && e.key === "Enter" && mod) { e.preventDefault(); return ACTIONS["cform-start"](); }
   if (mod && e.key === ",") { e.preventDefault(); return openSettings(); }
   if (mod && k === "j") { e.preventDefault(); return nextWaiting(); }
@@ -2408,11 +2415,11 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => { if (e.target.id === "editFirst" && S.editing) { S.editing.text = e.target.value; if (S.editing.err) { S.editing.err = ""; render(); } } });
 document.addEventListener("keydown", (e) => {
   if (e.target.id !== "editFirst") return;
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEdit(); }
+  if (e.key === "Enter" && modKey(e)) { e.preventDefault(); saveEdit(); }
   else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); S.editing = null; render(); }
 }, true);
 composer.addEventListener("input", () => { saveDraftSoon(draftKey(), composer.value); renderHint(); });
-composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commit(draftKey(), composer); } });
+composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); commit(draftKey(), composer); } });
 operatorIn.addEventListener("input", () => saveDraftSoon("operator", operatorIn.value));
 operatorIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commit("operator", operatorIn); } });
 newText.addEventListener("input", () => { $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || S.newProject == null || adding; });
@@ -2423,11 +2430,17 @@ acceptFiles(newText.closest(".panel"), () => "new");
 // A file dropped next to a drop zone would make the browser open it and leave the app.
 addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
-newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTodo(e.shiftKey); } });
+newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
 newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
 [pName, pPath, pPrompt].forEach((el) => el.addEventListener("input", renderProjects));
 
 applyTheme();   // the head script ran before the theme buttons existed; mark the active one
+// The static markup's key labels (hints, the gear's tooltip) are written for macOS.
+if (!MAC) {
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n; (n = walk.nextNode());) if (n.data.includes("⌘") && n.parentNode.nodeName !== "SCRIPT") n.data = keys(n.data);
+  for (const el of document.querySelectorAll('[title*="⌘"]')) el.title = keys(el.title);
+}
 
 // ---------- live updates (R61): one SSE stream; each event refetches only what is on screen ----------
 const treeVisible = () => S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" && S.tab === "files" && ["worktree", "project"].includes(S.fileRoot[S.sel]);

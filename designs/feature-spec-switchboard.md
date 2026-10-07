@@ -255,7 +255,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - **Environment** for both: the server's, plus `TERM=xterm-256color`, `COLORTERM=truecolor`, `SWITCHBOARD_TODO_ID` and `SWITCHBOARD_FILES` (item 84).
      - Terminals need Bun 1.3.5 or newer, on macOS or Linux. Otherwise the Terminal tab says "Terminals need Bun 1.3.5 or newer. This server runs Bun x." or "Terminals are not supported on Windows yet."
 117. Keys and clipboard:
-     - While a terminal has focus, every key goes to it, including Esc, Tab and N. ⌘ combinations still reach the app, so on macOS the ⌘ shortcuts keep working.
+     - While a terminal has focus, every key goes to it, including Esc, Tab and N. On macOS ⌘ combinations still reach the app, so the ⌘ shortcuts keep working. On Linux and Windows only Alt+J and Alt+, reach the app; other Alt combinations go to the terminal, where Alt is the shell's Meta key (Alt+B, Alt+F, Alt+.).
      - On Linux, Ctrl combinations go to the terminal (Ctrl+J, Ctrl+E and Ctrl+S mean something there). Copy and paste are Ctrl+Shift+C and Ctrl+Shift+V.
      - Clicking outside the terminal hands the keys back to the app.
      - Terminal tabs are selected by click, Enter or Space.
@@ -338,7 +338,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - The PR status chip shows while `gh` fails. Its tooltip reads "PR lines show the last result from N min ago, greyed. Git lines are local and stay current. Retries every 2 min. Click to retry now." Clicking it retries.
      - In the window app on macOS, the title bar replaces the window frame: the native traffic lights sit inside it, a spacer keeps them clear of the brand, and dragging the bar moves the window. In full screen and in the browser there is no spacer. The page knows it runs in Electron from its user agent.
      - On Windows and Linux the window keeps its native frame, with the title bar below it.
-     - The window is at least 960 pixels wide. Its app menu has "Settings… ⌘," plus the standard Edit, View and Window menus, so ⌘C and ⌘V keep working.
+     - The window is at least 960 pixels wide. Its app menu has "Settings… ⌘," (Alt+, on Linux and Windows) plus the standard Edit, View and Window menus, so ⌘C and ⌘V keep working.
      - Icons: the macOS set (`images/icons/macos/`) for the packaged app and the dock, the flat set (`images/icons/flat/`) for the window icon on Windows and Linux and the browser favicon, and the cut-corner brand mark in the title bar.
 122. **Settings** opens with the gear or ⌘, (also while typing), as a closable tab after Removed. It reopens the last section shown. × (tooltip "Close · Esc") or Esc, when not typing, returns to the view Settings was opened from. A nav lists the sections `Projects <n>` and `Appearance`.
      - Projects: item 1, with the app contract read-only at full width (item 31).
@@ -376,6 +376,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - The numbers update after each run. The window size comes from the SDK, not a fixed 200k. New session clears them, and the meter is hidden until there is usage.
 125. A toast can carry one action button. Clicking it runs the action and closes the toast. A toast with an action stays 6.5 seconds, others 4.2 seconds, and at most 3 toasts show at once. The actions are Open on "Started" (opens the TODO's Focus view) and Go to chat on "Added to message" (opens the Chat tab with the draft).
 59. Keyboard shortcuts:
+    - The ⌘ shortcuts below use Alt instead on Linux and Windows, where Ctrl belongs to the browser and the terminal (Alt+J, Alt+,, Alt+E, Alt+↵, Alt+⇧↵ …); Ctrl does not trigger them there. The page tells from `navigator.platform` and shows its key hints and tooltips the same way. Paste stays the system's key, so the image hints read Ctrl+V there.
     - `N` switches to the backlog and focuses the New TODO input (item 93). `B` toggles Board and Backlog, only when not typing, with no modifier, on the TODOs screen and not in the Focus view.
     - `⌘J` opens the next TODO waiting on you.
     - `⌘,` opens Settings, also while typing.
