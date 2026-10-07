@@ -23,7 +23,7 @@ runs a copy of the code: run `install-local` again to update it. It still needs 
 other variables from your login shell (`zsh -ilc`), since apps started from the Dock or Spotlight do not get them.
 
 Needs a Claude Code login. Agents run with your normal Claude Code settings, in auto permission mode. Projects are
-set up in Settings › Projects (the gear, or ⌘,).
+set up in Settings › Projects (the gear, or ⌘,). Shortcuts written with ⌘ use Alt on Linux and Windows.
 Data lives in `~/.switchboard/` (`SWITCHBOARD_HOME` to change): `db.sqlite`, `token` while the server runs, and
 `data/<project-slug>/<todo-id>/` for the agents' files. On first start, projects are imported from
 `~/.auto-coder/db.sqlite`.
