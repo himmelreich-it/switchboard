@@ -261,6 +261,8 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .navtab .x:hover { background: var(--surface-3); color: var(--text-primary); }
 .drag-fill { flex: 1; min-width: 24px; }
 .tb-right { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; -webkit-app-region: no-drag; }
+/* Linux window app: Electron draws the window controls over the right end of the bar (titlebar-area-* is unset elsewhere). */
+.tb-right { margin-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)); }
 .gh-btn { height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; flex: none; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .gh-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .gh-btn > span { width: 6px; height: 6px; flex: none; border: 1px solid currentColor; }
