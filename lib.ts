@@ -1,4 +1,5 @@
-// Pure helpers. No I/O here, so lib.test.ts can cover them.
+// Pure helpers. No I/O here, so lib.test.ts can cover them (migrateDb takes the database, so the tests give it one in memory).
+import type { Database } from "bun:sqlite";
 import { basename, isAbsolute, relative } from "node:path";
 
 export type Status = "not_started" | "running" | "waiting" | "idle";
@@ -28,9 +29,48 @@ export const lineCount = (text: string) => text.trim().split("\n").filter((l) =>
 
 // The prompt for one turn: the worktree line (while one is registered), then every delivered message.
 // With no messages, as on a restore with nothing queued and no draft, the prompt is "continue".
-export function deliveryPrompt(worktree: string | null, bodies: string[]): string {
+// The first turn of a later session starts with the hand-over header instead, which names the worktree itself.
+export function deliveryPrompt(worktree: string | null, bodies: string[], header = ""): string {
   const text = bodies.map((b) => b.trim()).filter(Boolean).join("\n\n") || "continue";
+  if (header) return `${header}\n\n${text}`;
   return worktree ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
+}
+
+// Item 73: what a new session gets from the earlier ones, built from the TODO's data (no agent writes it).
+// Lines without a value are left out.
+export function handOver(o: {
+  no: number; title: string; worktree: string | null; pr: number | null;
+  last: { no: number; body: string } | null; files: { path: string; session_no: number | null }[];
+}): string {
+  return [
+    `This TODO continues earlier work (session ${o.no}). Title: ${o.title}. Keep this title.`,
+    o.worktree && `Your worktree: ${o.worktree}. Work there.`,
+    o.pr && `Pull request: #${o.pr}.`,
+    o.last && `Last message of session ${o.last.no}: ${o.last.body.replace(/\s*\n\s*/g, " ")}`,
+    o.files.length && "Files from earlier sessions (open with Read what you need):\n"
+      + o.files.map((f) => `${f.path} (${f.session_no ? `session ${f.session_no}` : "added outside a session"})`).join("\n"),
+  ].filter(Boolean).join("\n");
+}
+
+// The context meter (item 123), updated from each SDK message of a run. Context = what went into the last model call
+// of the main loop (input + cache read + cache write) plus what it wrote. result.usage is summed over the turn's calls,
+// so it would overstate the context. ponytail: an assistant message's output_tokens can still be streaming; that is a
+// few percent of `used`, so it is shown as is.
+export type Ctx = { used: number; window: number | null; last_in: number; last_out: number; turns: number; model?: string };
+export function usageStep(c: Ctx | null, m: any): Ctx | null {
+  const cur: Ctx = c ?? { used: 0, window: null, last_in: 0, last_out: 0, turns: 0 };
+  if (m?.type === "system" && m.subtype === "init") return { ...cur, model: m.model };
+  if (m?.type === "assistant" && m.parent_tool_use_id == null && m.message?.usage) {
+    const u = m.message.usage, input = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+    return { ...cur, last_in: input, used: input + (u.output_tokens ?? 0) };
+  }
+  if (m?.type === "system" && m.subtype === "compact_boundary") return { ...cur, used: m.compact_metadata?.post_tokens ?? cur.used };
+  if (m?.type === "result") {
+    const models = Object.entries(m.modelUsage ?? {}) as [string, any][];
+    const main = models.find(([k]) => k === cur.model) ?? models.sort((a, b) => (b[1].contextWindow ?? 0) - (a[1].contextWindow ?? 0))[0];
+    return { ...cur, last_out: m.usage?.output_tokens ?? cur.last_out, window: main?.[1].contextWindow ?? cur.window, turns: cur.turns + 1 };
+  }
+  return c;
 }
 
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
@@ -58,6 +98,16 @@ export const statusAfterRun = (attention: boolean | number): Status => (attentio
 export function isInside(path: string, dir: string): boolean {
   const rel = relative(dir, path);
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+// The launch token a request carries (item 120): the X-Switchboard-Token header, or ?token= where a header cannot be
+// set (EventSource, WebSocket, <img>). Compared in constant time.
+export function tokenOk(token: string, header: string | null, query: string | null): boolean {
+  const got = header ?? query ?? "";
+  if (got.length !== token.length) return false;
+  let diff = 0;
+  for (let i = 0; i < got.length; i++) diff |= got.charCodeAt(i) ^ token.charCodeAt(i);
+  return diff === 0;
 }
 
 // The interesting argument of a tool call: the Bash command, the file path, the search pattern...
@@ -164,4 +214,123 @@ export function ghOutcome(code: number | null, stdout: string, stderr: string):
   const text = (stderr || stdout).trim();
   if (/dial tcp|error connecting to|internet connection|no such host|i\/o timeout|TLS handshake/i.test(text)) return { error: "no network", detail: text };
   return { error: "unclear", detail: `exit ${code ?? "killed"}${text ? " · " + text.split("\n")[0]!.slice(0, 160) : ""}` };
+}
+
+// ---------- files of a worktree or the project folder (items 102, 103) ----------
+
+// `git diff --name-status -z <base>` (the merge base against the working tree, so committed and uncommitted
+// changes) plus `git ls-files --others --exclude-standard -z` (untracked): one mark per path.
+// A rename marks the new path added and the old one deleted.
+export type Mark = "M" | "A" | "U" | "D";
+export function parseMarks(nameStatusZ: string, untrackedZ: string): Record<string, Mark> {
+  const marks: Record<string, Mark> = {};
+  const f = nameStatusZ.split("\0");
+  for (let i = 0; i < f.length - 1;) {
+    const st = f[i++]!;
+    if (!st) continue;
+    if (st[0] === "R" || st[0] === "C") { const from = f[i++]!, to = f[i++]!; if (st[0] === "R") marks[from] = "D"; marks[to] = "A"; continue; }
+    const path = f[i++]!;
+    marks[path] = st[0] === "D" ? "D" : st[0] === "A" ? "A" : "M";
+  }
+  for (const p of untrackedZ.split("\0")) if (p) marks[p] = "U";
+  return marks;
+}
+
+// ---------- terminals (items 111-118) ----------
+
+// The title a program sets with OSC 0 or OSC 2 (ESC ] 0 ; title BEL, or ESC \\ as the end). Shells and Claude Code
+// set one. The last one in the chunk wins; null when there is none.
+// ponytail: a title split across two output chunks is missed; the next prompt sets it again.
+export function parseOscTitle(chunk: string): string | null {
+  let title: string | null = null;
+  for (const m of chunk.matchAll(/\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g)) title = m[1]!;
+  return title;
+}
+
+// True when `version` ("1.3.14") is at least `min` ("1.3.5").
+export function versionAtLeast(version: string, min: string): boolean {
+  const a = version.split(".").map(Number), b = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return true;
+}
+
+// Item 114: what a Claude terminal reads first, written to <artifact folder>/terminal/context.md at each launch.
+export function contextFile(c: {
+  title: string; project: string; status: string; first: string; worktree: string | null; branch: string | null;
+  git: string | null; pr: string | null; sessions: { no: number; session_id: string; started_at: string; ended_at: string | null }[];
+  messages: { author: string; body: string; at: string; session_no: number | null }[]; files: string[];
+}): string {
+  const out: string[] = [
+    `# Switchboard TODO: ${c.title}`, "",
+    `- Project: ${c.project}`, `- Status: ${c.status === "not_started" ? "not started (in the backlog)" : c.status}`,
+    ...[c.worktree && `- Worktree: ${c.worktree}`, c.branch && `- Branch: ${c.branch}`, c.git && `- Git: ${c.git}`, c.pr && `- Pull request: ${c.pr}`].filter((l): l is string => !!l),
+    "", "## First instruction", "", c.first, "",
+    "## Note", "",
+    "The TODO's own agent may be working in the same worktree at the same time. Check with the user before you commit, switch branches or rewrite history.", "",
+  ];
+  if (c.files.length) out.push("## Files", "", ...c.files.map((f) => `- ${f}`), "");
+  if (c.sessions.length) out.push("## Sessions", "", ...c.sessions.map((s) => `- Session ${s.no}: ${s.session_id} (${s.started_at}${s.ended_at ? ` to ${s.ended_at}` : ", live"}). Its full transcript is under ~/.claude/projects/.`), "");
+  out.push("## Chat", "");
+  const groups = c.sessions.length ? c.sessions.map((s) => s.no) : [null];
+  for (const no of groups) {
+    const msgs = c.messages.filter((m) => no === null || (m.session_no ?? c.sessions.at(-1)!.no) === no);
+    if (no !== null && c.sessions.length > 1) out.push(`### Session ${no}`, "");
+    for (const m of msgs) out.push(`**${m.author}** (${m.at}): ${m.body}`, "");
+  }
+  return out.join("\n");
+}
+
+// ---------- schema ----------
+
+// The whole schema plus its migrations. Every migration only adds, so an older build still reads the database.
+export function migrateDb(db: Database) {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL,
+  agent_prompt TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), title TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('not_started','running','waiting','idle')), attention INTEGER NOT NULL DEFAULT 0,
+  session_id TEXT, worktree_path TEXT, pr_number INTEGER, last_tool TEXT, last_read_at TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY, todo_id INTEGER,
+  author TEXT NOT NULL CHECK (author IN ('user','agent','user via operator','operator','app')), body TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('pending','queued','delivered')), file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT);
+CREATE TABLE IF NOT EXISTS drafts (key TEXT PRIMARY KEY, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL,
+  actor TEXT NOT NULL CHECK (actor IN ('user','agent','app','operator')), detail TEXT, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sessions (
+  id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, no INTEGER NOT NULL, session_id TEXT NOT NULL,
+  started_at TEXT NOT NULL, ended_at TEXT, UNIQUE (todo_id, no));
+CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
+CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
+CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
+`);
+  const addColumn = (table: string, col: string, type: string) => {
+    if (!db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+  };
+  addColumn("todos", "pr_number", "INTEGER");   // databases made before set_pr existed
+  addColumn("todos", "ctx", "TEXT");            // context meter of the live session (JSON, see usageStep)
+  addColumn("messages", "session_no", "INTEGER");
+  addColumn("events", "session_no", "INTEGER");
+  addColumn("events", "meta", "TEXT");           // a result's duration and tool count (JSON)
+  addColumn("files", "session_no", "INTEGER");
+  // A started TODO without a sessions row was one session, which becomes session 1: every TODO of a database from
+  // before sessions, and one started by an older build on this database. Runs on every start, so it catches both.
+  db.transaction(() => {
+    const ids = (db.query("SELECT id FROM todos t WHERE session_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.todo_id = t.id)").all() as { id: number }[]).map((r) => r.id);
+    for (const id of ids) {
+      db.run(`INSERT INTO sessions (todo_id, no, session_id, started_at)
+        SELECT id, 1, session_id, COALESCE((SELECT MIN(e.at) FROM events e WHERE e.todo_id = t.id AND e.kind = 'launch'), created_at) FROM todos t WHERE id = ?`, [id]);
+      const start = (db.query("SELECT started_at FROM sessions WHERE todo_id = ?").get(id) as { started_at: string }).started_at;
+      db.run("UPDATE messages SET session_no = 1 WHERE todo_id = ? AND state = 'delivered' AND session_no IS NULL", [id]);
+      db.run("UPDATE events SET session_no = 1 WHERE todo_id = ? AND at >= ? AND session_no IS NULL", [id, start]);
+      db.run("UPDATE files SET session_no = 1 WHERE todo_id = ? AND session_no IS NULL", [id]);
+    }
+  })();
 }
