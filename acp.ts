@@ -83,8 +83,15 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     sessionId,
     configOptions: configOptions ?? [],
     async prompt(text) {
-      const r = await a.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: "text", text }] });
-      return r.stopReason;
+      try {
+        const r = await a.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: "text", text }] });
+        return r.stopReason;
+      } catch (e) {
+        // The connection can close on the agent's stdout ending before the exit is seen: name the exit, not the closed connection.
+        if (!a.conn.signal.aborted) throw e;
+        const code = await Promise.race([a.proc.exited, Bun.sleep(1000).then(() => null)]);
+        throw new Error(`the agent process ${code === null ? "stopped answering" : `exited (code ${code})`}${a.log() ? ": " + lastLine(a.log()) : ""}`);
+      }
     },
     cancel() {
       a.conn.agent.notify(acp.methods.agent.session.cancel, { sessionId }).catch(() => {});
@@ -95,10 +102,12 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     },
     close() {
       if (!alive) return;
+      a.conn.close();
       a.proc.kill("SIGTERM");
       setTimeout(() => alive && a.proc.kill("SIGKILL"), 5000);
     },
-    get alive() { return alive; },
+    // Dead as soon as either its process exited or its connection closed, whichever is seen first.
+    get alive() { return alive && !a.conn.signal.aborted && a.proc.exitCode === null; },
     stderr: a.log,
   };
 }
