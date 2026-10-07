@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  contextFile, cutToTwoLines, deliveryAction, inputChannel, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, usageStep,
+  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
@@ -41,24 +41,11 @@ test("withAttachments and safeFileName", () => {
 
 test("deliveryAction and statusAfterRun", () => {
   expect(deliveryAction("not_started")).toBe("pending");
-  expect(deliveryAction("running")).toBe("push");
+  expect(deliveryAction("running")).toBe("queue");
   expect(deliveryAction("idle")).toBe("send");
   expect(deliveryAction("waiting")).toBe("send");
   expect(statusAfterRun(1)).toBe("waiting");
   expect(statusAfterRun(false)).toBe("idle");
-});
-
-test("inputChannel yields the first prompt and pushes until closed", async () => {
-  const ch = inputChannel("first");
-  const got: string[] = [];
-  const reading = (async () => { for await (const x of ch.stream) got.push(x); })();
-  expect(ch.push("second")).toBe(true);
-  await Bun.sleep(1);
-  expect(ch.push("third")).toBe(true);
-  ch.close();
-  expect(ch.push("late")).toBe(false);
-  await reading;
-  expect(got).toEqual(["first", "second", "third"]);
 });
 
 test("isInside", () => {
@@ -152,19 +139,15 @@ test("handOver leaves out lines without a value", () => {
   expect(deliveryPrompt("/w", ["go"], "HEADER")).toBe("HEADER\n\ngo");
 });
 
-test("usageStep reads the context from the last main-loop model call", () => {
-  const msgs = [
-    { type: "system", subtype: "init", model: "claude-opus-5-5" },
-    { type: "assistant", parent_tool_use_id: null, message: { usage: { input_tokens: 2, cache_read_input_tokens: 9000, cache_creation_input_tokens: 1000, output_tokens: 50 } } },
-    { type: "assistant", parent_tool_use_id: "toolu_1", message: { usage: { input_tokens: 5, cache_read_input_tokens: 99999, cache_creation_input_tokens: 0, output_tokens: 1 } } },
-    { type: "assistant", parent_tool_use_id: null, message: { usage: { input_tokens: 3, cache_read_input_tokens: 12000, cache_creation_input_tokens: 500, output_tokens: 200 } } },
-    { type: "result", usage: { output_tokens: 250 }, modelUsage: { "claude-haiku-4-5": { contextWindow: 200000 }, "claude-opus-5-5": { contextWindow: 1000000 } } },
+test("ctxStep reads the context from usage_update", () => {
+  const ups = [
+    { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
+    { sessionUpdate: "usage_update", used: 24532, size: 1000000, _meta: { "_claude/model": "claude-opus-5-5" } },
+    { sessionUpdate: "usage_update", used: 25010, size: 1000000 },
   ];
-  const c = msgs.reduce<any>((c, m) => usageStep(c, m), null);
-  expect(c).toMatchObject({ used: 12703, last_in: 12503, last_out: 250, window: 1000000, turns: 1 });
-  const after = usageStep(c, { type: "system", subtype: "compact_boundary", compact_metadata: { pre_tokens: 12703, post_tokens: 3000 } });
-  expect(after!.used).toBe(3000);
-  expect(usageStep(null, { type: "user" })).toBe(null);
+  const c = ups.reduce<any>((c, u) => ctxStep(c, u), null);
+  expect(c).toEqual({ used: 25010, window: 1000000, turns: 0, model: "claude-opus-5-5" });
+  expect(ctxStep(null, { sessionUpdate: "plan" })).toBe(null);
 });
 
 test("migrateDb makes earlier TODOs session 1 and runs twice without harm", () => {

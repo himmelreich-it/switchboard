@@ -875,7 +875,7 @@ const STATUS = {
 };
 const LANES = [
   { st: "waiting", label: "Waiting on you", color: "var(--accent-amber)", hint: keys("Handle one, then ⌘J for the next."), empty: "Nothing needs you right now." },
-  { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit reach the agent after its next tool call.", empty: "No agent is running." },
+  { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit reach the agent when its turn ends.", empty: "No agent is running." },
   { st: "idle", label: "Idle", color: "var(--text-secondary)", hint: "Resting state. Remove a TODO when it is done.", empty: "No idle TODOs." },
 ];
 const AUTHOR = {
@@ -969,10 +969,10 @@ function ctxHtml(c, title, running) {
     : p >= 0.6 ? "Getting full. A good point for a new session once this step is done." : "Plenty of room.";
   const rows = [
     { text: `${c.used.toLocaleString("en-US")} of ${max.toLocaleString("en-US")} tokens · ${pct}%`, color: col },
-    { text: `last turn: ${kTok(c.last_in || 0)} in · ${kTok(c.last_out || 0)} out`, color: "var(--text-secondary)" },
+    c.last_in != null && { text: `last turn: ${kTok(c.last_in || 0)} in · ${kTok(c.last_out || 0)} out`, color: "var(--text-secondary)" },
     c.turns != null && { text: plural(c.turns, "turn") + " in this session", color: "var(--text-secondary)" },
   ].filter(Boolean);
-  return `<span class="pop right" tabindex="0"><span style="font-size:11px; text-transform:uppercase; letter-spacing:.08em">Context</span><span class="ctxbar"><i style="width:${pct}%; background:${col}"></i></span><span style="color:${p >= 0.6 ? col : "var(--text-secondary)"}">${kTok(c.used)} / ${kTok(max)}</span>${tipHtml(title + " · context" + (running ? " · updates after the turn" : ""), rows, advice + " Read from the last model call (input + cache tokens).")}</span>`;
+  return `<span class="pop right" tabindex="0"><span style="font-size:11px; text-transform:uppercase; letter-spacing:.08em">Context</span><span class="ctxbar"><i style="width:${pct}%; background:${col}"></i></span><span style="color:${p >= 0.6 ? col : "var(--text-secondary)"}">${kTok(c.used)} / ${kTok(max)}</span>${tipHtml(title + " · context" + (running ? " · updates after the turn" : ""), rows, advice + " As the agent reports it for its last model call.")}</span>`;
 }
 async function copyText(text, title, message) {
   try { await navigator.clipboard.writeText(text); toast("success", title, message); }
@@ -1674,7 +1674,7 @@ function cardHtml(t) {
   // an app message (denial, failed run) is usually why the TODO needs you, so it wins over the last agent line
   const last = lm && lm.author === "app" ? lm : la ? { ...la, author: "agent" } : lm;
   const who = !last ? "" : last.author.startsWith("user") ? (t.message_count === 1 ? "You · first instruction" : "You") : AUTHOR[last.author]?.[0] ?? last.author;
-  const foot = t.status === "running" ? "● " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working")
+  const foot = t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working")
     : t.file_count ? `${plural(t.file_count, "file")} · ${t.file_names.join(", ")}` : "No files";
   return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${t.status === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${st.edge}">
     <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
@@ -1853,7 +1853,7 @@ function renderChat(operator, t, d) {
   let html = operator || !d ? msgs.map((m) => msgHtml(m, operator)).join("")
     : d.sessions.length > 1 ? timelineHtml(t, d) : streamHtml(msgs, S.events ? d.events : [], false);
   if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, operator);
-  if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working"))}</div>`;
+  if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "tool · " + t.last_tool : "working"))}</div>`;
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
@@ -1890,7 +1890,7 @@ function renderHint() {
   const handed = ns && [t.worktree_path && "worktree", t.pr_number || t.pr ? `PR #${t.pr?.number ?? t.pr_number}` : "", ...(S.detail?.files ?? []).map((f) => f.name)].filter(Boolean);
   const hint = operator ? "Delivers now. The operator acts only on what you ask."
     : !t ? "" : ns ? (handed.length ? "Handed over: " + handed.join(", ") : "Nothing to hand over yet.")
-    : t.status === "running" ? "Agent is running. It reads your message after its next tool call."
+    : t.status === "running" ? "Agent is running. Your message goes out when its turn ends."
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
   const key = operator ? null : draftKey();   // the operator chat takes no attachments
