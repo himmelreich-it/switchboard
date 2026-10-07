@@ -5,12 +5,12 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Dock and Spotlight start the app with launchd's bare environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin).
+// Dock and Spotlight start the app with launchd's bare environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin); Linux desktop launchers likewise.
 // Load the interactive login shell's environment (PATH from ~/.zshrc, keys from ~/.zshenv) so bun, hooks and MCP servers work as from a terminal.
 // The marker skips anything the shell startup prints before env.
 function loginShellEnv() {
   try {
-    const out = execFileSync(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "\\0__SB__\\0"; env -0'], { encoding: "utf8", timeout: 10_000 });
+    const out = execFileSync(process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash"), ["-ilc", 'printf "\\0__SB__\\0"; env -0'], { encoding: "utf8", timeout: 10_000 });
     const vars = out.split("\0__SB__\0").pop().split("\0").filter(Boolean);
     return Object.fromEntries(vars.map((v) => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
   } catch (e) {
@@ -24,6 +24,7 @@ if (app.isPackaged && process.platform !== "win32") Object.assign(process.env, l
 const URL = `http://127.0.0.1:${process.env.PORT ?? 4477}`;
 const HOME = process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard");
 const mac = process.platform === "darwin";
+const linux = process.platform === "linux";
 let server, win;
 
 async function waitForServer() {
@@ -35,6 +36,18 @@ async function waitForServer() {
 
 const ICONS = join(import.meta.dirname, "../images/icons");
 const page = (js) => win?.webContents.executeJavaScript(js).catch(() => {});
+
+// The window controls take the title bar's colors, now and after each theme change (the page's sb-theme event).
+// A reload rejects the pending wait; did-finish-load starts a new one.
+const titleBarColors = `(() => { const s = getComputedStyle(document.documentElement);
+  return { color: s.getPropertyValue("--bg-void").trim(), symbolColor: s.getPropertyValue("--text-secondary").trim() }; })()`;
+async function followTheme() {
+  try {
+    win.setTitleBarOverlay(await win.webContents.executeJavaScript(titleBarColors));
+    for (;;) win.setTitleBarOverlay(await win.webContents.executeJavaScript(
+      `new Promise((r) => addEventListener("sb-theme", () => r(${titleBarColors}), { once: true }))`));
+  } catch {}
+}
 
 // Settings… ⌘, (item 122), Alt+, on Linux and Windows like the page's shortcuts. The edit role keeps ⌘C/⌘V/⌘A working; a custom menu without it drops them.
 function menu() {
@@ -63,9 +76,12 @@ app.whenReady().then(async () => {
   win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 960, minHeight: 600, title: "switchboard", icon: join(ICONS, "flat/switchboard-flat-256.png"),
     backgroundColor: "#0A0813",
-    // macOS: our 40px title bar holds the traffic lights (item 121). ponytail: Windows and Linux keep the native frame.
-    ...(mac ? { titleBarStyle: "hidden", trafficLightPosition: { x: 14, y: 14 } } : {}),
+    // macOS: our 40px title bar holds the traffic lights (item 121). Linux: it holds Electron's window controls, above
+    // its 1px bottom border, and there is no menu bar (the accelerators still work). ponytail: Windows keeps the native frame.
+    ...(mac ? { titleBarStyle: "hidden", trafficLightPosition: { x: 14, y: 14 } }
+      : linux ? { titleBarStyle: "hidden", titleBarOverlay: { color: "#0A0813", symbolColor: "#BDB9DE", height: 39 } } : {}),
   });
+  if (linux) win.webContents.on("did-finish-load", followTheme);
   // Full screen hides the traffic lights, so the page drops the room it leaves for them.
   win.on("enter-full-screen", () => page("document.documentElement.classList.add('fullscreen')"));
   win.on("leave-full-screen", () => page("document.documentElement.classList.remove('fullscreen')"));
