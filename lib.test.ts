@@ -148,6 +148,7 @@ test("ctxStep reads the context from usage_update", () => {
   const c = ups.reduce<any>((c, u) => ctxStep(c, u), null);
   expect(c).toEqual({ used: 25010, window: 1000000, turns: 0, model: "claude-opus-5-5" });
   expect(ctxStep(null, { sessionUpdate: "plan" })).toBe(null);
+  expect(ctxStep(c, { sessionUpdate: "usage_update", used: 900000, size: 1000000, _meta: { "_claude/origin": { kind: "task-notification" } } })).toBe(c);
 });
 
 test("migrateDb makes earlier TODOs session 1 and runs twice without harm", () => {

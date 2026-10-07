@@ -47,7 +47,7 @@ type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Pro
 
 // The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
-type Agent = { live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; idle?: Timer };
+type Agent = { live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; idle?: Timer; modeError?: string };
 const agents = new Map<Key, Agent>();
 
 // `live` is set once the agent process is ready; `cancel` records a Stop that came before that; `kill` is the fallback
@@ -117,7 +117,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { cwd: string; di
   const sink: Agent["sink"] = { s: null };
   const handlers = { onUpdate: (u: Update) => sink.s?.onUpdate(u), onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
   const g = grant(o.grant);
-  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta: o.meta };
+  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta: o.meta, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
   let live: Live;
   try {
     live = sessionId ? await reopenSession(sessionId, opts, handlers as any) : await acpOpen(opts, handlers as any);
@@ -126,16 +126,17 @@ async function agentFor(key: Key, sessionId: string | null, o: { cwd: string; di
     throw e;
   }
   // A new session starts in the agent's default mode, and a resumed one may too: set it every time (spike finding 9).
+  // When the mode is not available (Claude has no auto mode for some models), the run goes on in the default mode,
+  // where every permission question is answered no and reported like a denial.
+  let modeError = "";
   if (mode && live.configOptions.find((c) => c.id === "mode")?.currentValue !== mode) {
     try {
       await live.setConfig("mode", mode);
     } catch (e: any) {
-      live.close();
-      revoke(g.secret);
-      throw new Error(`could not switch the agent to ${mode} mode: ${e?.message ?? e}`);
+      modeError = `Could not switch the agent to ${mode} mode, so it asks about more and those questions are answered no: ${e?.message ?? e}`;
     }
   }
-  const a: Agent = { live, secret: g.secret, sink, fingerprint };
+  const a: Agent = { live, secret: g.secret, sink, fingerprint, modeError };
   agents.set(key, a);
   return a;
 }
@@ -300,6 +301,11 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       setTodo(todoId, { session_id: live.sessionId, ctx: null });
       if (open.no > 1) addEvent(todoId, "new session", "user", `session ${open.no} · ${live.sessionId}\n${open.header}`);
     }
+    if (agent.modeError) {
+      addMessage(todoId, "app", cutToTwoLines(agent.modeError));
+      addEvent(todoId, "error", "app", agent.modeError);
+      agent.modeError = "";
+    }
     const cur = todoRow(todoId)!;
     addEvent(todoId, "launch", "app", `${reason} · cwd ${p.local_path} · session ${live.sessionId}`);
 
@@ -382,10 +388,10 @@ function runOperator() {
 
   run.done = (async () => {
     const stored = getMeta("operator_session_id") ?? null;
-    let error = "";
     const turn = turnState(() => {}, () => {}, () => {});
+    let agent: Agent;
     try {
-      const agent = await agentFor("operator", stored, {
+      agent = await agentFor("operator", stored, {
         cwd: HOME,
         dirs: [],
         meta: {
@@ -401,20 +407,34 @@ function runOperator() {
         },
         grant: { kind: "operator" },
       }, null);
-      if (!stored) setMeta("operator_session_id", agent.live.sessionId);
-      run.live = agent.live;
-      turn.t.ctx = stored && getMeta("operator_ctx") ? JSON.parse(getMeta("operator_ctx")!) : null;
-      agent.sink.s = {
-        onUpdate: turn.onUpdate,
-        // Anything not allowed above is refused instead of asked about, as dontAsk did.
-        onPermission: (r) => {
-          const no = r.options.find((o) => o.kind === "reject_once") ?? r.options.find((o) => o.kind.startsWith("reject"));
-          return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
-        },
-      };
-      if (!run.cancel) await agent.live.prompt(take(null, "queued").join("\n\n"));
     } catch (e: any) {
-      error = e?.message ?? String(e);
+      // The messages stay queued and are not retried on their own, so a failing start does not loop. A session that
+      // cannot be resumed (its transcript cleaned up) is dropped: the next message starts a new one.
+      running.delete("operator");
+      interrupting.delete("operator");
+      if (stored) setMeta("operator_session_id", null);
+      addMessage(null, "app", cutToTwoLines(`Could not start the operator: ${e?.message ?? e}${stored ? ". Send again to start a new session." : ""}`));
+      emit({ type: "operator" });
+      return;
+    }
+    if (!stored) setMeta("operator_session_id", agent.live.sessionId);
+    run.live = agent.live;
+    turn.t.ctx = stored && getMeta("operator_ctx") ? JSON.parse(getMeta("operator_ctx")!) : null;
+    agent.sink.s = {
+      onUpdate: turn.onUpdate,
+      // Anything not allowed above is refused instead of asked about, as dontAsk did.
+      onPermission: (r) => {
+        const no = r.options.find((o) => o.kind === "reject_once") ?? r.options.find((o) => o.kind.startsWith("reject"));
+        return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
+      },
+    };
+    let error = "";
+    if (!run.cancel) {
+      try {
+        await agent.live.prompt(take(null, "queued").join("\n\n"));
+      } catch (e: any) {
+        error = e?.message ?? String(e);
+      }
     }
     clearTimeout(run.kill);
     running.delete("operator");
@@ -426,6 +446,6 @@ function runOperator() {
     if (shuttingDown) closeAgent("operator");
     else parkAgent("operator");
     emit({ type: "operator" });
-    if (!shuttingDown) deliverOperator();
+    if (!shuttingDown && !run.cancel) deliverOperator();
   })();
 }

@@ -57,6 +57,9 @@ export function handOver(o: {
 export type Ctx = { used: number; window: number | null; last_in?: number; last_out?: number; turns: number; model?: string };
 export function ctxStep(c: Ctx | null, u: any): Ctx | null {
   if (u?.sessionUpdate !== "usage_update") return c;
+  // Only the main loop's own context: Claude marks other cycles (a background task's follow-up, a subagent) by origin.
+  const origin = u._meta?.["_claude/origin"]?.kind;
+  if (origin && origin !== "human" && origin !== "channel") return c;
   const cur: Ctx = c ?? { used: 0, window: null, turns: 0 };
   return { ...cur, used: u.used ?? cur.used, window: u.size ?? cur.window, model: u._meta?.["_claude/model"] ?? cur.model };
 }
