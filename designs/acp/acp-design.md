@@ -5,7 +5,34 @@ Date: 2026-10-07. This follows `acp-investigation.md` and your answers there:
 - Claude moves to ACP as well;
 - the app tools move to an HTTP MCP endpoint.
 
-Everything below targets **stable ACP v1**. The P0 results are in `designs/acp-spike.md`. Every check passed except pushing a message into a running turn (item 20), which is mixed: neither ACP path matches today's behaviour. See that file. The facts in §2 of the investigation come from reading the adapter's source, not from running it. Phase P0 verifies them before any spec change, which matches the spec's "verified in the spike" convention.
+Everything below targets **stable ACP v1**. The P0 results are in `designs/acp/acp-spike.md`. Every check passed except pushing a message into a running turn (item 20), which is mixed: neither ACP path matches today's behaviour. See that file. The facts in §2 of the investigation come from reading the adapter's source, not from running it. Phase P0 verifies them before any spec change, which matches the spec's "verified in the spike" convention.
+
+## Status (2026-10-07): next is P3
+
+Work happens on branch `feature/acp`, which is not merged into `main`.
+
+| Phase | State | Commits / notes |
+|---|---|---|
+| P0 Spike | done | `spike/acp/`, findings in `acp-spike.md` |
+| P1 Claude parity | done | `acp.ts`, `apptools.ts`, `runner.ts` on ACP; spec items 20, 28, 30, 49–51, 110, 113, 128, 129 rewritten |
+| P2 Live view | done | Transcript (spec item 130): `say`, `thought`, `tool` and `plan` rows, live text over SSE `stream` events |
+| **P3 Permissions** | **next** | See §6 |
+| P4 Config | open | See §7 |
+| P5 Multi-agent | open | See §9 |
+| P6 Claude terminals with app tools | optional | See §10 |
+
+**Decisions taken:**
+- **Option B.** This is a full switch: Claude and the operator run on ACP too, and the app tools are served at `/mcp/app` over HTTP.
+- **Item 20, option (b).** A message committed while the agent runs is queued and goes out when the turn ends. Steering is not used, because it pre-empts the running tool and errors during tool-call streaming (see `acp-spike.md`).
+
+**What P1 and P2 found beyond this design:**
+- **One agent process per live session.** It is kept between turns, closed after 30 minutes idle, and resumed with `session/resume`.
+- **The secret stays out of argv.** The `/mcp/app` secret is not written into the MCP config, because the Claude CLI's argv can be read by other users in `/proc`. The header value is `${SWITCHBOARD_MCP_SECRET}`, which Claude Code expands from the agent process's environment.
+- **A new session starts in mode `default`.** The app sets `auto` after every `session/new` and `session/resume`. If that fails, the run goes on in default mode, with an app message.
+- **The advisor tool trips the adapter.** It is a server tool, so the adapter rejects the finished turn with "Claude ended the turn without returning results for tool calls". When the agent is alive and has written its final text, the app treats the turn as ended and records the error only as an event.
+- **The context meter loses its "last turn" row.** `usage_update` gives only `used` and `size`, so `last_in` and `last_out` are gone.
+
+**Testing.** Run the code under test on port 4478 with `SWITCHBOARD_HOME=/tmp/sb-test/home`, and check the UI in headless Brave. Never test against the live app on 4477. The steps are in `CLAUDE.local.md`, which is not checked in.
 
 ## 1. Architecture
 
@@ -147,7 +174,7 @@ Storage reuses `events` (`kind`, `detail`, `meta`, `session_no`). Rows hold coal
 - **Project defaults.** `projects.defaults` JSON, keyed by agent kind and config id, is set in Settings › Projects and applied right after `session/new`.
 - **Slash commands.** `available_commands_update` fills an autocomplete in the composer when the message starts with `/`. Commands go out as plain prompt text, which is how ACP runs them.
 - **Stop (item 129, now on main).** It calls `cancel()`.
-- **Push into a running turn (item 20, now on main).** It uses the adapter's `_session/steering` extension. See `acp-spike.md` for the error case to tolerate.
+- **Push into a running turn (item 20).** Decided as option (b): the message is queued until the turn ends. Steering is not used; see `acp-spike.md`.
 
 ## 8. Operator
 
