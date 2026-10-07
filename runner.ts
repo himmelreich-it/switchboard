@@ -1,16 +1,15 @@
-// Agent SDK runs: one query() per turn for each TODO's worker, plus the operator.
-import { createSdkMcpServer, query, tool, type Options, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+// Agent runs over ACP (acp.ts): each TODO's worker and the operator keep one agent process for their live session, and
+// every turn is one session/prompt. The app's tools reach the agent over HTTP MCP (apptools.ts).
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, isAbsolute, resolve } from "node:path";
-import { z } from "zod";
-import {
-  cutToTwoLines, deliveryAction, deliveryPrompt, handOver, inputChannel, isInside, lineCount, statusAfterRun, toolArg, toolLine, usageStep, withAttachments, type Ctx,
-} from "./lib";
+import { resolve } from "node:path";
+import { openSession as acpOpen, reopenSession, type Live, type PermissionRequest, type Update } from "./acp";
+import { OPERATOR_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
+import { ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, statusAfterRun, toolArg, toolLine, withAttachments, type Ctx } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOME, addEvent, addMessage, artifactDir, attachmentsOf, createTodo, db, emit, filesOf, getMeta, liveSessionNo, now, projectRow, refreshPrs,
-  saveAttachments, sessionsOf, setMeta, setTodo, summaries, todoRow, type Upload,
+  HOME, addEvent, addMessage, artifactDir, attachmentsOf, db, emit, filesOf, getMeta, liveSessionNo, now, projectRow, refreshPrs,
+  saveAttachments, sessionsOf, setMeta, setTodo, todoRow, type Upload,
 } from "./server";
 
 // The fixed app contract (R31), appended to the claude_code system prompt before the project prompt.
@@ -37,33 +36,55 @@ const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, 
 - TODO artifact files live under ${home}/data/<project-slug>/<todo-id>/. You can also read them with Read, Grep and Glob.
 - Your replies are shown in full and rendered as markdown. Brainstorming with the user here is fine.`;
 
-const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr"].map((n) => `mcp__app__${n}`);
-const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message"].map((n) => `mcp__app__${n}`);
 const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
+// An idle agent process is closed after this; the next turn starts a new one with session/resume.
+const IDLE_CLOSE_MS = 30 * 60_000;
 
 type Key = number | "operator"; // a TODO id, or the operator
-// `input` is a worker run's streaming prompt (the operator's is a string); `kill` the fallback timer of an interrupt.
-type Run = { q: Query; abort: AbortController; done: Promise<void>; input?: ReturnType<typeof inputChannel<SDKUserMessage>>; kill?: Timer };
+
+// What a turn's updates feed: the run's own state, swapped in for every run of a live agent process.
+type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Promise<any> | any };
+
+// The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
+// was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
+type Agent = { live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; idle?: Timer };
+const agents = new Map<Key, Agent>();
+
+// `live` is set once the agent process is ready; `cancel` records a Stop that came before that; `kill` is the fallback
+// timer of an interrupt.
+type Run = { done: Promise<void>; live: Live | null; cancel?: boolean; kill?: Timer };
 const running = new Map<Key, Run>();
 // Runs being interrupted, and by whom: Stop is the user's; remove and shutdown are the app's. Neither gets an error message.
 const interrupting = new Map<Key, "user" | "app">();
 let shuttingDown = false;
 
 export const isRunning = (key: Key) => running.has(key);
+// TODOs whose agent posted a chat message in the current turn, so its final text is not posted as well. A set, not run
+// state, because the app tools' grant lives as long as the agent process, across runs.
+const posted = new Set<number>();
 
-const ok = (text = "ok") => ({ content: [{ type: "text" as const, text }] });
-const err = (text: string) => ({ content: [{ type: "text" as const, text }], isError: true });
-
-// Like Esc in Claude Code. If the CLI cannot take the interrupt, or ignores it for 10 seconds, the process is killed.
-// The interrupted turn's result clears that timer (see setupWorker), because a message pushed but not yet taken in
-// still gets its own turn after a Stop.
+// Like Esc in Claude Code: session/cancel. If the turn has not ended 10 seconds later, the agent process is closed.
 export function interrupt(key: Key, by: "user" | "app" = "app") {
   const r = running.get(key);
   if (!r) return;
   if (interrupting.get(key) !== "app") interrupting.set(key, by);
-  r.q.interrupt().catch(() => r.abort.abort());
+  if (!r.live) {
+    r.cancel = true;
+    return;
+  }
+  r.live.cancel();
   clearTimeout(r.kill);
-  r.kill = setTimeout(() => running.get(key) === r && r.abort.abort(), 10_000);
+  r.kill = setTimeout(() => running.get(key) === r && r.live?.close(), 10_000);
+}
+
+// Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
+export function closeAgent(key: Key) {
+  const a = agents.get(key);
+  if (!a) return;
+  agents.delete(key);
+  clearTimeout(a.idle);
+  revoke(a.secret);
+  a.live.close();
 }
 
 export async function stopAll() {
@@ -71,6 +92,7 @@ export async function stopAll() {
   const runs = [...running.values()];
   for (const key of running.keys()) interrupt(key, "app");
   await Promise.allSettled(runs.map((r) => r.done));
+  for (const key of [...agents.keys()]) closeAgent(key);
 }
 
 // Marks the messages delivered to the live session and returns their bodies with the paths of their attachments, oldest first.
@@ -81,30 +103,89 @@ function take(todoId: number | null, state: "pending" | "queued") {
   return msgs.map((m) => withAttachments(m.body, attachmentsOf(m.id).map((a) => a.path)));
 }
 
-// Runs the for-await loop of one query and reports how it ended. A thrown loop is how interrupt() and process
-// exits show up; the first error wins, so a failed result followed by the exit is reported once.
-async function drain(q: Query, onMessage: (m: any) => void) {
-  let text = "";
-  let error = "";
-  try {
-    for await (const m of q) {
-      onMessage(m);
-      if (m.type !== "result") continue;
-      if (m.subtype === "success" && !m.is_error) text = m.result;
-      else error ||= m.subtype === "success" ? m.result : `${m.subtype}: ${m.errors.join("; ")}`;
-    }
-  } catch (e: any) {
-    error ||= e?.message ?? String(e);
+// The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
+// session/resume in a new process. `mode` is the permission mode to set (null: the agent's default).
+async function agentFor(key: Key, sessionId: string | null, o: { cwd: string; dirs: string[]; meta: Record<string, unknown>; grant: Parameters<typeof grant>[0] },
+  mode: string | null) {
+  const fingerprint = JSON.stringify([o.cwd, o.dirs, o.meta]);
+  const had = agents.get(key);
+  if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === fingerprint) {
+    clearTimeout(had.idle);
+    return had;
   }
-  return { text, error };
+  closeAgent(key);
+  const sink: Agent["sink"] = { s: null };
+  const handlers = { onUpdate: (u: Update) => sink.s?.onUpdate(u), onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
+  const g = grant(o.grant);
+  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta: o.meta };
+  let live: Live;
+  try {
+    live = sessionId ? await reopenSession(sessionId, opts, handlers as any) : await acpOpen(opts, handlers as any);
+  } catch (e) {
+    revoke(g.secret);
+    throw e;
+  }
+  // A new session starts in the agent's default mode, and a resumed one may too: set it every time (spike finding 9).
+  if (mode && live.configOptions.find((c) => c.id === "mode")?.currentValue !== mode) {
+    try {
+      await live.setConfig("mode", mode);
+    } catch (e: any) {
+      live.close();
+      revoke(g.secret);
+      throw new Error(`could not switch the agent to ${mode} mode: ${e?.message ?? e}`);
+    }
+  }
+  const a: Agent = { live, secret: g.secret, sink, fingerprint };
+  agents.set(key, a);
+  return a;
+}
+
+// After a run: the process stays for the next turn, and closes when it has been idle for a while.
+function parkAgent(key: Key) {
+  const a = agents.get(key);
+  if (!a) return;
+  a.sink.s = null;
+  if (!a.live.alive) return closeAgent(key);
+  clearTimeout(a.idle);
+  a.idle = setTimeout(() => closeAgent(key), IDLE_CLOSE_MS);
+}
+
+// One turn's view of the update stream: the final text, the tool calls (events, last tool, denials) and the context.
+function turnState(onStart: (name: string) => void, onTool: (name: string, input: any) => void, onDenied: (name: string, input: any, reason: string) => void) {
+  const calls = new Map<string, { name: string; input: any; logged: boolean }>();
+  const t = { text: "", tools: 0, ctx: null as Ctx | null };
+  const log = (c: { name: string; input: any; logged: boolean }) => {
+    if (c.logged) return;
+    c.logged = true;
+    onTool(c.name, c.input);
+  };
+  const onUpdate = (u: any) => {
+    t.ctx = ctxStep(t.ctx, u);
+    if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") t.text += u.content.text;
+    if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
+    let c = calls.get(u.toolCallId);
+    if (!c) {
+      // The final text is what the agent wrote after its last tool call, as the SDK's result was.
+      t.text = "";
+      t.tools++;
+      c = { name: u._meta?.claudeCode?.toolName ?? u.name ?? u.title ?? "tool", input: {}, logged: false };
+      calls.set(u.toolCallId, c);
+      onStart(c.name);
+    }
+    if (u.rawInput && Object.keys(u.rawInput).length) c.input = { ...c.input, ...u.rawInput };
+    // The input arrives in pieces: the event is written once its main argument is there, or when the call ends.
+    if (toolArg(c.input) || u.status === "completed" || u.status === "failed") log(c);
+    // A denial (a settings rule or the auto mode classifier) ends the call as failed with the reason in _meta (spike 6).
+    const denial = u.status === "failed" && u._meta?.claudeCode?.toolResponse?.decisionReasonType;
+    if (denial) onDenied(c.name, c.input, u._meta.claudeCode.toolResponse.decisionReason ?? u._meta.claudeCode.toolResponse.message ?? "");
+  };
+  return { t, onUpdate, calls };
 }
 
 // ---------- workers ----------
 
-const userMessage = (text: string): SDKUserMessage => ({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null });
-
-// A committed message: stored until start, pushed into the running turn, or sent now (R20). The attachments are saved
-// in the same transaction and before push() or deliver(), whose take() reads them.
+// A committed message: stored until start, queued while the agent runs, or sent now (R20). The attachments are saved
+// in the same transaction and before deliver(), whose take() reads them. A queued message goes out when the turn ends.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = []) {
   const action = deliveryAction(todoRow(todoId)!.status);
   const id = db.transaction(() => {
@@ -113,42 +194,12 @@ export function commitMessage(todoId: number, author: "user" | "user via operato
     return id;
   })();
   if (action === "send") deliver(todoId);
-  else if (action === "push") push(todoId);
   return id;
-}
-
-// Pushes every queued message into the running turn, where Claude takes them in after its next tool call. Once the
-// run's input is closed (its turn ended, the run is finishing) they stay queued, and the run's end delivers them.
-function push(todoId: number) {
-  const input = running.get(todoId)?.input;
-  if (!input?.open) return;
-  const bodies = take(todoId, "queued");
-  input.push(userMessage(bodies.join("\n\n")));
-  addEvent(todoId, "pushed", "app", bodies.length === 1 ? "1 message" : `${bodies.length} messages`);
-}
-
-// Opens session `no` of a TODO (item 68): the sessions row, todos.session_id (what delivery and restore resume), and its
-// first run under a session id made here. Every session starts here: Start for session 1, New session for the rest.
-// `before` runs once the new session is live, so what it records belongs to that session.
-function openSession(todoId: number, no: number, takeBodies: () => string[], reason: string, header = "", before?: (sessionId: string) => void) {
-  const prev = todoRow(todoId)!;
-  const sessionId = crypto.randomUUID();
-  db.run("INSERT INTO sessions (todo_id, no, session_id, started_at) VALUES (?, ?, ?, ?)", [todoId, no, sessionId, now()]);
-  setTodo(todoId, { session_id: sessionId, ctx: null });
-  before?.(sessionId);
-  runWorker(todoId, takeBodies, { sessionId }, reason, header);
-  // The run could not be set up (runWorker posted why): undo, so Start or New session can be tried again and
-  // delivery keeps resuming the session that exists.
-  if (!running.has(todoId)) {
-    db.run("DELETE FROM sessions WHERE todo_id = ? AND no = ?", [todoId, no]);
-    if (no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, no - 1]);
-    setTodo(todoId, { session_id: prev.session_id, ctx: prev.ctx });
-  }
 }
 
 // The first turn: every message committed before the start goes out as one prompt.
 export function start(todoId: number) {
-  openSession(todoId, 1, () => take(todoId, "pending"), "start");
+  runWorker(todoId, () => take(todoId, "pending"), { no: 1 }, "start");
 }
 
 // Item 72: ends the live session (it stays as history), clears attention, and starts the next session with the
@@ -162,14 +213,14 @@ export function newSession(todoId: number) {
     setTodo(todoId, { attention: 0, status: t.status === "waiting" ? "idle" : t.status });
     addEvent(todoId, "attention cleared", "user");
   }
+  closeAgent(todoId);
   const last = db.query("SELECT body, session_no FROM messages WHERE todo_id = ? AND author = 'agent' ORDER BY id DESC LIMIT 1").get(todoId) as any;
   const header = handOver({
     no, title: t.title, worktree: t.worktree_path, pr: t.pr_number,
     last: last ? { no: last.session_no ?? prev.no, body: last.body } : null,
     files: filesOf(todoId).map((f) => ({ path: f.path, session_no: f.session_no })),
   });
-  openSession(todoId, no, () => take(todoId, "queued"), "new session", header,
-    (sid) => addEvent(todoId, "new session", "user", `session ${no} · ${sid}\n${header}`));
+  runWorker(todoId, () => take(todoId, "queued"), { no, header }, "new session");
 }
 
 // Resumes the session with every queued message as one prompt. Does nothing while the TODO runs (the run's end calls
@@ -178,10 +229,10 @@ export function deliver(todoId: number, reason = "deliver") {
   const t = todoRow(todoId);
   if (running.has(todoId) || !t?.session_id || t.removed_at || t.status === "not_started") return;
   const queued = (db.query("SELECT COUNT(*) AS n FROM messages WHERE todo_id = ? AND state = 'queued'").get(todoId) as { n: number }).n;
-  if (queued) runWorker(todoId, () => take(todoId, "queued"), { resume: t.session_id }, reason);
+  if (queued) runWorker(todoId, () => take(todoId, "queued"), null, reason);
 }
 
-// `git config worktree.root`, else <local_path>/../worktrees. Created if missing, so --add-dir always gets a real folder.
+// `git config worktree.root`, else <local_path>/../worktrees. Created if missing, so the agent always gets a real folder.
 export function worktreeRoot(localPath: string) {
   const r = Bun.spawnSync(["git", "-C", localPath, "config", "worktree.root"]);
   const set = r.exitCode === 0 ? r.stdout.toString().trim() : "";
@@ -190,165 +241,122 @@ export function worktreeRoot(localPath: string) {
   return root;
 }
 
-function workerServer(todoId: number, dir: string, turn: { posted: boolean }) {
-  return createSdkMcpServer({
-    name: "app",
-    version: "1.0.0",
-    tools: [
-      tool("post_message", "Post a one or two line chat message to the user. Pass file_name to link a file you registered with attach_file.",
-        { body: z.string(), file_name: z.string().optional() }, async ({ body, file_name }) => {
-          if (!body.trim()) return err("body is empty");
-          if (lineCount(body) > 2) return err(`Chat messages are one or two lines. Put the longer content in a markdown file in ${dir}, register it with mcp__app__attach_file, and link it with file_name.`);
-          let fileId: number | null = null;
-          if (file_name) {
-            const f = filesOf(todoId).find((x) => basename(x.path) === basename(file_name));
-            if (!f) return err(`No attached file is named ${file_name}. Call mcp__app__attach_file first.`);
-            fileId = f.id;
-          }
-          addMessage(todoId, "agent", body.trim(), "delivered", fileId);
-          addEvent(todoId, "post_message", "agent", file_name ?? null);
-          turn.posted = true;
-          return ok();
-        }),
-      tool("set_title", "Set this TODO's title: a short summary of the task.", { title: z.string() }, async ({ title }) => {
-        if (!title.trim()) return err("title is empty");
-        setTodo(todoId, { title: title.trim() });
-        addEvent(todoId, "set_title", "agent", title.trim());
-        return ok();
-      }),
-      tool("set_attention", "Raise the attention flag (raised: true) when you need the user; clear it (raised: false) once their reply resolves it.",
-        { raised: z.boolean() }, async ({ raised }) => {
-          setTodo(todoId, { attention: raised ? 1 : 0 });
-          addEvent(todoId, raised ? "attention raised" : "attention cleared", "agent");
-          return ok();
-        }),
-      tool("attach_file", `Register a file you wrote in this TODO's artifact folder (${dir}) so the user can open it. Pass its absolute path.`,
-        { path: z.string() }, async ({ path }) => {
-          if (!isAbsolute(path)) return err("path must be absolute");
-          if (!existsSync(path)) return err(`${path} does not exist`);
-          const real = realpathSync(path); // so a symlink cannot point the user's editor outside the folder
-          if (!isInside(real, realpathSync(dir))) return err(`${path} is outside this TODO's artifact folder ${dir}`);
-          if (!statSync(real).isFile()) return err(`${path} is not a file`);
-          // A file found on disk earlier has no session yet; registering it claims it for this one.
-          db.run("INSERT INTO files (todo_id, path, session_no) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET session_no = COALESCE(session_no, excluded.session_no)",
-            [todoId, real, liveSessionNo(todoId)]);
-          addEvent(todoId, "attach_file", "agent", basename(real));
-          return ok(`attached as ${basename(real)}`);
-        }),
-      tool("set_worktree", "Register the absolute path of the git worktree this TODO works in.", { path: z.string() }, async ({ path }) => {
-        if (!isAbsolute(path) || !existsSync(path) || !statSync(path).isDirectory()) return err(`${path} is not an existing directory (absolute path required)`);
-        setTodo(todoId, { worktree_path: resolve(path) });
-        addEvent(todoId, "set_worktree", "agent", resolve(path));
-        return ok();
-      }),
-      tool("set_pr", "Register the number of the GitHub pull request this TODO works on, in the project's repository. The app shows its state, checks and reviews.",
-        { number: z.number().int().positive() }, async ({ number }) => {
-          setTodo(todoId, { pr_number: number });
-          addEvent(todoId, "set_pr", "agent", `#${number}`);
-          refreshPrs(todoRow(todoId)!.project_id);
-          return ok();
-        }),
-    ],
-  });
-}
-
-// `takeBodies` marks the messages delivered, so it is called only once the run is set up: a setup error leaves them
+// One run = one turn. `open` starts session `no` (item 68: Start for 1, New session for the rest; `header` is the
+// hand-over); null resumes todos.session_id. The TODO shows running at once, while the agent process starts.
+// `takeBodies` marks the messages delivered, so it is called only once the agent is ready: a setup error leaves them
 // pending or queued, and the user sees an app message instead of messages that look sent but never reached the agent.
-function runWorker(todoId: number, takeBodies: () => string[], session: { sessionId: string } | { resume: string }, reason: string, header = "") {
-  try {
-    setupWorker(todoId, takeBodies, session, reason, header);
-  } catch (e: any) {
-    addMessage(todoId, "app", cutToTwoLines(`Could not start the run: ${e?.message ?? e}`));
-    addEvent(todoId, "error", "app", String(e?.stack ?? e));
-  }
-}
-
-function setupWorker(todoId: number, takeBodies: () => string[], session: { sessionId: string } | { resume: string }, reason: string, header: string) {
+function runWorker(todoId: number, takeBodies: () => string[], open: { no: number; header?: string } | null, reason: string) {
   const t = todoRow(todoId)!;
   const p = projectRow(t.project_id)!;
   const dir = artifactDir(p.slug, todoId);
-  mkdirSync(dir, { recursive: true });
-  const turn = { posted: false };
-  const args = new Map<string, string>(); // tool_use_id -> command, for the denial message
-  const denied = new Set<string>();
-  const abort = new AbortController();
-  const res = { duration_ms: null as number | null, tools: 0 };   // the result footer (item 128)
-  const options: Options = {
-    ...session,
-    cwd: p.local_path,
-    permissionMode: "auto",
-    // The worktree root lets a `cd` into the worktree persist; the artifact folder is outside cwd and must be writable.
-    additionalDirectories: [worktreeRoot(p.local_path), dir],
-    mcpServers: { app: workerServer(todoId, dir, turn) },
-    allowedTools: WORKER_TOOLS,
-    systemPrompt: { type: "preset", preset: "claude_code", append: [CONTRACT.replaceAll("{artifact_dir}", dir), p.agent_prompt.trim()].filter(Boolean).join("\n\n") },
-    // Without this, a resumed session keeps the system prompt of its first turn and never sees an edited project prompt.
-    extraArgs: { "system-prompt-snapshot": "off" },
-    abortController: abort,
-    // Hooks only record events and the last tool. Status comes from the run itself, because Stop does not fire on interrupt.
-    hooks: {
-      UserPromptSubmit: [{ hooks: [async () => { addEvent(todoId, "UserPromptSubmit", "agent"); return {}; }] }],
-      PreToolUse: [{
-        hooks: [async (input: any) => {
-          args.set(input.tool_use_id, toolArg(input.tool_input));
-          res.tools++;
-          setTodo(todoId, { last_tool: input.tool_name }, false);
-          addEvent(todoId, "PreToolUse", "agent", toolLine(input.tool_name, input.tool_input));
-          return {};
-        }],
-      }],
-    },
-  };
-
-  // Denials come as a system message and again in the result, so each tool call is reported once.
-  const deny = (toolName: string, toolUseId: string, fallback: string) => {
-    if (denied.has(toolUseId)) return;
-    denied.add(toolUseId);
-    addMessage(todoId, "app", `Auto mode blocked ${toolName}: ${args.get(toolUseId) || fallback}`);
-    setTodo(todoId, { attention: 1 });
-    addEvent(todoId, "attention raised", "app", `${toolName} denied`);
-  };
-
-  const input = inputChannel(userMessage(deliveryPrompt(t.worktree_path, takeBodies(), header)));
-  const q = query({ prompt: input.stream, options });
-  const run: Run = { q, abort, done: Promise.resolve(), input };
+  const run: Run = { done: Promise.resolve(), live: null };
   running.set(todoId, run);
   setTodo(todoId, { status: "running", last_tool: null });
-  addEvent(todoId, "launch", "app", `${reason} · cwd ${p.local_path} · session ${t.session_id}`);
+  posted.delete(todoId);
 
-  // The context meter (item 123) and the result footer (item 128) come from the run's own messages.
-  let ctx: Ctx | null = t.ctx ? JSON.parse(t.ctx) : null;
   run.done = (async () => {
-    const { text, error } = await drain(q, (m) => {
-      if (m.type === "system" && m.subtype === "init") turn.posted = false; // a turn starts; a run has more after a late push
-      if (m.type === "system" && m.subtype === "permission_denied") deny(m.tool_name, m.tool_use_id, m.message ?? "");
-      if (m.type === "result") {
-        for (const d of m.permission_denials ?? []) deny(d.tool_name, d.tool_use_id, toolArg(d.tool_input));
-        res.duration_ms = m.duration_ms ?? null;
-        // The turn ended: later messages queue for the next run. The CLI still answers what was pushed before this.
-        input.close();
-        clearTimeout(run.kill); // an interrupt, if any, was taken
-        if (interrupting.get(todoId) === "app") abort.abort(); // removed or shutting down: no turn for a late push
-      }
-      ctx = usageStep(ctx, m);
-    });
+    let agent: Agent;
+    try {
+      mkdirSync(dir, { recursive: true });
+      agent = await agentFor(todoId, open ? null : t.session_id, {
+        cwd: p.local_path,
+        // The worktree root lets a `cd` into the worktree persist; the artifact folder is outside cwd and must be writable.
+        dirs: [worktreeRoot(p.local_path), dir],
+        meta: {
+          systemPrompt: { append: [CONTRACT.replaceAll("{artifact_dir}", dir), p.agent_prompt.trim()].filter(Boolean).join("\n\n") },
+          // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).
+          claudeCode: { options: { allowedTools: WORKER_TOOLS, extraArgs: { "system-prompt-snapshot": "off" } } },
+        },
+        grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId) },
+      }, "auto");
+    } catch (e: any) {
+      running.delete(todoId);
+      interrupting.delete(todoId);
+      if (open && open.no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]);
+      addMessage(todoId, "app", cutToTwoLines(`Could not start the run: ${e?.message ?? e}`));
+      addEvent(todoId, "error", "app", String(e?.stack ?? e));
+      setTodo(todoId, { status: open?.no === 1 ? "not_started" : statusAfterRun(todoRow(todoId)!.attention) });
+      return;
+    }
+    const live = agent.live;
+    run.live = live;
+    // Stopped or removed while the agent process started: a new session is not opened, and nothing is sent.
+    if (run.cancel) {
+      running.delete(todoId);
+      const by = interrupting.get(todoId);
+      interrupting.delete(todoId);
+      if (open) {
+        closeAgent(todoId);
+        if (open.no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]);
+      } else parkAgent(todoId);
+      addEvent(todoId, "interrupted", by ?? "app");
+      setTodo(todoId, { status: open?.no === 1 ? "not_started" : statusAfterRun(todoRow(todoId)!.attention) });
+      if (todoRow(todoId)!.removed_at) closeAgent(todoId);
+      return;
+    }
+    if (open) {
+      // The agent made the session id. From here on take() and the events belong to the new session.
+      db.run("INSERT INTO sessions (todo_id, no, session_id, started_at) VALUES (?, ?, ?, ?)", [todoId, open.no, live.sessionId, now()]);
+      setTodo(todoId, { session_id: live.sessionId, ctx: null });
+      if (open.no > 1) addEvent(todoId, "new session", "user", `session ${open.no} · ${live.sessionId}\n${open.header}`);
+    }
+    const cur = todoRow(todoId)!;
+    addEvent(todoId, "launch", "app", `${reason} · cwd ${p.local_path} · session ${live.sessionId}`);
+
+    const denied = new Set<string>();
+    const deny = (name: string, input: any, why: string) => {
+      const what = toolArg(input) || why;
+      if (denied.has(name + what)) return;
+      denied.add(name + what);
+      addMessage(todoId, "app", `Auto mode blocked ${name}: ${what}`);
+      setTodo(todoId, { attention: 1 });
+      addEvent(todoId, "attention raised", "app", `${name} denied`);
+    };
+    const turn = turnState((name) => setTodo(todoId, { last_tool: name }, false), (name, input) => addEvent(todoId, "tool", "agent", toolLine(name, input)), deny);
+    turn.t.ctx = cur.ctx ? JSON.parse(cur.ctx) : null;
+    agent.sink.s = {
+      onUpdate: turn.onUpdate,
+      // Workers run in auto mode; a question it still asks is answered no and reported like a denial (P3 asks the user).
+      onPermission: (r) => {
+        const tc: any = r.toolCall;
+        deny(tc._meta?.claudeCode?.toolName ?? tc.title ?? "tool", tc.rawInput ?? {}, tc.title ?? "");
+        const no = r.options.find((o) => o.kind === "reject_once") ?? r.options.find((o) => o.kind.startsWith("reject"));
+        return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
+      },
+    };
+
+    let error = "", stop = "";
+    const started = performance.now();
+    const prompt = deliveryPrompt(cur.worktree_path, takeBodies(), open?.header ?? "");
+    addEvent(todoId, "prompt", "app");
+    try {
+      stop = await live.prompt(prompt);
+    } catch (e: any) {
+      error = e?.message ?? String(e);
+      if (!live.alive) addEvent(todoId, "agent log", "app", live.stderr().slice(-4000) || null);
+    }
     // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
     // or sees the TODO idle and starts its own turn.
+    clearTimeout(run.kill);
     running.delete(todoId);
     const stopped = interrupting.get(todoId);
     interrupting.delete(todoId);
-    if (ctx?.used) setTodo(todoId, { ctx: JSON.stringify(ctx) }, false);
-    if (text) addEvent(todoId, "result", "agent", text, res);
-    // After a Stop, a message pushed but not yet taken in gets its own turn, whose text is shown like any other.
+    const text = turn.t.text.trim();
+    if (turn.t.ctx?.used) setTodo(todoId, { ctx: JSON.stringify({ ...turn.t.ctx, turns: turn.t.ctx.turns + 1 }) }, false);
+    if (stop === "refusal" || stop === "max_tokens" || stop === "max_turn_requests") error ||= `The turn ended early: ${stop.replaceAll("_", " ")}.`;
+    if (text) addEvent(todoId, "result", "agent", text, { duration_ms: Math.round(performance.now() - started), tools: turn.t.tools });
     if (stopped) addEvent(todoId, "interrupted", stopped);
     if (error && !stopped) {
       addMessage(todoId, "app", cutToTwoLines(error));
       addEvent(todoId, "error", "app", error);
-    } else if (!turn.posted && text.trim()) addMessage(todoId, "agent", cutToTwoLines(text));
+    } else if (!posted.has(todoId) && text) addMessage(todoId, "agent", cutToTwoLines(text));
     const status = statusAfterRun(todoRow(todoId)!.attention);
     setTodo(todoId, { status });
     addEvent(todoId, "run ended", "app", status);
+    if (todoRow(todoId)!.removed_at || shuttingDown) closeAgent(todoId);
+    else parkAgent(todoId);
     refreshPrs(p.id); // the agent may have pushed or opened a PR
+    // Queued messages, including ones committed during the turn, and after a Stop (item 129), go out now.
     if (!shuttingDown) deliver(todoId, "queued messages");
   })();
 }
@@ -363,115 +371,60 @@ export function commitOperatorMessage(body: string) {
 
 function deliverOperator() {
   if (running.has("operator")) return;
-  const bodies = take(null, "queued");
-  if (bodies.length) runOperator(bodies);
+  if ((db.query("SELECT COUNT(*) AS n FROM messages WHERE todo_id IS NULL AND state = 'queued'").get() as { n: number }).n) runOperator();
 }
 
-const json = (v: unknown) => ok(JSON.stringify(v, null, 1));
-const latest = (todoId: number, n: number) =>
-  db.query("SELECT author, body, committed_at AS at FROM messages WHERE todo_id = ? ORDER BY id DESC LIMIT ?").all(todoId, n).reverse();
-
-function operatorServer() {
-  const used = (name: string, detail: string | null = null) => addEvent(null, name, "operator", detail);
-  return createSdkMcpServer({
-    name: "app",
-    version: "1.0.0",
-    tools: [
-      tool("list_todos", "List the TODOs: title, project, status (not_started = in the backlog), attention, branch, git state, pull request, session count, files and the latest messages. Removed TODOs only with include_removed.",
-        { include_removed: z.boolean().optional() }, async ({ include_removed }) => {
-          used("list_todos");
-          const list = await summaries(include_removed ? "1" : "t.removed_at IS NULL");
-          return json(list.map((s) => ({
-            id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
-            worktree_path: s.worktree_path, sessions: s.session_count, queued_messages: s.queued_count, pending_messages: s.pending_count, files: s.file_names,
-            updated_at: s.updated_at, removed_at: s.removed_at, latest_messages: latest(s.id, 3),
-          })));
-        }),
-      tool("read_todo", "Read one TODO (removed ones too): its details, its sessions with their chat messages, and its file list.",
-        { todo_id: z.number().int() }, async ({ todo_id }) => {
-          used("read_todo", `#${todo_id}`);
-          const [s] = await summaries("t.id = ?", [todo_id]);
-          if (!s) return err(`no TODO #${todo_id}`);
-          const messages = db.query(`SELECT m.author, m.body, m.state, m.committed_at AS at, m.session_no, f.path AS file
-            FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.todo_id = ? ORDER BY m.id`).all(todo_id) as any[];
-          const sessions = sessionsOf(todo_id);
-          const live = sessions.at(-1)?.no ?? null;
-          const label = (no: number) => (messages.find((m) => m.session_no === no && m.author.startsWith("user"))?.body ?? "").split("\n")[0];
-          return json({
-            id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
-            pr_checked_at: s.pr_checked_at, gh_error: s.gh_error, worktree_path: s.worktree_path, live_session_id: s.session_id, created_at: s.created_at,
-            removed_at: s.removed_at, removed_by: s.removed_by,
-            files: filesOf(todo_id).map((f) => ({ name: basename(f.path), path: f.path, session: f.session_no })),
-            sessions: sessions.map((x) => ({ ...x, label: label(x.no), messages: messages.filter((m) => m.session_no === x.no) })),
-            // pending (before the start) and queued messages wait for the live session
-            waiting_messages: messages.filter((m) => m.session_no == null && m.state !== "delivered").map((m) => ({ ...m, for_session: live })),
-          });
-        }),
-      tool("read_file", "Read one of a TODO's attached markdown files by its name.", { todo_id: z.number().int(), name: z.string() },
-        async ({ todo_id, name }) => {
-          used("read_file", `#${todo_id} ${name}`);
-          const f = filesOf(todo_id).find((x) => basename(x.path) === name);
-          if (!f) return err(`TODO #${todo_id} has no file named ${name}`);
-          if (!existsSync(f.path)) return err(`${f.path} no longer exists on disk`);
-          return ok(readFileSync(f.path, "utf8"));
-        }),
-      tool("create_todo", "Create a TODO in the named project with its first instruction. It stays not started; the user starts it.",
-        { project: z.string(), instruction: z.string() }, async ({ project, instruction }) => {
-          const all = db.query("SELECT id, name FROM projects").all() as { id: number; name: string }[];
-          const p = all.find((x) => x.name === project) ?? all.find((x) => x.name.toLowerCase() === project.trim().toLowerCase());
-          if (!p) return err(`Unknown project "${project}". Projects: ${all.map((x) => x.name).join(", ") || "none"}`);
-          if (!instruction.trim()) return err("instruction is empty");
-          const id = createTodo(p.id, instruction.trim(), "operator");
-          used("create_todo", `#${id} in ${p.name}`);
-          return ok(`Created TODO #${id} in ${p.name}. It is in the backlog until the user starts it.`);
-        }),
-      tool("send_message", "Send a message to a TODO on the user's behalf. It is delivered like a message the user commits.",
-        { todo_id: z.number().int(), body: z.string() }, async ({ todo_id, body }) => {
-          const t = todoRow(todo_id);
-          if (!t || t.removed_at) return err(`no live TODO #${todo_id}`);
-          if (!body.trim()) return err("body is empty");
-          const outcome = { pending: "stored; it is delivered when the user starts the TODO", push: "pushed into the agent's running turn; it reads it after its next tool call", send: "delivered now" }[deliveryAction(t.status)];
-          commitMessage(todo_id, "user via operator", body.trim());
-          used("send_message", `#${todo_id}`);
-          return ok(`Message ${outcome}.`);
-        }),
-    ],
-  });
-}
-
-function runOperator(bodies: string[]) {
-  // The stored id is set on a session's first turn and cleared by POST /api/operator/new-session.
-  const stored = getMeta("operator_session_id");
-  const sessionId = stored ?? crypto.randomUUID();
-  if (!stored) setMeta("operator_session_id", sessionId);
-  const abort = new AbortController();
-  const q = query({
-    prompt: bodies.join("\n\n"),
-    options: {
-      ...(stored ? { resume: stored } : { sessionId }),
-      cwd: HOME,
-      tools: OPERATOR_BUILTINS, // no Edit, Write or Bash
-      allowedTools: [...OPERATOR_BUILTINS, ...OPERATOR_TOOLS],
-      strictMcpConfig: true, // only its own app server, none of the user's MCP servers
-      mcpServers: { app: operatorServer() },
-      permissionMode: "dontAsk", // anything not listed above is refused instead of asked about
-      systemPrompt: { type: "preset", preset: "claude_code", append: OPERATOR_PROMPT(HOME) },
-      extraArgs: { "system-prompt-snapshot": "off" },
-      abortController: abort,
-    },
-  });
-  const run: Run = { q, abort, done: Promise.resolve() };
+// The operator keeps its session id in meta.operator_session_id; POST /api/operator/new-session clears it.
+function runOperator() {
+  const run: Run = { done: Promise.resolve(), live: null };
   running.set("operator", run);
   emit({ type: "operator" });
 
-  let ctx: Ctx | null = stored && getMeta("operator_ctx") ? JSON.parse(getMeta("operator_ctx")!) : null;
   run.done = (async () => {
-    const { text, error } = await drain(q, (m) => { ctx = usageStep(ctx, m); });
+    const stored = getMeta("operator_session_id") ?? null;
+    let error = "";
+    const turn = turnState(() => {}, () => {}, () => {});
+    try {
+      const agent = await agentFor("operator", stored, {
+        cwd: HOME,
+        dirs: [],
+        meta: {
+          systemPrompt: { append: OPERATOR_PROMPT(HOME) },
+          claudeCode: {
+            options: {
+              tools: OPERATOR_BUILTINS, // no Edit, Write or Bash
+              allowedTools: [...OPERATOR_BUILTINS, ...OPERATOR_TOOLS],
+              strictMcpConfig: true, // only its own app server, none of the user's MCP servers
+              extraArgs: { "system-prompt-snapshot": "off" },
+            },
+          },
+        },
+        grant: { kind: "operator" },
+      }, null);
+      if (!stored) setMeta("operator_session_id", agent.live.sessionId);
+      run.live = agent.live;
+      turn.t.ctx = stored && getMeta("operator_ctx") ? JSON.parse(getMeta("operator_ctx")!) : null;
+      agent.sink.s = {
+        onUpdate: turn.onUpdate,
+        // Anything not allowed above is refused instead of asked about, as dontAsk did.
+        onPermission: (r) => {
+          const no = r.options.find((o) => o.kind === "reject_once") ?? r.options.find((o) => o.kind.startsWith("reject"));
+          return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
+        },
+      };
+      if (!run.cancel) await agent.live.prompt(take(null, "queued").join("\n\n"));
+    } catch (e: any) {
+      error = e?.message ?? String(e);
+    }
+    clearTimeout(run.kill);
     running.delete("operator");
-    if (ctx?.used) setMeta("operator_ctx", JSON.stringify(ctx));
+    if (turn.t.ctx?.used) setMeta("operator_ctx", JSON.stringify({ ...turn.t.ctx, turns: turn.t.ctx.turns + 1 }));
     const stopped = interrupting.delete("operator");
+    const text = turn.t.text.trim();
     if (!stopped && error) addMessage(null, "app", cutToTwoLines(error));
-    else if (!stopped && text.trim()) addMessage(null, "operator", text.trim());
+    else if (!stopped && text) addMessage(null, "operator", text);
+    if (shuttingDown) closeAgent("operator");
+    else parkAgent("operator");
     emit({ type: "operator" });
     if (!shuttingDown) deliverOperator();
   })();

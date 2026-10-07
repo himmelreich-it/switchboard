@@ -52,25 +52,13 @@ export function handOver(o: {
   ].filter(Boolean).join("\n");
 }
 
-// The context meter (item 123), updated from each SDK message of a run. Context = what went into the last model call
-// of the main loop (input + cache read + cache write) plus what it wrote. result.usage is summed over the turn's calls,
-// so it would overstate the context. ponytail: an assistant message's output_tokens can still be streaming; that is a
-// few percent of `used`, so it is shown as is.
-export type Ctx = { used: number; window: number | null; last_in: number; last_out: number; turns: number; model?: string };
-export function usageStep(c: Ctx | null, m: any): Ctx | null {
-  const cur: Ctx = c ?? { used: 0, window: null, last_in: 0, last_out: 0, turns: 0 };
-  if (m?.type === "system" && m.subtype === "init") return { ...cur, model: m.model };
-  if (m?.type === "assistant" && m.parent_tool_use_id == null && m.message?.usage) {
-    const u = m.message.usage, input = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-    return { ...cur, last_in: input, used: input + (u.output_tokens ?? 0) };
-  }
-  if (m?.type === "system" && m.subtype === "compact_boundary") return { ...cur, used: m.compact_metadata?.post_tokens ?? cur.used };
-  if (m?.type === "result") {
-    const models = Object.entries(m.modelUsage ?? {}) as [string, any][];
-    const main = models.find(([k]) => k === cur.model) ?? models.sort((a, b) => (b[1].contextWindow ?? 0) - (a[1].contextWindow ?? 0))[0];
-    return { ...cur, last_out: m.usage?.output_tokens ?? cur.last_out, window: main?.[1].contextWindow ?? cur.window, turns: cur.turns + 1 };
-  }
-  return c;
+// The context meter (item 123), from the agent's ACP usage_update: `used` is the context of the last model call, `size`
+// the model's window. Claude names the model in `_meta["_claude/model"]`. last_in and last_out are no longer reported.
+export type Ctx = { used: number; window: number | null; last_in?: number; last_out?: number; turns: number; model?: string };
+export function ctxStep(c: Ctx | null, u: any): Ctx | null {
+  if (u?.sessionUpdate !== "usage_update") return c;
+  const cur: Ctx = c ?? { used: 0, window: null, turns: 0 };
+  return { ...cur, used: u.used ?? cur.used, window: u.size ?? cur.window, model: u._meta?.["_claude/model"] ?? cur.model };
 }
 
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
@@ -85,44 +73,10 @@ export function safeFileName(name: string): string {
   return basename(name).replace(/[^A-Za-z0-9._-]+/g, "-").slice(-120).replace(/^[.-]+/, "") || "file";
 }
 
-// What a committed message does, by the TODO's status:
-// not started -> stored until start; running -> pushed into the run; idle or waiting -> sent now.
-export function deliveryAction(status: Status): "pending" | "push" | "send" {
-  return status === "not_started" ? "pending" : status === "running" ? "push" : "send";
-}
-
-// The streaming prompt of one run: the first prompt, then whatever is pushed while it runs. Claude Code takes a pushed
-// message in after its next tool call, or as one more turn when the turn already ended. The run closes the input on its
-// first result; from then on push() returns false and the caller queues the message for the next run. The CLI still
-// answers what was pushed before the close, so nothing pushed is lost.
-export function inputChannel<T>(first: T) {
-  const items = [first];
-  let closed = false;
-  let wake: (() => void) | null = null;
-  async function* stream() {
-    while (true) {
-      while (items.length) yield items.shift()!;
-      if (closed) return;
-      await new Promise<void>((r) => (wake = r));
-      wake = null;
-    }
-  }
-  return {
-    stream: stream(),
-    get open() {
-      return !closed;
-    },
-    push(item: T) {
-      if (closed) return false;
-      items.push(item);
-      wake?.();
-      return true;
-    },
-    close() {
-      closed = true;
-      wake?.();
-    },
-  };
+// What a committed message does, by the TODO's status (item 20):
+// not started -> stored until start; running -> queued until the turn ends; idle or waiting -> sent now.
+export function deliveryAction(status: Status): "pending" | "queue" | "send" {
+  return status === "not_started" ? "pending" : status === "running" ? "queue" : "send";
 }
 
 // A run that ended (normally, with an error, or by interrupt) leaves the TODO waiting while the flag is raised.

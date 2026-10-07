@@ -1,4 +1,3 @@
-import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import type { ServerWebSocket, Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -8,11 +7,13 @@ import {
   contextFile, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type Pr, type Status,
 } from "./lib";
-import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, newSession, start, stopAll, worktreeRoot } from "./runner";
+import { sessionExists } from "./acp";
+import { handleMcp } from "./apptools";
+import { CONTRACT, closeAgent, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, newSession, start, stopAll, worktreeRoot } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
-const HOST = "127.0.0.1";
-const PORT = Number(process.env.PORT ?? 4477);
+export const HOST = "127.0.0.1";
+export const PORT = Number(process.env.PORT ?? 4477);
 
 // ---------- storage ----------
 
@@ -837,18 +838,20 @@ async function api(req: Request, path: string): Promise<Response> {
       liveTodo(id);
       setTodo(id, { removed_at: now(), removed_by: "user" });
       addEvent(id, "removed", "user");
-      interrupt(id); // like Esc in Claude Code; queued messages stay queued
+      // Like Esc in Claude Code; queued messages stay queued. The agent process ends with the run, or now when idle.
+      if (isRunning(id)) interrupt(id);
+      else closeAgent(id);
       closeTerms(id); // restoring does not bring them back (item 115)
       emit({ type: "todos" });
     } else if (action === "restore") {
       const t = todoOr404(id);
       if (!t.removed_at) return fail("this TODO is not removed", 409);
       if (t.session_id) {
-        if (!(await getSessionInfo(t.session_id)))
+        const folder = projectRow(t.project_id)!.local_path;
+        if (existsSync(folder) && !(await sessionExists(folder, t.session_id).catch(() => true)))
           return json({ warning: `The Claude Code session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
         if (t.worktree_path && !existsSync(t.worktree_path))
           return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
-        const folder = projectRow(t.project_id)!.local_path;
         if (!existsSync(folder)) return json({ warning: `The project folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
       }
       setTodo(id, { removed_at: null, removed_by: null });
@@ -865,7 +868,7 @@ async function api(req: Request, path: string): Promise<Response> {
         deliver(id, "restore");
       }
     } else if (action === "stop") {
-      // Like Esc in Claude Code. A message pushed but not yet taken in is answered right after.
+      // Like Esc in Claude Code. Messages queued during the turn are answered right after.
       if (!isRunning(liveTodo(id).id)) return fail("the agent is not running", 409);
       interrupt(id, "user");
     } else if (action === "deliver") {
@@ -951,6 +954,8 @@ const httpServer = Bun.serve({
       if (!isInside(file, VENDOR) || file.startsWith(join(VENDOR, "src")) || !existsSync(file)) return fail("not found", 404);
       return new Response(Bun.file(file), { headers: { "cache-control": "no-cache" } });
     }
+    // The agents' route to the app's MCP tools: each agent session carries its own secret instead of the launch token.
+    if (url.pathname === "/mcp/app") return handleMcp(req);
     if (!tokenOk(TOKEN, req.headers.get("x-switchboard-token"), url.searchParams.get("token"))) return fail("open the link the server printed at start", 401);
     // Browsers apply no CORS to WebSockets, so any website could open one; the Origin check stops websites, the token programs.
     const ws = url.pathname.match(/^\/api\/todos\/(\d+)\/terminals\/(\d+)\/ws$/);
