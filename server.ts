@@ -4,12 +4,12 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  MODES, contextFile, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
-  type Pr, type Status,
+  MODES, configIn, contextFile, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  type ConfigOption, type Pr, type Status,
 } from "./lib";
 import { sessionExists } from "./acp";
 import { handleMcp } from "./apptools";
-import { CONTRACT, answerPermission, applyMode, closeAgent, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
+import { CONTRACT, answerPermission, applyConfig, closeAgent, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 export const HOST = "127.0.0.1";
@@ -29,10 +29,10 @@ export type Todo = {
   id: number; project_id: number; title: string; status: Status; attention: number; session_id: string | null;
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
-  mode: string | null; permission: string | null; attention_by: string | null;
+  mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null };
-export type Project = { id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string; mode: string | null };
+export type Project = { id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string; mode: string | null; defaults: string | null };
 
 export const now = () => new Date().toISOString();
 export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = ?").get(id) as Todo | null;
@@ -244,7 +244,7 @@ FROM todos t JOIN projects p ON p.id = t.project_id`;
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ctx, permission, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -256,6 +256,7 @@ export async function summaries(where = "1", args: any[] = []) {
       last_agent_message: r.last_agent_message ? JSON.parse(r.last_agent_message) : null,
       file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null, plan: r.plan ? JSON.parse(r.plan) : null,
       permission: permission ? JSON.parse(permission) : null,
+      config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {},
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
     };
@@ -306,7 +307,7 @@ async function projectOut(p: Project) {
   const r = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
   const c = db.query(`SELECT EXISTS (SELECT 1 FROM todos WHERE project_id = ? AND session_id IS NOT NULL) AS locked,
     (SELECT COUNT(*) FROM todos WHERE project_id = ? AND removed_at IS NULL) AS todo_count`).get(p.id, p.id) as any;
-  return { ...p, repo: r.ok ? r.out : null, locked: !!c.locked, todo_count: c.todo_count };
+  return { ...p, defaults: configIn(p.defaults ? JSON.parse(p.defaults) : null), repo: r.ok ? r.out : null, locked: !!c.locked, todo_count: c.todo_count };
 }
 
 // ---------- writes shared with runner.ts ----------
@@ -358,12 +359,25 @@ const fail = (msg: string, status = 400) => json({ error: msg }, status);
 // A permission mode from a request body: null for "not set" (empty, null, or "auto" for a project, which is the
 // default anyway), the mode when known, undefined when not.
 const modeIn = (v: unknown): string | null | undefined => (v == null || v === "" ? null : MODES.includes(v as any) ? String(v) : undefined);
+// P4: a project's config defaults from a request body ({config id: value}), stored as JSON; null when none is set.
+const defaultsIn = (v: unknown) => { const d = configIn(v); return Object.keys(d).length ? JSON.stringify(d) : null; };
 const httpError = (status: number, msg: string) => Object.assign(new Error(msg), { status });
 
 function todoOr404(id: number) {
   const t = todoRow(id);
   if (!t) throw httpError(404, "no such TODO");
   return t;
+}
+// A config or mode change reaches a live agent process at once (applyConfig). The change is stored either way; what
+// the agent did not take (a mode the model lacks) comes back as a warning, and the next turn tries again.
+async function applyNow(todoId: number, reset?: string) {
+  const a = liveAgent(todoId);
+  if (!a) return json({});
+  await applyConfig(todoId, a, reset);
+  const warning = a.configError || null;
+  a.configError = "";
+  if (warning) addEvent(todoId, "error", "app", warning);
+  return json({ warning });
 }
 function liveTodo(id: number) {
   const t = todoOr404(id);
@@ -570,7 +584,8 @@ async function api(req: Request, path: string): Promise<Response> {
     // The Waiting lane (laneOf): the status, or a running agent waiting for a permission answer.
     const w = db.query("SELECT COUNT(*) AS n FROM todos WHERE (status = 'waiting' OR (status = 'running' AND permission IS NOT NULL)) AND removed_at IS NULL").get() as any;
     const last = getMeta("last_project_id");
-    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n,
+    // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
+    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n, agent_config: JSON.parse(getMeta("agent_config") ?? "[]"),
       shell: basename(process.env.SWITCHBOARD_SHELL || process.env.SHELL || "zsh") });
   }
 
@@ -587,8 +602,8 @@ async function api(req: Request, path: string): Promise<Response> {
     const mode = modeIn(body.mode);
     if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}`);
     const id = Number(db.run(
-      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, mode) VALUES (?, ?, ?, ?, ?, ?)",
-      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), mode],
+      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, mode, defaults) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), mode, defaultsIn(body.defaults)],
     ).lastInsertRowid);
     emit({ type: "projects" });
     return json(await projectOut(projectRow(id)!));
@@ -606,8 +621,9 @@ async function api(req: Request, path: string): Promise<Response> {
     }
     const mode = body.mode === undefined ? p.mode : modeIn(body.mode);
     if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}`);
-    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, mode = ? WHERE id = ?",
-      [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), mode, p.id]);
+    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, mode = ?, defaults = ? WHERE id = ?",
+      [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), mode,
+        body.defaults === undefined ? p.defaults : defaultsIn(body.defaults), p.id]);
     emit({ type: "projects" });
     emit({ type: "todos" }); // rows show the project name
     return json(await projectOut(projectRow(p.id)!));
@@ -815,13 +831,28 @@ async function api(req: Request, path: string): Promise<Response> {
     if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}, or empty for the project's`);
     setTodo(t.id, { mode }, false);
     addEvent(t.id, "mode", "user", mode ?? `project's (${modeOf({ mode }, projectRow(t.project_id)!)})`);
-    const a = liveAgent(t.id);
-    if (a) {
-      await applyMode(a, modeOf({ mode }, projectRow(t.project_id)!));
-      if (a.modeError) { const e = a.modeError; a.modeError = ""; return fail(e, 409); }
-    }
-    return json({});
+    return applyNow(t.id);
   }
+
+  // P4: one of the TODO's own config values (model, effort, …; empty: the project's). Like the mode, a live agent
+  // process gets it at once, also mid-turn; otherwise the next run applies it. Only options and values the agent has
+  // offered are taken.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/config$/)) && method === "PUT") {
+    const t = liveTodo(Number(m[1]));
+    const id = String(body.id ?? ""), value = body.value == null ? "" : String(body.value);
+    const known = (JSON.parse(t.config ?? getMeta("agent_config") ?? "[]") as ConfigOption[]).find((o) => o.id === id);
+    if (!known || id === "mode") return fail(`no config option ${id || "(none)"}`);
+    if (value && !known.options.some((o) => o.value === value)) return fail(`${known.name} has no value ${value}`);
+    const overrides = configIn(t.overrides ? JSON.parse(t.overrides) : null);
+    if (value) overrides[id] = value;
+    else delete overrides[id];
+    setTodo(t.id, { overrides: Object.keys(overrides).length ? JSON.stringify(overrides) : null }, false);
+    addEvent(t.id, "config", "user", `${known.name}: ${value ? known.options.find((o) => o.value === value)!.name : "not set"}`);
+    return applyNow(t.id, value ? undefined : id);
+  }
+
+  // P4: the slash commands the composer completes.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/commands$/)) && method === "GET") return json(commandsOf(todoOr404(Number(m[1])).id));
 
   // P3: the user's answer to the open permission request.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/permission$/)) && method === "POST") {
