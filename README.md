@@ -12,6 +12,8 @@ bun run app          # same app in its own window (Electron); closing it stops r
 bun test             # pure helpers in lib.ts
 bun run vendor       # rebuild vendor/ (CodeMirror, xterm.js, marked, DOMPurify, fonts) after changing one of them
 bun run install-local  # build Switchboard.app (no installer) and copy it to /Applications, for Spotlight and the Dock
+bun run app:linux            # Linux: `app` without Chromium's sandbox (see below)
+bun run install-local:linux  # Linux: build for this machine's arch, install to ~/.local/share/switchboard with a launcher
 ```
 
 The API needs the launch token the server picks at each start. `bun server.ts` prints a link with it, and the window
@@ -21,6 +23,12 @@ app reads it from `~/.switchboard/token`. After a server restart, open the new l
 `install-local` quits a running Switchboard first, which stops its running agents and terminals. The installed app
 runs a copy of the code: run `install-local` again to update it. It still needs `bun` installed; it reads PATH and
 other variables from your login shell (`zsh -ilc`), since apps started from the Dock or Spotlight do not get them.
+
+`install-local:linux` does the same for your user, without sudo: the app goes to `~/.local/share/switchboard`, with a
+desktop entry and icons (app grid and dock) and `~/.local/bin/switchboard` for terminals. On Linux the login shell
+is `$SHELL -ilc` (bash reads `~/.profile`, so bun must be on PATH there). Both Linux commands run with `--no-sandbox`:
+Ubuntu 24.04+ blocks the user namespaces Chromium's sandbox needs, and the fallback wants a root-owned
+`chrome-sandbox`. The window only loads its own `127.0.0.1` page and opens links in your browser.
 
 Needs a Claude Code login. Agents run with your normal Claude Code settings, in auto permission mode. Projects are
 set up in Settings › Projects (the gear, or ⌘,). Shortcuts written with ⌘ use Alt on Linux and Windows.
