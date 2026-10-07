@@ -64,6 +64,42 @@ export function ctxStep(c: Ctx | null, u: any): Ctx | null {
   return { ...cur, used: u.used ?? cur.used, window: u.size ?? cur.window, model: u._meta?.["_claude/model"] ?? cur.model };
 }
 
+// ---------- transcript (item 130) ----------
+
+const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) + `\n… ${text.length - max} more characters` : text);
+
+// One ACP tool call as a transcript row's meta, merged from its tool_call and tool_call_update notifications. Text
+// output is cut to 8 KB; diffs are kept up to 200 KB per side, enough for the code an agent writes in one call.
+export type ToolMeta = {
+  toolCallId: string; name: string; title: string; kind: string; status: string; input: any;
+  locations: { path: string; line?: number }[]; diffs: { path: string; oldText: string | null; newText: string }[]; output: string;
+};
+export function toolMeta(prev: ToolMeta | null, u: any): ToolMeta {
+  const m: ToolMeta = prev ? { ...prev } : {
+    toolCallId: u.toolCallId, name: u._meta?.claudeCode?.toolName ?? u.name ?? u.title ?? "tool", title: "", kind: "other", status: "pending",
+    input: {}, locations: [], diffs: [], output: "",
+  };
+  if (u.title) m.title = u.title;
+  if (u.kind) m.kind = u.kind;
+  if (u.status) m.status = u.status;
+  if (u.rawInput && typeof u.rawInput === "object" && Object.keys(u.rawInput).length) m.input = { ...m.input, ...u.rawInput };
+  if (Array.isArray(u.locations) && u.locations.length) m.locations = u.locations.map((l: any) => ({ path: l.path, ...(l.line ? { line: l.line } : {}) }));
+  if (Array.isArray(u.content)) {
+    const diffs = u.content.filter((c: any) => c.type === "diff");
+    if (diffs.length) m.diffs = diffs.map((d: any) => ({ path: d.path, oldText: d.oldText == null ? null : cut(d.oldText, 200_000), newText: cut(d.newText ?? "", 200_000) }));
+    const text = u.content.filter((c: any) => c.type === "content" && c.content?.type === "text").map((c: any) => c.content.text).join("\n");
+    // While the call runs the content is its description; its result replaces it.
+    if (text && (u.status === "completed" || u.status === "failed" || !m.output)) m.output = cut(text, 8000);
+  }
+  if (typeof u.rawOutput === "string" && u.rawOutput && (u.status === "completed" || u.status === "failed")) m.output = cut(u.rawOutput, 8000);
+  return m;
+}
+
+// The agent's plan (its todo list) as `done/total`, or null without one.
+export type PlanEntry = { content: string; status: "pending" | "in_progress" | "completed"; priority?: string };
+export const planCount = (entries: PlanEntry[] | null) =>
+  entries?.length ? `${entries.filter((e) => e.status === "completed").length}/${entries.length}` : null;
+
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
 export function withAttachments(body: string, paths: string[]): string {
   if (!paths.length) return body;
@@ -306,7 +342,8 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
     if (!db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
   };
   addColumn("todos", "pr_number", "INTEGER");   // databases made before set_pr existed
-  addColumn("todos", "ctx", "TEXT");            // context meter of the live session (JSON, see usageStep)
+  addColumn("todos", "ctx", "TEXT");            // context meter of the live session (JSON, see ctxStep)
+  addColumn("todos", "plan", "TEXT");           // the agent's plan in its last turn (JSON entries), for the card
   addColumn("messages", "session_no", "INTEGER");
   addColumn("events", "session_no", "INTEGER");
   addColumn("events", "meta", "TEXT");           // a result's duration and tool count (JSON)

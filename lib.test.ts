@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep,
+  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
@@ -199,4 +199,19 @@ test("terminal helpers", () => {
   expect(ctx).toContain("Check with the user before you commit");
   expect(contextFile({ title: "T", project: "p", status: "not_started", first: "x", worktree: null, branch: null, git: null, pr: null, sessions: [], messages: [], files: [] }))
     .toContain("not started (in the backlog)");
+});
+
+test("toolMeta merges a tool call's updates; planCount", () => {
+  const ups = [
+    { sessionUpdate: "tool_call", toolCallId: "t1", title: "Write", kind: "edit", status: "pending", rawInput: {}, _meta: { claudeCode: { toolName: "Write" } } },
+    { sessionUpdate: "tool_call_update", toolCallId: "t1", title: "Write b.txt", rawInput: { file_path: "/r/b.txt", content: "x" },
+      content: [{ type: "diff", path: "/r/b.txt", oldText: null, newText: "x" }], locations: [{ path: "/r/b.txt" }] },
+    { sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed", content: [{ type: "content", content: { type: "text", text: "done" } }] },
+  ];
+  const m = ups.reduce<any>((m, u) => toolMeta(m, u), null);
+  expect(m).toMatchObject({ name: "Write", title: "Write b.txt", kind: "edit", status: "completed", input: { file_path: "/r/b.txt" }, output: "done",
+    locations: [{ path: "/r/b.txt" }], diffs: [{ path: "/r/b.txt", oldText: null, newText: "x" }] });
+  expect(toolMeta(null, { toolCallId: "t2", rawOutput: "x".repeat(9000), status: "completed" }).output.length).toBeLessThan(8100);
+  expect(planCount(null)).toBe(null);
+  expect(planCount([{ content: "a", status: "completed" }, { content: "b", status: "pending" }])).toBe("1/2");
 });

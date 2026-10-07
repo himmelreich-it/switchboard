@@ -5,11 +5,13 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { openSession as acpOpen, reopenSession, type Live, type PermissionRequest, type Update } from "./acp";
 import { OPERATOR_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
-import { ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, statusAfterRun, toolArg, toolLine, withAttachments, type Ctx } from "./lib";
+import {
+  ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments, type Ctx, type ToolMeta,
+} from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOME, addEvent, addMessage, artifactDir, attachmentsOf, db, emit, filesOf, getMeta, liveSessionNo, now, projectRow, refreshPrs,
-  saveAttachments, sessionsOf, setMeta, setTodo, todoRow, type Upload,
+  saveAttachments, sessionsOf, setEvent, setMeta, setTodo, todoRow, type Upload,
 } from "./server";
 
 // The fixed app contract (R31), appended to the claude_code system prompt before the project prompt.
@@ -151,36 +153,80 @@ function parkAgent(key: Key) {
   a.idle = setTimeout(() => closeAgent(key), IDLE_CLOSE_MS);
 }
 
-// One turn's view of the update stream: the final text, the tool calls (events, last tool, denials) and the context.
-function turnState(onStart: (name: string) => void, onTool: (name: string, input: any) => void, onDenied: (name: string, input: any, reason: string) => void) {
-  const calls = new Map<string, { name: string; input: any; logged: boolean }>();
+// One turn's view of the update stream: the final text, the tool calls, the context, and for a worker (`todo` set) the
+// transcript (item 130). Rows are written as items complete: the agent's text and thinking when the next tool call or
+// the other kind starts, each tool call at once and again on every change. The text being written streams over SSE.
+// The text after the last tool call is not written as a row: it is the turn's `result`, as with the SDK.
+function turnState(todo: number | null, onDenied: (name: string, input: any, reason: string) => void) {
+  const calls = new Map<string, { meta: ToolMeta; eventId: number | null }>();
   const t = { text: "", tools: 0, ctx: null as Ctx | null };
-  const log = (c: { name: string; input: any; logged: boolean }) => {
-    if (c.logged) return;
-    c.logged = true;
-    onTool(c.name, c.input);
+  let buf: { kind: "say" | "thought"; text: string } | null = null;
+  let planEvent: number | null = null;
+  let streamTimer: Timer | null = null;
+  const stream = () => {
+    if (todo === null || streamTimer) return;
+    streamTimer = setTimeout(() => {
+      streamTimer = null;
+      emit({ type: "stream", id: todo, item: buf && buf.text.trim() ? { kind: buf.kind, text: buf.text } : null });
+    }, 100);
+  };
+  const flush = (sayToo: boolean) => {
+    if (!buf || (buf.kind === "say" && !sayToo)) return;
+    if (todo !== null && buf.text.trim()) addEvent(todo, buf.kind, "agent", buf.text.trim());
+    if (buf.kind === "say") t.text = "";
+    buf = null;
+    stream();
   };
   const onUpdate = (u: any) => {
     t.ctx = ctxStep(t.ctx, u);
-    if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") t.text += u.content.text;
+    const kind = u.sessionUpdate === "agent_message_chunk" ? "say" : u.sessionUpdate === "agent_thought_chunk" ? "thought" : null;
+    if (kind && u.content?.type === "text") {
+      if (buf && buf.kind !== kind) flush(true);
+      buf ??= { kind, text: "" };
+      buf.text += u.content.text;
+      if (kind === "say") t.text += u.content.text;
+      stream();
+      return;
+    }
+    if (u.sessionUpdate === "plan" && todo !== null && Array.isArray(u.entries)) {
+      const entries = u.entries.map((e: any) => ({ content: String(e.content ?? ""), status: e.status, priority: e.priority }));
+      setTodo(todo, { plan: JSON.stringify(entries) }, false);
+      const detail = `${planCount(entries) ?? "0/0"} done`;
+      if (planEvent === null) planEvent = addEvent(todo, "plan", "agent", detail, { entries });
+      else setEvent(planEvent, todo, detail, { entries });
+      return;
+    }
     if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
     let c = calls.get(u.toolCallId);
     if (!c) {
-      // The final text is what the agent wrote after its last tool call, as the SDK's result was.
+      flush(true);
       t.text = "";
       t.tools++;
-      c = { name: u._meta?.claudeCode?.toolName ?? u.name ?? u.title ?? "tool", input: {}, logged: false };
+      const meta = toolMeta(null, u);
+      c = { meta, eventId: todo === null ? null : addEvent(todo, "tool", "agent", toolLine(meta.name, meta.input), meta) };
       calls.set(u.toolCallId, c);
-      onStart(c.name);
+      if (todo !== null) setTodo(todo, { last_tool: meta.name }, false);
+    } else {
+      c.meta = toolMeta(c.meta, u);
+      if (c.eventId !== null) setEvent(c.eventId, todo!, toolLine(c.meta.name, c.meta.input), c.meta);
     }
-    if (u.rawInput && Object.keys(u.rawInput).length) c.input = { ...c.input, ...u.rawInput };
-    // The input arrives in pieces: the event is written once its main argument is there, or when the call ends.
-    if (toolArg(c.input) || u.status === "completed" || u.status === "failed") log(c);
     // A denial (a settings rule or the auto mode classifier) ends the call as failed with the reason in _meta (spike 6).
     const denial = u.status === "failed" && u._meta?.claudeCode?.toolResponse?.decisionReasonType;
-    if (denial) onDenied(c.name, c.input, u._meta.claudeCode.toolResponse.decisionReason ?? u._meta.claudeCode.toolResponse.message ?? "");
+    if (denial) onDenied(c.meta.name, c.meta.input, u._meta.claudeCode.toolResponse.decisionReason ?? u._meta.claudeCode.toolResponse.message ?? "");
   };
-  return { t, onUpdate, calls };
+  // The turn ended: thinking still open is written; the text is the result. The live item is cleared. A tool call
+  // that never got a final status (a server tool such as advisor, or one cut off by an interrupt) is marked ended.
+  const finish = () => {
+    flush(false);
+    buf = null;
+    for (const c of calls.values()) {
+      if (c.meta.status === "completed" || c.meta.status === "failed") continue;
+      c.meta = { ...c.meta, status: "ended" };
+      if (c.eventId !== null) setEvent(c.eventId, todo!, toolLine(c.meta.name, c.meta.input), c.meta);
+    }
+    if (todo !== null) emit({ type: "stream", id: todo, item: null });
+  };
+  return { t, onUpdate, finish };
 }
 
 // ---------- workers ----------
@@ -301,7 +347,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     if (open) {
       // The agent made the session id. From here on take() and the events belong to the new session.
       db.run("INSERT INTO sessions (todo_id, no, session_id, started_at) VALUES (?, ?, ?, ?)", [todoId, open.no, live.sessionId, now()]);
-      setTodo(todoId, { session_id: live.sessionId, ctx: null });
+      setTodo(todoId, { session_id: live.sessionId, ctx: null, plan: null });
       if (open.no > 1) addEvent(todoId, "new session", "user", `session ${open.no} · ${live.sessionId}\n${open.header}`);
     }
     if (agent.modeError) {
@@ -321,7 +367,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       setTodo(todoId, { attention: 1 });
       addEvent(todoId, "attention raised", "app", `${name} denied`);
     };
-    const turn = turnState((name) => setTodo(todoId, { last_tool: name }, false), (name, input) => addEvent(todoId, "tool", "agent", toolLine(name, input)), deny);
+    const turn = turnState(todoId, deny);
     turn.t.ctx = cur.ctx ? JSON.parse(cur.ctx) : null;
     agent.sink.s = {
       onUpdate: turn.onUpdate,
@@ -343,9 +389,16 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     } catch (e: any) {
       error = e?.message ?? String(e);
       if (!live.alive) addEvent(todoId, "agent log", "app", live.stderr().slice(-4000) || null);
+      // The Claude adapter rejects a finished turn when a tool call got no result: a server tool such as advisor
+      // (ACP spike). When the agent is alive and wrote its final text, the turn is treated as ended; the error stays an event.
+      else if (turn.t.text.trim()) {
+        addEvent(todoId, "error", "app", `${error} (the turn had finished; treated as ended)`);
+        error = "";
+      }
     }
     // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
     // or sees the TODO idle and starts its own turn.
+    turn.finish();
     clearTimeout(run.kill);
     running.delete(todoId);
     const stopped = interrupting.get(todoId);
@@ -400,7 +453,7 @@ function runOperator() {
 
   run.done = (async () => {
     const stored = getMeta("operator_session_id") ?? null;
-    const turn = turnState(() => {}, () => {}, () => {});
+    const turn = turnState(null, () => {});
     let agent: Agent;
     try {
       agent = await agentFor("operator", stored, {
