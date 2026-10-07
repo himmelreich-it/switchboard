@@ -1,11 +1,11 @@
 // Agent SDK runs: one query() per turn for each TODO's worker, plus the operator.
-import { createSdkMcpServer, query, tool, type Options, type Query } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, query, tool, type Options, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import {
-  cutToTwoLines, deliveryAction, deliveryPrompt, handOver, isInside, lineCount, statusAfterRun, toolArg, toolLine, usageStep, withAttachments, type Ctx,
+  cutToTwoLines, deliveryAction, deliveryPrompt, handOver, inputChannel, isInside, lineCount, statusAfterRun, toolArg, toolLine, usageStep, withAttachments, type Ctx,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
@@ -42,9 +42,11 @@ const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "
 const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
 
 type Key = number | "operator"; // a TODO id, or the operator
-type Run = { q: Query; abort: AbortController; done: Promise<void> };
+// `input` is a worker run's streaming prompt (the operator's is a string); `kill` the fallback timer of an interrupt.
+type Run = { q: Query; abort: AbortController; done: Promise<void>; input?: ReturnType<typeof inputChannel<SDKUserMessage>>; kill?: Timer };
 const running = new Map<Key, Run>();
-const interrupting = new Set<Key>(); // runs the app stopped itself (remove, shutdown): no error message for those
+// Runs being interrupted, and by whom: Stop is the user's; remove and shutdown are the app's. Neither gets an error message.
+const interrupting = new Map<Key, "user" | "app">();
 let shuttingDown = false;
 
 export const isRunning = (key: Key) => running.has(key);
@@ -52,19 +54,22 @@ export const isRunning = (key: Key) => running.has(key);
 const ok = (text = "ok") => ({ content: [{ type: "text" as const, text }] });
 const err = (text: string) => ({ content: [{ type: "text" as const, text }], isError: true });
 
-// Like Esc in Claude Code. If the CLI cannot take the interrupt, or ignores it, the process is killed.
-export function interrupt(key: Key) {
+// Like Esc in Claude Code. If the CLI cannot take the interrupt, or ignores it for 10 seconds, the process is killed.
+// The interrupted turn's result clears that timer (see setupWorker), because a message pushed but not yet taken in
+// still gets its own turn after a Stop.
+export function interrupt(key: Key, by: "user" | "app" = "app") {
   const r = running.get(key);
   if (!r) return;
-  interrupting.add(key);
+  if (interrupting.get(key) !== "app") interrupting.set(key, by);
   r.q.interrupt().catch(() => r.abort.abort());
-  setTimeout(() => running.get(key) === r && r.abort.abort(), 10_000);
+  clearTimeout(r.kill);
+  r.kill = setTimeout(() => running.get(key) === r && r.abort.abort(), 10_000);
 }
 
 export async function stopAll() {
   shuttingDown = true;
   const runs = [...running.values()];
-  for (const key of running.keys()) interrupt(key);
+  for (const key of running.keys()) interrupt(key, "app");
   await Promise.allSettled(runs.map((r) => r.done));
 }
 
@@ -96,8 +101,10 @@ async function drain(q: Query, onMessage: (m: any) => void) {
 
 // ---------- workers ----------
 
-// A committed message: stored until start, queued while running, or sent now (R20). The attachments are saved in the
-// same transaction and before deliver(), whose take() reads them.
+const userMessage = (text: string): SDKUserMessage => ({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null });
+
+// A committed message: stored until start, pushed into the running turn, or sent now (R20). The attachments are saved
+// in the same transaction and before push() or deliver(), whose take() reads them.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = []) {
   const action = deliveryAction(todoRow(todoId)!.status);
   const id = db.transaction(() => {
@@ -106,7 +113,18 @@ export function commitMessage(todoId: number, author: "user" | "user via operato
     return id;
   })();
   if (action === "send") deliver(todoId);
+  else if (action === "push") push(todoId);
   return id;
+}
+
+// Pushes every queued message into the running turn, where Claude takes them in after its next tool call. Once the
+// run's input is closed (its turn ended, the run is finishing) they stay queued, and the run's end delivers them.
+function push(todoId: number) {
+  const input = running.get(todoId)?.input;
+  if (!input?.open) return;
+  const bodies = take(todoId, "queued");
+  input.push(userMessage(bodies.join("\n\n")));
+  addEvent(todoId, "pushed", "app", bodies.length === 1 ? "1 message" : `${bodies.length} messages`);
 }
 
 // Opens session `no` of a TODO (item 68): the sessions row, todos.session_id (what delivery and restore resume), and its
@@ -291,8 +309,9 @@ function setupWorker(todoId: number, takeBodies: () => string[], session: { sess
     addEvent(todoId, "attention raised", "app", `${toolName} denied`);
   };
 
-  const q = query({ prompt: deliveryPrompt(t.worktree_path, takeBodies(), header), options });
-  const run: Run = { q, abort, done: Promise.resolve() };
+  const input = inputChannel(userMessage(deliveryPrompt(t.worktree_path, takeBodies(), header)));
+  const q = query({ prompt: input.stream, options });
+  const run: Run = { q, abort, done: Promise.resolve(), input };
   running.set(todoId, run);
   setTodo(todoId, { status: "running", last_tool: null });
   addEvent(todoId, "launch", "app", `${reason} · cwd ${p.local_path} · session ${t.session_id}`);
@@ -301,19 +320,28 @@ function setupWorker(todoId: number, takeBodies: () => string[], session: { sess
   let ctx: Ctx | null = t.ctx ? JSON.parse(t.ctx) : null;
   run.done = (async () => {
     const { text, error } = await drain(q, (m) => {
+      if (m.type === "system" && m.subtype === "init") turn.posted = false; // a turn starts; a run has more after a late push
       if (m.type === "system" && m.subtype === "permission_denied") deny(m.tool_name, m.tool_use_id, m.message ?? "");
-      if (m.type === "result") for (const d of m.permission_denials ?? []) deny(d.tool_name, d.tool_use_id, toolArg(d.tool_input));
-      if (m.type === "result") res.duration_ms = m.duration_ms ?? null;
+      if (m.type === "result") {
+        for (const d of m.permission_denials ?? []) deny(d.tool_name, d.tool_use_id, toolArg(d.tool_input));
+        res.duration_ms = m.duration_ms ?? null;
+        // The turn ended: later messages queue for the next run. The CLI still answers what was pushed before this.
+        input.close();
+        clearTimeout(run.kill); // an interrupt, if any, was taken
+        if (interrupting.get(todoId) === "app") abort.abort(); // removed or shutting down: no turn for a late push
+      }
       ctx = usageStep(ctx, m);
     });
     // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
     // or sees the TODO idle and starts its own turn.
     running.delete(todoId);
-    const stopped = interrupting.delete(todoId);
+    const stopped = interrupting.get(todoId);
+    interrupting.delete(todoId);
     if (ctx?.used) setTodo(todoId, { ctx: JSON.stringify(ctx) }, false);
     if (text) addEvent(todoId, "result", "agent", text, res);
-    if (stopped) addEvent(todoId, "interrupted", "app");
-    else if (error) {
+    // After a Stop, a message pushed but not yet taken in gets its own turn, whose text is shown like any other.
+    if (stopped) addEvent(todoId, "interrupted", stopped);
+    if (error && !stopped) {
       addMessage(todoId, "app", cutToTwoLines(error));
       addEvent(todoId, "error", "app", error);
     } else if (!turn.posted && text.trim()) addMessage(todoId, "agent", cutToTwoLines(text));
@@ -402,7 +430,7 @@ function operatorServer() {
           const t = todoRow(todo_id);
           if (!t || t.removed_at) return err(`no live TODO #${todo_id}`);
           if (!body.trim()) return err("body is empty");
-          const outcome = { pending: "stored; it is delivered when the user starts the TODO", queue: "queued; it is delivered when the agent's current run ends", send: "delivered now" }[deliveryAction(t.status)];
+          const outcome = { pending: "stored; it is delivered when the user starts the TODO", push: "pushed into the agent's running turn; it reads it after its next tool call", send: "delivered now" }[deliveryAction(t.status)];
           commitMessage(todo_id, "user via operator", body.trim());
           used("send_message", `#${todo_id}`);
           return ok(`Message ${outcome}.`);
