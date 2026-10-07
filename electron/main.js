@@ -5,12 +5,12 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Dock and Spotlight start the app with launchd's bare environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin).
+// Dock and Spotlight start the app with launchd's bare environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin); Linux desktop launchers likewise.
 // Load the interactive login shell's environment (PATH from ~/.zshrc, keys from ~/.zshenv) so bun, hooks and MCP servers work as from a terminal.
 // The marker skips anything the shell startup prints before env.
 function loginShellEnv() {
   try {
-    const out = execFileSync(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "\\0__SB__\\0"; env -0'], { encoding: "utf8", timeout: 10_000 });
+    const out = execFileSync(process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash"), ["-ilc", 'printf "\\0__SB__\\0"; env -0'], { encoding: "utf8", timeout: 10_000 });
     const vars = out.split("\0__SB__\0").pop().split("\0").filter(Boolean);
     return Object.fromEntries(vars.map((v) => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
   } catch (e) {
