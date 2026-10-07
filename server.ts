@@ -28,7 +28,7 @@ migrateDb(db);
 export type Todo = {
   id: number; project_id: number; title: string; status: Status; attention: number; session_id: string | null;
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
-  removed_at: string | null; removed_by: string | null; ctx: string | null;
+  removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null };
 export type Project = { id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string };
@@ -107,8 +107,14 @@ export function addMessage(todoId: number | null, author: string, body: string, 
   return id;
 }
 export function addEvent(todoId: number | null, kind: string, actor: string, detail: string | null = null, meta: object | null = null) {
-  db.run("INSERT INTO events (todo_id, kind, actor, detail, at, session_no, meta) VALUES (?,?,?,?,?,?,?)",
-    [todoId, kind, actor, detail, now(), liveSessionNo(todoId), meta && JSON.stringify(meta)]);
+  const id = Number(db.run("INSERT INTO events (todo_id, kind, actor, detail, at, session_no, meta) VALUES (?,?,?,?,?,?,?)",
+    [todoId, kind, actor, detail, now(), liveSessionNo(todoId), meta && JSON.stringify(meta)]).lastInsertRowid);
+  changed(todoId);
+  return id;
+}
+// A transcript row that grows while the agent works (a tool call's status, input, diff and output; the plan).
+export function setEvent(id: number, todoId: number, detail: string | null, meta: object | null) {
+  db.run("UPDATE events SET detail = ?, meta = ? WHERE id = ?", [detail, meta && JSON.stringify(meta), id]);
   changed(todoId);
 }
 
@@ -247,7 +253,7 @@ export async function summaries(where = "1", args: any[] = []) {
       ...r, attention: !!r.attention, unread: !!r.unread, has_draft: !!r.has_draft,
       last_message: r.last_message ? JSON.parse(r.last_message) : null,
       last_agent_message: r.last_agent_message ? JSON.parse(r.last_agent_message) : null,
-      file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null,
+      file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null, plan: r.plan ? JSON.parse(r.plan) : null,
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
     };

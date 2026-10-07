@@ -410,6 +410,31 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .evl .k > b { flex: none; font-weight: 400; color: var(--text-secondary); }
 .evl .k > i { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-style: normal; }
 .ev-box { margin: 2px 12px 6px 120px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--text-secondary); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+/* the transcript (item 130): the agent's text, thinking, tool calls and plan */
+.evsay { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; padding: 4px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 18px; color: var(--text-muted); }
+.evsay > .res-md { color: var(--text-secondary); }
+.evsay.live > .res-md > :last-child::after { content: "▍"; color: var(--accent-cyan); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.evl .dot { width: 6px; height: 6px; flex: none; border-radius: 50%; margin: 0 3px; background: var(--text-muted); }
+.evl .dot.in_progress, .evl .dot.pending { background: var(--accent-cyan); animation: blink 1.2s steps(2) infinite; }
+.evl .dot.completed { background: var(--accent-lime); }
+.evl .dot.failed { background: var(--accent-red); }
+.evl .dot.ended { background: var(--text-muted); }
+.evl .k > .tk { flex: none; color: var(--text-muted); }
+.ev-tool { margin: 2px 12px 6px 120px; display: flex; flex-direction: column; gap: 6px; }
+.ev-tool > .ev-box { margin: 0; max-height: 320px; overflow: auto; }
+.ev-tool .lbl { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.ev-locs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev-diff { max-height: 360px; overflow: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.ev-diff > div { display: grid; grid-template-columns: 16px minmax(0, 1fr); padding: 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
+.ev-diff > .add { background: color-mix(in srgb, var(--accent-lime) 14%, transparent); color: var(--text-primary); }
+.ev-diff > .del { background: color-mix(in srgb, var(--accent-red) 12%, transparent); }
+.ev-diff > .gap { color: var(--text-muted); }
+.ev-plan { margin: 2px 12px 6px 120px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.ev-plan > div { display: flex; gap: 8px; }
+.ev-plan > .completed { color: var(--text-muted); text-decoration: line-through; }
+.ev-plan > .in_progress { color: var(--text-primary); }
+.ev-plan > div > span { flex: none; font-family: var(--font-mono); color: var(--accent-cyan); }
 .evres { margin: 4px 0 6px; display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 12px; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; line-height: 18px; }
 .evres > .t { text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); }
 .evres > .res-md, .evres > .foot { grid-column: 2 / span 2; min-width: 0; }
@@ -1027,6 +1052,7 @@ const S = {
   board: "board", focusFrom: "board",   // overview side (item 86) and the side the Focus view returns to (item 91)
   events: false,                        // events mixed into the chat (item 100), kept in localStorage
   nsMode: {},                           // TODO id -> composer in new-session mode (item 71); browser only
+  live: {},   // item 130: the text a running agent is writing now, per TODO ({kind, text}), from SSE "stream" events
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
 };
 try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catch (e) {}
@@ -1674,7 +1700,7 @@ function cardHtml(t) {
   // an app message (denial, failed run) is usually why the TODO needs you, so it wins over the last agent line
   const last = lm && lm.author === "app" ? lm : la ? { ...la, author: "agent" } : lm;
   const who = !last ? "" : last.author.startsWith("user") ? (t.message_count === 1 ? "You · first instruction" : "You") : AUTHOR[last.author]?.[0] ?? last.author;
-  const foot = t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working")
+  const foot = t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t)
     : t.file_count ? `${plural(t.file_count, "file")} · ${t.file_names.join(", ")}` : "No files";
   return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${t.status === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${st.edge}">
     <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
@@ -1754,7 +1780,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
   setHtml(head, `<div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
     <div class="info"><div class="l">${left}</div>${right ? `<div class="r">${right}</div>` : ""}</div>${extra}
     ${showTabs ? `<div class="tabs-row"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", d ? d.files.length : t.file_count], ["terminal", "Terminal", termCount(t.id)]], S.tab, "tab")}</div>
-      ${S.tab === "chat" ? `<label class="mb-switch" title="Mix this TODO's events into the chat. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Events ${evCount}</span></label>` : ""}</div>` : ""}`);
+      ${S.tab === "chat" ? `<label class="mb-switch" title="Mix the transcript into the chat: what the agent writes, thinks and does, and the app's events. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Transcript ${evCount}</span></label>` : ""}</div>` : ""}`);
 }
 
 function msgHtml(m, operator) {
@@ -1802,11 +1828,52 @@ function eventsHtml(evs) {
       const text = String(e.detail ?? "").replace(/^\*\*([^*\n]+)\*\*:?\s*$/gm, "#### $1");
       return `<div class="evres"><span class="muted">${fmtTime(e.at)}</span><span class="t">Result</span>${actor}<div class="res-md">${md(text)}</div>${meta ? `<span class="foot">${esc(meta)}</span>` : ""}</div>`;
     }
+    if (e.kind === "say") return `<div class="evsay"><span>${fmtTime(e.at)}</span><div class="res-md">${md(String(e.detail ?? ""))}</div>${actor}</div>`;
+    if (e.kind === "tool" && e.meta) return toolHtml(e, actor);
+    if (e.kind === "plan" && e.meta) return planEvHtml(e, actor);
     const lines = String(e.detail ?? "").split("\n"), fold = lines.length > 1, open = fold && S.openEv.has(e.id);
     const mark = fold ? SVG(open ? CHEV_D : CHEV_R, 12) : '<span class="sp"></span>';
     return `<div class="evl${fold ? " fold" : ""}"${fold ? ` data-act="ev-toggle" data-id="${e.id}" aria-expanded="${open}"` : ""}><span>${fmtTime(e.at)}</span><span class="k">${mark}<b>${esc(e.kind)}</b>${!open && e.detail ? `<i>${esc(lines[0])}</i>` : ""}</span>${actor}</div>${open ? `<pre class="ev-box">${esc(e.detail)}</pre>` : ""}`;
   }).join("")}</div>`;
 }
+// A tool call: a status dot, its kind and title; open, its input, diffs, output and the files it touched.
+const TOOL_KIND = { read: "read", edit: "edit", delete: "delete", move: "move", search: "search", execute: "run", think: "think", fetch: "fetch", switch_mode: "mode", other: "tool" };
+function toolHtml(e, actor) {
+  const m = e.meta, open = S.openEv.has(e.id);
+  const title = m.title && m.title !== m.name ? m.title : e.detail || m.name;
+  let body = "";
+  if (open) {
+    const input = m.input?.command ?? (Object.keys(m.input ?? {}).length ? JSON.stringify(m.input, null, 1) : "");
+    const parts = [];
+    if (m.locations?.length) parts.push(`<div class="ev-locs">${m.locations.map((l) => `<button type="button" class="file-chip sm" data-act="ev-loc" data-id="${esc(l.path)}" title="Open in Files">${SVG(FILE, 13)}${esc(basename(l.path))}${l.line ? ":" + l.line : ""}</button>`).join("")}</div>`);
+    if (input && !m.diffs?.length) parts.push(`<span class="lbl">Input</span><pre class="ev-box">${esc(input)}</pre>`);
+    for (const d of m.diffs ?? []) parts.push(`<span class="lbl">${esc(d.oldText == null ? "New file" : "Change")} · <span style="text-transform:none">${esc(d.path)}</span></span>${diffHtml(d)}`);
+    if (m.output) parts.push(`<span class="lbl">${m.status === "failed" ? "Failed" : "Output"}</span><pre class="ev-box">${esc(m.output)}</pre>`);
+    body = `<div class="ev-tool">${parts.join("") || '<span class="muted">No details yet.</span>'}</div>`;
+  }
+  return `<div class="evl fold" data-act="ev-toggle" data-id="${e.id}" aria-expanded="${open}"><span>${fmtTime(e.at)}</span><span class="k">${SVG(open ? CHEV_D : CHEV_R, 12)}<i class="dot ${esc(m.status)}" title="${esc(m.status.replace("_", " "))}"></i><b class="tk">${esc(TOOL_KIND[m.kind] ?? m.kind)}</b><i>${esc(title)}</i></span>${actor}</div>${body}`;
+}
+// A diff as changed lines with three lines of context, from the editor bundle's line diff (loaded on first use).
+function diffHtml(d) {
+  if (!window.SBEditor) { loadEditor().then(() => render(), () => {}); return '<div class="ev-diff"><div class="gap"> Loading diff…</div></div>'; }
+  const rows = window.SBEditor.lineDiff(d.oldText ?? "", d.newText ?? ""), keep = new Set();
+  rows.forEach((r, i) => { if (r.sign !== " ") for (let k = i - 3; k <= i + 3; k++) keep.add(k); });
+  let html = "", gap = false, n = 0;
+  for (let i = 0; i < rows.length && n < 600; i++) {
+    if (!keep.has(i)) { if (!gap) html += '<div class="gap"><span></span>⋯</div>'; gap = true; continue; }
+    gap = false; n++;
+    const r = rows[i];
+    html += `<div class="${r.sign === "+" ? "add" : r.sign === "-" ? "del" : ""}"><span>${r.sign}</span>${esc(r.text) || " "}</div>`;
+  }
+  return `<div class="ev-diff">${html || '<div class="gap"><span></span>No change</div>'}</div>`;
+}
+function planEvHtml(e, actor) {
+  const entries = e.meta.entries ?? [], open = !S.openEv.has(e.id);   // the plan starts open; a click folds it
+  const mark = { completed: "✓", in_progress: "→", pending: "·" };
+  return `<div class="evl fold" data-act="ev-toggle" data-id="${e.id}" aria-expanded="${open}"><span>${fmtTime(e.at)}</span><span class="k">${SVG(open ? CHEV_D : CHEV_R, 12)}<b>plan</b><i>${esc(e.detail ?? "")}</i></span>${actor}</div>`
+    + (open ? `<div class="ev-plan">${entries.map((x) => `<div class="${esc(x.status)}"><span>${mark[x.status] ?? "·"}</span>${esc(x.content)}</div>`).join("")}</div>` : "");
+}
+const planLine = (t) => (t.plan?.length ? ` · plan ${t.plan.filter((x) => x.status === "completed").length}/${t.plan.length}` : "");
 // Messages and (with the switch on) events of one session, in time order. Pending and queued messages come last.
 function streamHtml(msgs, evs, operator) {
   const items = msgs.map((m) => ({ at: m.at, m })).concat(evs.map((e) => ({ at: e.at, e })));
@@ -1853,7 +1920,10 @@ function renderChat(operator, t, d) {
   let html = operator || !d ? msgs.map((m) => msgHtml(m, operator)).join("")
     : d.sessions.length > 1 ? timelineHtml(t, d) : streamHtml(msgs, S.events ? d.events : [], false);
   if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, operator);
-  if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "tool · " + t.last_tool : "working"))}</div>`;
+  const live = !operator && running && S.events && S.live[t.id];
+  if (live) html += live.kind === "thought" ? `<div class="evl"><span>now</span><span class="k"><span class="sp"></span><b>thinking</b><i>${esc(live.text.trim().split("\n").at(-1))}</i></span><span style="color:${ACTOR.agent}">agent</span></div>`
+    : `<div class="evsay live"><span>now</span><div class="res-md">${md(live.text)}</div><span style="color:${ACTOR.agent}">agent</span></div>`;
+  if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t))}</div>`;
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
@@ -2302,6 +2372,14 @@ const ACTIONS = {
   next: nextWaiting,
   tab: (id) => { S.tab = id; render(); },
   events: (id, el) => { S.events = el.checked; try { localStorage.setItem("switchboard-chat-events", S.events ? "1" : "0"); } catch (e) {} render(); },
+  "ev-loc": (path) => {
+    const t = cur(), proj = S.projects.find((p) => p.id === t.project_id)?.local_path;
+    const inside = (dir) => dir && (path + "/").startsWith(dir.replace(/\/$/, "") + "/") ? path.slice(dir.replace(/\/$/, "").length + 1) : null;
+    const wt = inside(t.worktree_path), pr = wt == null ? inside(proj) : null;
+    if (wt != null) openFile(null, "worktree", wt);
+    else if (pr != null) openFile(null, "project", pr);
+    else toast("info", "Not in this TODO's folders", path);
+  },
   "ev-toggle": (id) => { const k = Number(id); S.openEv.has(k) ? S.openEv.delete(k) : S.openEv.add(k); render(); },
   "sess-toggle": (id) => { S.openSess.has(id) ? S.openSess.delete(id) : S.openSess.add(id); render(); },
   copy: (id, el) => copyText(id, "Copied", `${el.dataset.title ?? "Session id"} ${id}`),
@@ -2453,6 +2531,10 @@ function onEvent(ev) {
     if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   } else if (ev.type === "projects") need("projects");
   else if (ev.type === "terminals" && focusTodo && ev.id === S.sel) need("terms");
+  else if (ev.type === "stream") {
+    if (ev.item) S.live[ev.id] = ev.item; else delete S.live[ev.id];
+    if (focusTodo && ev.id === S.sel && S.events && S.tab === "chat") render();
+  }
 }
 const es = new EventSource(withToken("/api/events"));
 es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.warn(err); } };
