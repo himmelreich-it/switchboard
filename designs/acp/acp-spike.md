@@ -61,3 +61,12 @@ For P1:
   - Item 129's "a pushed message the agent has not read is answered right after the interrupt" under steering plus cancel.
   - `additionalDirectories` (the worktree root and the artifact folder).
 - **The adapter's stderr** is useful for debugging: it logs `[session/create]` timing and turn errors. The app should keep its last lines per TODO.
+
+## P4 probe: config options and slash commands (2026-10-07)
+
+`spike/acp/config-probe.ts` runs the app's own driver against claude-agent-acp.
+
+- Config ids: `mode` (category `mode`), `model` (`model`: `default`, `opus`, `fable`, `sonnet`, `haiku` and full ids), `effort` (`thought_level`: default, low … max), `fast` (`model_config`: on, off), `agent` (no category: default and the user's subagents).
+- **A model switch rewrites the other options.** `haiku` drops `effort` and `fast` and sets the mode to `acceptEdits`; setting `auto` afterwards returns no error but the mode stays `acceptEdits`. Back on `opus`, effort and fast return and the mode stays where it was.
+- The switch takes effect on the next prompt of the same session (the agent answered `claude-haiku-4-5-20251001`, then `claude-opus-5-5`), and survives a `session/resume` in a new process.
+- `available_commands_update` arrives right after `session/new`: 106 commands with `name`, `description` and `input.hint`.

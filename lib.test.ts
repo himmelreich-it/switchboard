@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
-  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission,
+  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -251,4 +251,30 @@ test("laneOf, attentionAfterAnswer and MODES (P3)", () => {
   expect(attentionAfterAnswer(null)).toBe(1);
   expect(MODES[0]).toBe("auto");
   expect(MODES).toContain("default");
+});
+
+test("configView and configChanges: the model first, then what the model left (P4)", () => {
+  const raw = [
+    { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "auto", options: [{ value: "auto", name: "Auto" }] },
+    { id: "model", name: "Model", category: "model", type: "select", currentValue: "default", options: [{ value: "default", name: "Default" }, { value: "haiku", name: "Haiku 4.5" }] },
+    { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "medium", options: [{ group: "g", name: "G", options: [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }] }] },
+    { id: "flag", name: "Flag", type: "boolean", currentValue: true },
+  ];
+  const v = configView(raw);
+  expect(v.map((o) => o.id)).toEqual(["mode", "model", "effort"]);
+  expect(v[2]).toEqual({ id: "effort", name: "Effort", category: "thought_level", value: "medium", options: [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }] });
+  const wanted = { model: "haiku", effort: "low", mode: "plan", agent: "x" };
+  expect(configChanges(v, wanted, true)).toEqual({ set: [["model", "haiku"]], skipped: [] });
+  expect(configChanges(v, wanted, false)).toEqual({ set: [["effort", "low"]], skipped: [["agent", "x"]] });
+  // Haiku has no effort option: the value is skipped, not set.
+  const haiku = v.filter((o) => o.id !== "effort").map((o) => (o.id === "model" ? { ...o, value: "haiku" } : o));
+  expect(configChanges(haiku, wanted, true).set).toEqual([]);
+  expect(configChanges(haiku, wanted, false).skipped).toEqual([["effort", "low"], ["agent", "x"]]);
+  expect(configChanges(v, { effort: "max" }, false).skipped).toEqual([["effort", "max"]]);
+});
+
+test("configIn keeps string values and drops the mode", () => {
+  expect(configIn({ model: "opus", effort: "", mode: "plan", fast: 1 })).toEqual({ model: "opus" });
+  expect(configIn(null)).toEqual({});
+  expect(configIn(["x"])).toEqual({});
 });

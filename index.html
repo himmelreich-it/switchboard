@@ -494,6 +494,15 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .running-line i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-cyan); box-shadow: var(--glow-cyan); }
 .composer { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--border-subtle); background: var(--bg-base); display: flex; flex-direction: column; gap: 8px; }
 .composer-row { display: flex; gap: 8px; align-items: flex-end; }
+/* P4: slash-command completion above the composer */
+.composer { position: relative; }
+.cmd-list { position: absolute; left: 20px; right: 20px; bottom: calc(100% - 4px); z-index: 300; max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-1); box-shadow: var(--shadow-3); }
+.cmd-list[hidden] { display: none; }
+.cmd-list > div { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.cmd-list > div[aria-selected="true"] { background: var(--surface-3); }
+.cmd-list .nm { font-family: var(--font-mono); color: var(--accent-lime); white-space: nowrap; }
+.cmd-list .hint { font-family: var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+.cmd-list .ds { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .composer-row textarea { flex: 1; min-width: 0; }
 .hint-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
 .deliver-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 13px; color: var(--text-secondary); background: var(--tint-blue); border: 1px solid var(--line-blue); border-radius: var(--radius-1); }
@@ -746,6 +755,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           <div class="composer">
             <div id="deliverBar" hidden></div>
             <div id="nsHead" class="ns-head" hidden></div>
+            <div id="cmdList" class="cmd-list" role="listbox" aria-label="Slash commands" hidden></div>
             <div class="composer-row">
               <label class="sr-only" for="composer">Message</label>
               <textarea id="composer" class="mb-textarea" rows="2"></textarea>
@@ -823,6 +833,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           <div class="mb-field"><label class="mb-field__label" for="pPath">Local folder</label><input id="pPath" class="mb-input" autocomplete="off" placeholder="~/code/my-repo"><span id="pPathHint" class="mb-field__hint"></span></div>
           <div class="mb-field"><label class="mb-field__label" for="pPrompt">Agent prompt</label><textarea id="pPrompt" class="mb-textarea" rows="4"></textarea><span class="mb-field__hint">Sent on every launch and resume, after the app contract.</span></div>
           <div class="mb-field" style="max-width:320px"><label class="mb-field__label" for="pMode">Permission mode</label><select id="pMode" class="mb-input"></select><span class="mb-field__hint">For this project's agents. In auto, the agent decides and the app reports what it blocked. In the other modes it asks you on the card and in the chat. A TODO can override this in its Focus header.</span></div>
+          <div id="pConfig" class="row wrap" style="gap:14px; align-items:flex-start"></div>
           <span id="projErr" class="mb-field__error" role="alert"></span>
           <div class="row" style="justify-content:flex-end;"><button type="submit" id="projSave" class="mb-btn mb-btn--primary mb-btn--md" disabled>Save changes</button></div>
         </form>
@@ -1094,6 +1105,14 @@ const waitingList = () => live().filter((t) => laneOf(t) === "waiting" && inFilt
 const MODES = { auto: "Auto", default: "Default (ask)", acceptEdits: "Accept edits", plan: "Plan", bypassPermissions: "Bypass permissions" };
 const modeOptions = (value, projectDefault) => (projectDefault !== undefined ? [["", `Project's (${MODES[projectDefault ?? "auto"] ?? projectDefault})`]] : []).concat(Object.entries(MODES))
   .map(([v, l]) => `<option value="${v}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
+// P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
+// is the TODO's session's as the agent last reported it, else the last one seen from any session (meta).
+const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+const configList = (t) => (t?.config ?? S.meta?.agent_config ?? []).filter((o) => CONFIG_CATEGORIES.includes(o.category));
+const optName = (o, v) => o.options.find((x) => x.value === v)?.name ?? v;
+// One select's options: "" first (the project's value, or the agent's own when the project sets none), then the agent's.
+const configOptions = (o, value, inherited, inheritedFrom) => [["", inherited ? `${inheritedFrom} (${optName(o, inherited)})` : "Agent's default"], ...o.options.map((x) => [x.value, x.name])]
+  .map(([v, l]) => `<option value="${esc(v)}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
 const draftKey = () => (S.sel === "operator" ? "operator" : `todo:${S.sel}`);
 const isDirty = (f) => !!f && f.content != null && f.text !== f.content;
 // Unsaved edits are kept per file (R25): TODO files by id, worktree and project files by root and path.
@@ -1151,7 +1170,11 @@ function acceptFiles(zone, keyOf) {
 
 // ---------- loading (one queue, so a burst of SSE events becomes one fetch per resource) ----------
 const loaders = {
-  async meta() { S.meta = await call("GET", "/api/meta"); },
+  async meta() {
+    const had = JSON.stringify(S.meta?.agent_config ?? null);
+    S.meta = await call("GET", "/api/meta");
+    if (had !== JSON.stringify(S.meta.agent_config) && !projDirty()) fillProjForm();   // the Settings selects come from it
+  },
   async todos() { S.todos = await call("GET", "/api/todos"); },
   async projects() {
     const keep = projDirty();
@@ -1541,7 +1564,8 @@ const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
 function projDirty() {
   const p = selProject();
   if (!p) return !!(pName.value || pPath.value || pPrompt.value);
-  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || pMode.value !== (p.mode ?? "auto");
+  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || pMode.value !== (p.mode ?? "auto")
+    || JSON.stringify(projDefaults()) !== JSON.stringify(Object.fromEntries(Object.entries(p.defaults ?? {}).sort()));
 }
 function fillProjForm() {
   const p = selProject();
@@ -1549,12 +1573,20 @@ function fillProjForm() {
   pPath.value = p?.local_path ?? "";
   pPrompt.value = p?.agent_prompt ?? "";
   pMode.innerHTML = modeOptions(p?.mode ?? "auto");
+  // P4: the agent's options, from the last session seen; before any session there is no list to show.
+  const opts = configList(null);
+  $("pConfig").innerHTML = opts.length
+    ? opts.map((o) => `<div class="mb-field" style="min-width:200px"><label class="mb-field__label" for="pCfg-${esc(o.id)}">${esc(o.name)}</label><select id="pCfg-${esc(o.id)}" class="mb-input" data-cfg="${esc(o.id)}">${configOptions(o, p?.defaults?.[o.id], null)}</select></div>`).join("")
+      + `<span class="mb-field__hint" style="flex-basis:100%">For this project's new and resumed sessions, applied before every turn. A TODO can override them in its Focus header. A value the model does not offer (effort on Haiku) is skipped.</span>`
+    : `<span class="mb-field__hint">Model and effort settings appear once an agent has run here: the lists come from the agent.</span>`;
   S.projErr = "";
 }
+// The Settings selects as {config id: value}, sorted, without the unset ones.
+const projDefaults = () => Object.fromEntries([...$("pConfig").querySelectorAll("select[data-cfg]")].filter((el) => el.value).map((el) => [el.dataset.cfg, el.value]).sort());
 $("projForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const p = selProject();
-  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, mode: pMode.value === "auto" ? null : pMode.value };
+  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, mode: pMode.value === "auto" ? null : pMode.value, defaults: projDefaults() };
   try {
     const saved = await call(p ? "PUT" : "POST", p ? `/api/projects/${p.id}` : "/api/projects", body);
     S.projects = [...S.projects.filter((x) => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name));
@@ -1799,6 +1831,11 @@ function renderFocusHead(operator, t, d, fileOpen) {
     if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, "Copy session id · resume outside with claude --resume")}`;
     // P3: the permission mode of this TODO's runs; "Project's" follows Settings › Projects. A change reaches a live agent at once.
     left += `<span class="sep">·</span><select aria-label="Permission mode" title="Permission mode for this TODO's runs. Auto decides on its own; the other modes ask you here." data-change="todo-mode" data-id="${t.id}">${modeOptions(t.mode, S.projects.find((p) => p.id === t.project_id)?.mode ?? null)}</select>`;
+    // P4: model, effort and the like; "Project's" follows Settings › Projects. A change reaches a live agent at once.
+    // An option the current model lacks (effort on Haiku) is not in the agent's list, so it does not show.
+    const pd = S.projects.find((p) => p.id === t.project_id)?.defaults ?? {};
+    for (const o of configList(t))
+      left += `<span class="sep">·</span><span style="margin-right:4px">${esc(o.name.toLowerCase())}</span><select aria-label="${esc(o.name)}" title="${esc(o.name)} for this TODO's runs${t.config ? ` · now ${esc(optName(o, o.value))}` : ""}" data-change="todo-config" data-id="${t.id}" data-cfg="${esc(o.id)}">${configOptions(o, t.overrides?.[o.id], pd[o.id], "Project's")}</select>`;
     if (t.branch) left += `<span class="sep">·</span><span class="sec">${SVG(BRANCH, 12)}${esc(t.branch)}</span>`;
     left += infoGitHtml(t);
     if (!t.worktree_path && t.status !== "not_started") left += `<span class="sep">·</span><span>project folder, shared with other TODOs</span>`;
@@ -2525,7 +2562,10 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target.closest?.("[data-change]");
   if (el?.dataset.change === "move-project") moveProject(Number(el.dataset.id), Number(el.value));
-  else if (el?.dataset.change === "todo-mode") act(call("PUT", `/api/todos/${el.dataset.id}/mode`, { mode: el.value || null }), "Mode not changed");
+  // A change the live agent did not take (a mode the model lacks) is stored anyway and comes back as a warning.
+  const warn = (r) => r?.warning && toast("warning", "Saved, but the agent did not take it", r.warning);
+  if (el?.dataset.change === "todo-mode") act(call("PUT", `/api/todos/${el.dataset.id}/mode`, { mode: el.value || null }).then(warn), "Mode not changed");
+  else if (el?.dataset.change === "todo-config") act(call("PUT", `/api/todos/${el.dataset.id}/config`, { id: el.dataset.cfg, value: el.value || null }).then(warn), "Setting not changed");
 });
 document.addEventListener("input", (e) => { if (e.target.id === "editFirst" && S.editing) { S.editing.text = e.target.value; if (S.editing.err) { S.editing.err = ""; render(); } } });
 document.addEventListener("keydown", (e) => {
@@ -2533,8 +2573,70 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && modKey(e)) { e.preventDefault(); saveEdit(); }
   else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); S.editing = null; render(); }
 }, true);
-composer.addEventListener("input", () => { saveDraftSoon(draftKey(), composer.value); renderHint(); });
-composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); commit(draftKey(), composer); } });
+composer.addEventListener("input", () => { saveDraftSoon(draftKey(), composer.value); renderHint(); renderCmds(); });
+composer.addEventListener("keydown", (e) => {
+  if (cmdKey(e)) return;
+  if (e.key === "Enter" && modKey(e)) { e.preventDefault(); commit(draftKey(), composer); }
+});
+composer.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== composer) closeCmds(); }, 0));
+
+// P4: slash commands. A message that is just "/" and a name so far opens the agent's commands, filtered by prefix
+// (then by substring); ↑↓ choose, Tab or Enter insert "/name ", Esc closes. The command goes out as plain text,
+// which is how the agent runs it. The list is the live agent's, else the last one seen; refetched after a minute.
+const cmdCache = {};   // TODO id -> {at, list}
+const CMDS = { open: false, items: [], sel: 0 };
+async function commandsFor(id) {
+  const c = cmdCache[id];
+  if (c && Date.now() - c.at < 60_000) return c.list;
+  const list = await call("GET", `/api/todos/${id}/commands`).catch(() => c?.list ?? []);
+  cmdCache[id] = { at: Date.now(), list };
+  return list;
+}
+async function renderCmds() {
+  const id = S.sel, m = composer.value.match(/^\/([^\s]*)$/);
+  if (typeof id !== "number" || !m || composer.selectionStart !== composer.value.length) return closeCmds();
+  const list = await commandsFor(id);
+  if (S.sel !== id || composer.value.match(/^\/([^\s]*)$/)?.[1] !== m[1]) return;   // typed on meanwhile
+  const q = m[1].toLowerCase();
+  const items = [...list.filter((c) => c.name.toLowerCase().startsWith(q)), ...list.filter((c) => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q))].slice(0, 50);
+  if (!items.length) return closeCmds();
+  CMDS.open = true; CMDS.items = items; CMDS.sel = Math.min(CMDS.sel, items.length - 1);
+  drawCmds();
+}
+function drawCmds() {
+  const el = $("cmdList");
+  el.hidden = false;
+  el.innerHTML = CMDS.items.map((c, i) => `<div role="option" id="cmd-${i}" aria-selected="${i === CMDS.sel}" data-cmd="${i}"><span class="nm">/${esc(c.name)}</span>${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}<span class="ds" title="${esc(c.description)}">${esc(c.description)}</span></div>`).join("");
+  composer.setAttribute("aria-activedescendant", `cmd-${CMDS.sel}`);
+  el.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+function closeCmds() {
+  if (!CMDS.open) return;
+  CMDS.open = false; CMDS.sel = 0;
+  $("cmdList").hidden = true;
+  composer.removeAttribute("aria-activedescendant");
+}
+function pickCmd(i) {
+  const c = CMDS.items[i];
+  if (!c) return;
+  composer.value = `/${c.name} `;
+  closeCmds();
+  saveDraftSoon(draftKey(), composer.value);
+  renderHint();
+  composer.focus();
+}
+// The keys the open list takes; true when it took this one.
+function cmdKey(e) {
+  if (!CMDS.open) return false;
+  const n = CMDS.items.length;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { CMDS.sel = (CMDS.sel + (e.key === "ArrowDown" ? 1 : n - 1)) % n; drawCmds(); }
+  else if (e.key === "Tab" || (e.key === "Enter" && !modKey(e) && !e.shiftKey)) pickCmd(CMDS.sel);
+  else if (e.key === "Escape") { e.stopPropagation(); closeCmds(); }
+  else return false;
+  e.preventDefault();
+  return true;
+}
+$("cmdList").addEventListener("mousedown", (e) => { const r = e.target.closest("[data-cmd]"); if (r) { e.preventDefault(); pickCmd(Number(r.dataset.cmd)); } });
 operatorIn.addEventListener("input", () => saveDraftSoon("operator", operatorIn.value));
 operatorIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commit("operator", operatorIn); } });
 newText.addEventListener("input", () => { $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || S.newProject == null || adding; });
@@ -2549,6 +2651,7 @@ newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e))
 newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
 [pName, pPath, pPrompt, pMode].forEach((el) => el.addEventListener("input", renderProjects));
 pMode.addEventListener("change", renderProjects);
+$("pConfig").addEventListener("change", renderProjects);
 
 applyTheme();   // the head script ran before the theme buttons existed; mark the active one
 // The static markup's key labels (hints, the gear's tooltip) are written for macOS.

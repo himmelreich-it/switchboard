@@ -7,6 +7,7 @@ export type Update = acp.SessionUpdate & { _meta?: Record<string, any> };
 export type PermissionRequest = acp.RequestPermissionRequest;
 export type PermissionOutcome = acp.RequestPermissionResponse["outcome"];
 export type McpServer = acp.McpServer;
+export type Command = { name: string; description: string; hint: string | null };
 
 export type Handlers = {
   onUpdate(u: Update): void;
@@ -22,7 +23,11 @@ export type SessionOpts = {
 
 export type Live = {
   sessionId: string;
-  configOptions: any[];
+  // The session's config options (mode, model, effort, …) as the agent last reported them: from session/new or
+  // session/resume, a set_config_option answer, or a config_option_update. A model switch rewrites the others.
+  readonly configOptions: any[];
+  // The agent's slash commands, from its last available_commands_update (empty until the first one).
+  readonly commands: Command[];
   // Resolves when the turn ends: the prompt response is the end of the turn (ACP v1). Rejects on a protocol error or exit.
   prompt(text: string): Promise<acp.StopReason>;
   cancel(): void;
@@ -43,6 +48,7 @@ const withTimeout = <T>(p: Promise<T>, ms: number, what: string) =>
 // One agent process and its ACP connection, initialized. `handlers` may be set later (session/load replays before
 // the caller has a Live), and stays swappable so the same process serves the next turn's run.
 async function spawnAgent(handlers: { h: Handlers | null }, extraEnv: Record<string, string> = {}) {
+  const state = { configOptions: [] as any[], commands: [] as Command[] };
   const proc = Bun.spawn(CLAUDE, { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...extraEnv } });
   let log = "";
   (async () => {
@@ -58,7 +64,15 @@ async function spawnAgent(handlers: { h: Handlers | null }, extraEnv: Record<str
     .onRequest(acp.methods.client.session.requestPermission, async (ctx) => ({
       outcome: handlers.h ? await handlers.h.onPermission(ctx.params) : { outcome: "cancelled" as const },
     }))
-    .onNotification(acp.methods.client.session.update, (ctx) => handlers.h?.onUpdate(ctx.params.update as Update))
+    .onNotification(acp.methods.client.session.update, (ctx) => {
+      const u: any = ctx.params.update;
+      if (u.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions)) state.configOptions = u.configOptions;
+      if (u.sessionUpdate === "current_mode_update")
+        state.configOptions = state.configOptions.map((o) => (o.id === "mode" ? { ...o, currentValue: u.currentModeId } : o));
+      if (u.sessionUpdate === "available_commands_update" && Array.isArray(u.availableCommands))
+        state.commands = u.availableCommands.map((c: any) => ({ name: String(c.name), description: String(c.description ?? ""), hint: c.input?.hint ?? null }));
+      handlers.h?.onUpdate(u as Update);
+    })
     .connect(acp.ndJsonStream(input, proc.stdout as ReadableStream<Uint8Array>));
   proc.exited.then((code) => conn.close(new Error(`the agent process exited (code ${code})${log ? ": " + lastLine(log) : ""}`)));
   try {
@@ -67,7 +81,7 @@ async function spawnAgent(handlers: { h: Handlers | null }, extraEnv: Record<str
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       clientInfo: { name: "switchboard", version: "1" },
     }), INIT_TIMEOUT, "starting the agent");
-    return { proc, conn, init, log: () => log };
+    return { proc, conn, init, state, log: () => log };
   } catch (e) {
     proc.kill();
     throw e;
@@ -79,9 +93,11 @@ const lastLine = (log: string) => log.trim().split("\n").at(-1)!.slice(0, 300);
 function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, configOptions: any[] | null | undefined): Live {
   let alive = true;
   a.proc.exited.then(() => (alive = false));
+  if (configOptions) a.state.configOptions = configOptions;
   return {
     sessionId,
-    configOptions: configOptions ?? [],
+    get configOptions() { return a.state.configOptions; },
+    get commands() { return a.state.commands; },
     async prompt(text) {
       try {
         const r = await a.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: "text", text }] });
@@ -98,7 +114,7 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     },
     async setConfig(configId, value) {
       const r: any = await a.conn.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId, value } as any);
-      if (r?.configOptions) this.configOptions = r.configOptions;
+      if (r?.configOptions) a.state.configOptions = r.configOptions;
     },
     close() {
       if (!alive) return;
