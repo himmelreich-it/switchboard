@@ -24,6 +24,7 @@ if (app.isPackaged && process.platform !== "win32") Object.assign(process.env, l
 const URL = `http://127.0.0.1:${process.env.PORT ?? 4477}`;
 const HOME = process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard");
 const mac = process.platform === "darwin";
+const linux = process.platform === "linux";
 let server, win;
 
 async function waitForServer() {
@@ -35,6 +36,18 @@ async function waitForServer() {
 
 const ICONS = join(import.meta.dirname, "../images/icons");
 const page = (js) => win?.webContents.executeJavaScript(js).catch(() => {});
+
+// The window controls take the title bar's colors, now and after each theme change (the page's sb-theme event).
+// A reload rejects the pending wait; did-finish-load starts a new one.
+const titleBarColors = `(() => { const s = getComputedStyle(document.documentElement);
+  return { color: s.getPropertyValue("--bg-void").trim(), symbolColor: s.getPropertyValue("--text-secondary").trim() }; })()`;
+async function followTheme() {
+  try {
+    win.setTitleBarOverlay(await win.webContents.executeJavaScript(titleBarColors));
+    for (;;) win.setTitleBarOverlay(await win.webContents.executeJavaScript(
+      `new Promise((r) => addEventListener("sb-theme", () => r(${titleBarColors}), { once: true }))`));
+  } catch {}
+}
 
 // Settings… ⌘, (item 122). The edit role keeps ⌘C/⌘V/⌘A working; a custom menu without it drops them.
 function menu() {
@@ -63,9 +76,12 @@ app.whenReady().then(async () => {
   win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 960, minHeight: 600, title: "switchboard", icon: join(ICONS, "flat/switchboard-flat-256.png"),
     backgroundColor: "#0A0813",
-    // macOS: our 40px title bar holds the traffic lights (item 121). ponytail: Windows and Linux keep the native frame.
-    ...(mac ? { titleBarStyle: "hidden", trafficLightPosition: { x: 14, y: 14 } } : {}),
+    // macOS: our 40px title bar holds the traffic lights (item 121). Linux: it holds Electron's window controls, above
+    // its 1px bottom border, and there is no menu bar (the accelerators still work). ponytail: Windows keeps the native frame.
+    ...(mac ? { titleBarStyle: "hidden", trafficLightPosition: { x: 14, y: 14 } }
+      : linux ? { titleBarStyle: "hidden", titleBarOverlay: { color: "#0A0813", symbolColor: "#BDB9DE", height: 39 } } : {}),
   });
+  if (linux) win.webContents.on("did-finish-load", followTheme);
   // Full screen hides the traffic lights, so the page drops the room it leaves for them.
   win.on("enter-full-screen", () => page("document.documentElement.classList.add('fullscreen')"));
   win.on("leave-full-screen", () => page("document.documentElement.classList.remove('fullscreen')"));
