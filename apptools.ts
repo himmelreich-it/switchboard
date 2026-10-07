@@ -21,13 +21,15 @@ export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_t
 type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void } | { kind: "operator" };
 const grants = new Map<string, Grant>();
 
-// A secret for one agent session, and the MCP server entry that carries it. Revoke it when the agent process ends.
+// A secret for one agent process, and the MCP server entry that names it. Revoke it when the agent process ends.
 export function grant(g: Grant): { secret: string; server: McpServerConfig } {
   const secret = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
   grants.set(secret, g);
   return {
     secret,
-    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: secret }] } as McpServerConfig,
+    // The value is expanded by Claude Code from the agent process's environment (runner.ts sets SWITCHBOARD_MCP_SECRET),
+    // because the MCP config reaches the CLI in its argv, which every user on the machine can read in /proc.
+    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: "${SWITCHBOARD_MCP_SECRET}" }] } as McpServerConfig,
   };
 }
 export const revoke = (secret: string) => grants.delete(secret);
