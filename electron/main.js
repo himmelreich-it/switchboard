@@ -70,6 +70,8 @@ app.whenReady().then(async () => {
     cwd: join(import.meta.dirname, ".."),
     stdio: ["pipe", "inherit", "inherit"],
     env: { ...process.env, SWITCHBOARD_PARENT: "electron" },
+    // bun.exe is a console program: launched from the GUI app on Windows it opens its own console window without this.
+    windowsHide: true,
   });
   await waitForServer();
   // The launch token (item 120): the server writes it once its port is bound, also when this window attaches to a running one.
