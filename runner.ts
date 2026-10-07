@@ -276,7 +276,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       if (open && open.no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]);
       addMessage(todoId, "app", cutToTwoLines(`Could not start the run: ${e?.message ?? e}`));
       addEvent(todoId, "error", "app", String(e?.stack ?? e));
-      setTodo(todoId, { status: open?.no === 1 ? "not_started" : statusAfterRun(todoRow(todoId)!.attention) });
+      backToStart(todoId, open);
       return;
     }
     const live = agent.live;
@@ -291,8 +291,11 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
         if (open.no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]);
       } else parkAgent(todoId);
       addEvent(todoId, "interrupted", by ?? "app");
-      setTodo(todoId, { status: open?.no === 1 ? "not_started" : statusAfterRun(todoRow(todoId)!.attention) });
+      backToStart(todoId, open);
       if (todoRow(todoId)!.removed_at) closeAgent(todoId);
+      // Stopped by the user: the messages stay as they were (item 129). Removed and restored meanwhile: the restore's
+      // queued message goes out now, as it would after a run that had started.
+      else if (by !== "user" && !shuttingDown) deliver(todoId, "queued messages");
       return;
     }
     if (open) {
@@ -365,6 +368,15 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     // Queued messages, including ones committed during the turn, and after a Stop (item 129), go out now.
     if (!shuttingDown) deliver(todoId, "queued messages");
   })();
+}
+
+// A run that never sent its prompt: status as before. A first session that did not open goes back to not started, and
+// the messages committed while it was starting (queued, because it showed running) become pending, as before a Start.
+function backToStart(todoId: number, open: { no: number } | null) {
+  if (open?.no === 1) {
+    db.run("UPDATE messages SET state = 'pending' WHERE todo_id = ? AND state = 'queued'", [todoId]);
+    setTodo(todoId, { status: "not_started" });
+  } else setTodo(todoId, { status: statusAfterRun(todoRow(todoId)!.attention) });
 }
 
 // ---------- operator ----------
