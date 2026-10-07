@@ -875,7 +875,7 @@ const STATUS = {
 };
 const LANES = [
   { st: "waiting", label: "Waiting on you", color: "var(--accent-amber)", hint: keys("Handle one, then ⌘J for the next."), empty: "Nothing needs you right now." },
-  { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit are queued until the turn ends.", empty: "No agent is running." },
+  { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit reach the agent after its next tool call.", empty: "No agent is running." },
   { st: "idle", label: "Idle", color: "var(--text-secondary)", hint: "Resting state. Remove a TODO when it is done.", empty: "No idle TODOs." },
 ];
 const AUTHOR = {
@@ -1731,6 +1731,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
     status = badge(st.label, st.badge, true);
     if (t.status === "not_started") actions += btn("Start", "start", { v: "primary", id: t.id });
     if (t.attention && !running) actions += btn("Clear attention", "clear", { id: t.id });
+    if (running) actions += `<span title="Interrupt the agent, like Esc in Claude Code. A message it has not read yet is answered next." style="display:flex">${btn("Stop", "stop", { id: t.id })}</span>`;
     if (t.session_id) actions += `<span title="${running ? "Available once the agent stops" : `End session ${n} and start session ${n + 1} with a hand-over`}" style="display:flex">${btn("New session", "open-ns", { id: t.id, dis: running })}</span>`;
     actions += `<button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO" title="Remove TODO">${SVG(TRASH, 15)}</button>`;
     left = t.status === "not_started" && S.projects.length > 1
@@ -1889,7 +1890,7 @@ function renderHint() {
   const handed = ns && [t.worktree_path && "worktree", t.pr_number || t.pr ? `PR #${t.pr?.number ?? t.pr_number}` : "", ...(S.detail?.files ?? []).map((f) => f.name)].filter(Boolean);
   const hint = operator ? "Delivers now. The operator acts only on what you ask."
     : !t ? "" : ns ? (handed.length ? "Handed over: " + handed.join(", ") : "Nothing to hand over yet.")
-    : t.status === "running" ? "Agent is running. Your message is queued and delivered once, when the turn ends."
+    : t.status === "running" ? "Agent is running. It reads your message after its next tool call."
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
   const key = operator ? null : draftKey();   // the operator chat takes no attachments
@@ -2309,6 +2310,7 @@ const ACTIONS = {
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
   clear: (id) => act(call("POST", `/api/todos/${id}/clear-attention`)),
   deliver: (id) => act(call("POST", `/api/todos/${id}/deliver`), "Not delivered"),
+  stop: (id) => act(call("POST", `/api/todos/${id}/stop`), "Can't stop"),
   remove: (id) => askRemove(Number(id)),
   restore: (id) => doRestore(Number(id)),
   "new-session": newSession,

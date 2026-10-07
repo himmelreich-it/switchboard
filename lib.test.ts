@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, usageStep,
+  contextFile, cutToTwoLines, deliveryAction, inputChannel, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, usageStep,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
@@ -41,11 +41,24 @@ test("withAttachments and safeFileName", () => {
 
 test("deliveryAction and statusAfterRun", () => {
   expect(deliveryAction("not_started")).toBe("pending");
-  expect(deliveryAction("running")).toBe("queue");
+  expect(deliveryAction("running")).toBe("push");
   expect(deliveryAction("idle")).toBe("send");
   expect(deliveryAction("waiting")).toBe("send");
   expect(statusAfterRun(1)).toBe("waiting");
   expect(statusAfterRun(false)).toBe("idle");
+});
+
+test("inputChannel yields the first prompt and pushes until closed", async () => {
+  const ch = inputChannel("first");
+  const got: string[] = [];
+  const reading = (async () => { for await (const x of ch.stream) got.push(x); })();
+  expect(ch.push("second")).toBe(true);
+  await Bun.sleep(1);
+  expect(ch.push("third")).toBe(true);
+  ch.close();
+  expect(ch.push("late")).toBe(false);
+  await reading;
+  expect(got).toEqual(["first", "second", "third"]);
 });
 
 test("isInside", () => {
