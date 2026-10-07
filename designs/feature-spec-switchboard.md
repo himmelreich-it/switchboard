@@ -376,7 +376,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - The numbers update after each run. The window size comes from the SDK, not a fixed 200k. New session clears them, and the meter is hidden until there is usage.
 125. A toast can carry one action button. Clicking it runs the action and closes the toast. A toast with an action stays 6.5 seconds, others 4.2 seconds, and at most 3 toasts show at once. The actions are Open on "Started" (opens the TODO's Focus view) and Go to chat on "Added to message" (opens the Chat tab with the draft).
 59. Keyboard shortcuts:
-    - The ⌘ shortcuts below use Alt instead on Linux and Windows, where Ctrl belongs to the browser and the terminal (Alt+J, Alt+,, Alt+E, Alt+↵, Alt+⇧↵ …); Ctrl does not trigger them there. The page tells from `navigator.platform` and shows its key hints and tooltips the same way. Paste stays the system's key, so the image hints read Ctrl+V there.
+    - The ⌘ shortcuts below use Alt instead on Linux and Windows, where Ctrl belongs to the browser and the terminal (Alt+J, Alt+E, Alt+↵, Alt+⇧↵ and Alt+, for Settings); Ctrl does not trigger them there. The page tells from `navigator.platform` and shows its key hints and tooltips the same way. Paste stays the system's key, so the image hints read Ctrl+V there.
     - `N` switches to the backlog and focuses the New TODO input (item 93). `B` toggles Board and Backlog, only when not typing, with no modifier, on the TODOs screen and not in the Focus view.
     - `⌘J` opens the next TODO waiting on you.
     - `⌘,` opens Settings, also while typing.
