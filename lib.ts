@@ -121,6 +121,36 @@ export function deliveryAction(status: Status): "pending" | "queue" | "send" {
 // A run that ended (normally, with an error, or by interrupt) leaves the TODO waiting while the flag is raised.
 export const statusAfterRun = (attention: boolean | number): Status => (attention ? "waiting" : "idle");
 
+// ---------- permissions (P3) ----------
+
+// The permission modes a project or TODO can run in: Claude's `mode` config option (spike finding 9), `auto` first
+// because it is the default. The agent itself may not offer all of them (runner.ts reports when one cannot be set).
+export const MODES = ["auto", "default", "acceptEdits", "plan", "bypassPermissions"] as const;
+
+// An open session/request_permission, as stored in todos.permission and shown on the card and in the chat: the tool
+// call's name, title, kind, input and diffs (as in a transcript row), plus the agent's options. One per TODO at most,
+// because the agent blocks until it is answered.
+export type Permission = {
+  id: string; name: string; title: string; kind: string; input: any; diffs: ToolMeta["diffs"];
+  options: { optionId: string; name: string; kind: string }[]; at: string;
+};
+export function permissionOf(r: { toolCall: any; options: any[] }, at: string): Permission {
+  const m = toolMeta(null, r.toolCall ?? {});
+  return {
+    id: m.toolCallId, name: m.name, title: m.title, kind: m.kind, input: m.input, diffs: m.diffs, at,
+    options: (r.options ?? []).map((o) => ({ optionId: String(o.optionId), name: String(o.name ?? o.optionId), kind: String(o.kind ?? "") })),
+  };
+}
+
+// The board lane: a running TODO with an open permission request needs the user now, so it shows in Waiting.
+// Otherwise the lane is the status. The tab title and ⌘J count lanes, not statuses.
+export const laneOf = (t: { status: Status; permission: Permission | null }): Status =>
+  t.status === "running" && t.permission ? "waiting" : t.status;
+
+// Answering a request clears the attention flag only when the request raised it (`attention_by`); a flag the agent
+// or a denial raised stays until they or the user clear it.
+export const attentionAfterAnswer = (by: string | null): 0 | 1 => (by === "permission" ? 0 : 1);
+
 // True when `path` is inside `dir` (not `dir` itself). Both must already be absolute and resolved.
 export function isInside(path: string, dir: string): boolean {
   const rel = relative(dir, path);
@@ -348,6 +378,10 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("events", "session_no", "INTEGER");
   addColumn("events", "meta", "TEXT");           // a result's duration and tool count (JSON)
   addColumn("files", "session_no", "INTEGER");
+  addColumn("projects", "mode", "TEXT");         // permission mode for the project's agents (null: auto), P3
+  addColumn("todos", "mode", "TEXT");            // a TODO's own permission mode (null: the project's)
+  addColumn("todos", "permission", "TEXT");      // the open permission request (JSON Permission), while the agent waits
+  addColumn("todos", "attention_by", "TEXT");    // who raised the attention flag: agent, app or permission
   // A started TODO without a sessions row was one session, which becomes session 1: every TODO of a database from
   // before sessions, and one started by an older build on this database. Runs on every start, so it catches both.
   db.transaction(() => {

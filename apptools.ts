@@ -80,7 +80,7 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     description: "Raise the attention flag (raised: true) when you need the user; clear it (raised: false) once their reply resolves it.",
     inputSchema: { raised: z.boolean() },
   }, async ({ raised }) => {
-    setTodo(todoId, { attention: raised ? 1 : 0 });
+    setTodo(todoId, { attention: raised ? 1 : 0, attention_by: raised ? "agent" : null });
     addEvent(todoId, raised ? "attention raised" : "attention cleared", "agent");
     return ok();
   });

@@ -497,6 +497,15 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .composer-row textarea { flex: 1; min-width: 0; }
 .hint-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
 .deliver-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 13px; color: var(--text-secondary); background: var(--tint-blue); border: 1px solid var(--line-blue); border-radius: var(--radius-1); }
+/* P3: a permission request the agent waits on, in the chat (full) and on the card (compact) */
+.perm { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-secondary); background: var(--tint-amber); border: 1px solid var(--line-amber); border-radius: var(--radius-1); }
+.perm .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.perm .head b { color: var(--accent-amber); font-family: var(--font-display); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.perm .head .t { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); overflow-wrap: anywhere; }
+.perm .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.perm > .ev-box { margin: 0; max-height: 200px; overflow: auto; }
+.perm > .ev-diff { max-height: 260px; overflow: auto; }
+.card .perm { padding: 8px 10px; gap: 6px; }
 .file-row { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); }
 .file-row svg { flex: none; }
 .file-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
@@ -813,6 +822,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           </div>
           <div class="mb-field"><label class="mb-field__label" for="pPath">Local folder</label><input id="pPath" class="mb-input" autocomplete="off" placeholder="~/code/my-repo"><span id="pPathHint" class="mb-field__hint"></span></div>
           <div class="mb-field"><label class="mb-field__label" for="pPrompt">Agent prompt</label><textarea id="pPrompt" class="mb-textarea" rows="4"></textarea><span class="mb-field__hint">Sent on every launch and resume, after the app contract.</span></div>
+          <div class="mb-field" style="max-width:320px"><label class="mb-field__label" for="pMode">Permission mode</label><select id="pMode" class="mb-input"></select><span class="mb-field__hint">For this project's agents. In auto, the agent decides and the app reports what it blocked. In the other modes it asks you on the card and in the chat. A TODO can override this in its Focus header.</span></div>
           <span id="projErr" class="mb-field__error" role="alert"></span>
           <div class="row" style="justify-content:flex-end;"><button type="submit" id="projSave" class="mb-btn mb-btn--primary mb-btn--md" disabled>Save changes</button></div>
         </form>
@@ -1077,7 +1087,13 @@ const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.to
 // A saved filter for a project that is gone (or not loaded yet) shows all, without forgetting the pick.
 const filterProject = () => S.projects.find((p) => String(p.id) === S.filter) ?? null;
 const inFilter = (t) => { const p = filterProject(); return !p || t.project_id === p.id; };
-const waitingList = () => live().filter((t) => t.status === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+// P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf).
+const laneOf = (t) => (t.status === "running" && t.permission ? "waiting" : t.status);
+const waitingList = () => live().filter((t) => laneOf(t) === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+// The permission modes (lib.ts MODES); the UI's labels for them.
+const MODES = { auto: "Auto", default: "Default (ask)", acceptEdits: "Accept edits", plan: "Plan", bypassPermissions: "Bypass permissions" };
+const modeOptions = (value, projectDefault) => (projectDefault !== undefined ? [["", `Project's (${MODES[projectDefault ?? "auto"] ?? projectDefault})`]] : []).concat(Object.entries(MODES))
+  .map(([v, l]) => `<option value="${v}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
 const draftKey = () => (S.sel === "operator" ? "operator" : `todo:${S.sel}`);
 const isDirty = (f) => !!f && f.content != null && f.text !== f.content;
 // Unsaved edits are kept per file (R25): TODO files by id, worktree and project files by root and path.
@@ -1525,19 +1541,20 @@ const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
 function projDirty() {
   const p = selProject();
   if (!p) return !!(pName.value || pPath.value || pPrompt.value);
-  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt;
+  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || pMode.value !== (p.mode ?? "auto");
 }
 function fillProjForm() {
   const p = selProject();
   pName.value = p?.name ?? "";
   pPath.value = p?.local_path ?? "";
   pPrompt.value = p?.agent_prompt ?? "";
+  pMode.innerHTML = modeOptions(p?.mode ?? "auto");
   S.projErr = "";
 }
 $("projForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const p = selProject();
-  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value };
+  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, mode: pMode.value === "auto" ? null : pMode.value };
   try {
     const saved = await call(p ? "PUT" : "POST", p ? `/api/projects/${p.id}` : "/api/projects", body);
     S.projects = [...S.projects.filter((x) => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name));
@@ -1599,7 +1616,7 @@ function render() {
 
 function renderHeader() {
   const lv = live();
-  const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
+  const n = lv.filter((t) => laneOf(t) === "waiting").length;   // R41: only "waiting on you" counts, not unread
   const ideas = lv.filter((t) => t.status === "not_started").length;   // all projects, whatever the filter (item 63)
   $("cBacklog").textContent = ideas;
   $("cBoard").textContent = lv.length - ideas;
@@ -1651,7 +1668,7 @@ function renderOverview() {
   const lv = live(), fp = filterProject();
   const isIdea = (t) => t.status === "not_started";
   const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
-  const waits = (list) => list.filter((t) => t.status === "waiting").length;
+  const waits = (list) => list.filter((t) => laneOf(t) === "waiting").length;
   // Item 90: chip counts and "in other projects" count the current view; the amber square and "waiting" count all live TODOs.
   const chip = (id, label, list, all, dot) => {
     const w = waits(all);
@@ -1669,7 +1686,7 @@ function renderOverview() {
     return setHtml($("lanes"), `<div class="board-empty"><span>No started TODOs${fp ? " in " + esc(fp.name) : ""}. ${ideas ? `${plural(ideas, "idea")} in the backlog.` : "The backlog is empty too."}</span><span class="push">${btn("Open backlog", "board", { id: "backlog" })}</span></div>`);
   }
   setHtml($("lanes"), LANES.map((l) => {
-    const list = rows.filter((t) => t.status === l.st);
+    const list = rows.filter((t) => laneOf(t) === l.st);
     const empty = l.st === "waiting" && fp ? `Nothing in ${esc(fp.name)} needs you.` : l.empty;
     return `<section class="lane" aria-label="${esc(l.label)}">
       <div class="lane-head"><span class="lane-dot" style="background:${l.color}"></span><h2 class="lane-label">${l.label}</h2><span class="lane-count" style="color:${l.color}">${list.length}</span><span class="small">${l.hint}</span></div>
@@ -1694,21 +1711,37 @@ function backlogHtml(rows, fp) {
   }).join("")}</div></section>`;
 }
 
+// P3: the open permission request: what the agent wants to do, and one button per option the agent offers.
+// `full` (the chat) adds the command or the diff; the card keeps to the title.
+function permHtml(t, full) {
+  const p = t.permission;
+  if (!p) return "";
+  const title = p.title || p.input?.command || p.name;
+  const cmd = p.input?.command && p.input.command !== title ? p.input.command : "";
+  const body = !full ? "" : p.diffs?.length ? p.diffs.map((d) => `<span class="lbl">${esc(d.oldText == null ? "New file" : "Change")} · <span style="text-transform:none">${esc(d.path)}</span></span>${diffHtml(d)}`).join("")
+    : cmd ? `<pre class="ev-box">${esc(cmd)}</pre>` : Object.keys(p.input ?? {}).length && !p.title ? `<pre class="ev-box">${esc(JSON.stringify(p.input, null, 1))}</pre>` : "";
+  const opt = (o) => btn(o.name, "perm", { v: o.kind.startsWith("allow") ? "primary" : "secondary", id: `${t.id}|${o.optionId}` });
+  return `<div class="perm" data-act="noop" aria-label="Permission request"><div class="head"><b>Needs approval</b><span class="t">${esc(p.name)}${title && title !== p.name ? " · " + esc(title) : ""}</span></div>${body}
+    <div class="opts">${p.options.map(opt).join("")}</div></div>`;
+}
+const permBadge = (t) => (t.status === "running" && t.permission ? badge("Needs approval", "amber", true) : "");
+
 function cardHtml(t) {
-  const st = STATUS[t.status] ?? STATUS.idle;
+  const st = STATUS[t.status] ?? STATUS.idle, lane = laneOf(t);
   const lm = t.last_message, la = t.last_agent_message;
   // an app message (denial, failed run) is usually why the TODO needs you, so it wins over the last agent line
   const last = lm && lm.author === "app" ? lm : la ? { ...la, author: "agent" } : lm;
   const who = !last ? "" : last.author.startsWith("user") ? (t.message_count === 1 ? "You · first instruction" : "You") : AUTHOR[last.author]?.[0] ?? last.author;
   const foot = t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t)
     : t.file_count ? `${plural(t.file_count, "file")} · ${t.file_names.join(", ")}` : "No files";
-  return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${t.status === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${st.edge}">
-    <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
+  return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${lane === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${lane === "waiting" ? STATUS.waiting.edge : st.edge}">
+    <div class="card-badges">${badge(st.label, st.badge, true)}${permBadge(t)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     <div class="card-meta"><span class="proj">${esc(t.project_name)}</span>${t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : ""}</div>
     ${cardGitHtml(t)}
+    ${t.status === "running" ? permHtml(t, false) : ""}
     ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || last.files)}</span></div>` : ""}
-    <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span><span class="open-label">${t.status === "waiting" ? "Answer" : "Open"} →</span></div>
+    <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span><span class="open-label">${lane === "waiting" ? "Answer" : "Open"} →</span></div>
   </div>`;
 }
 
@@ -1754,7 +1787,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
     const st = STATUS[t.status] ?? STATUS.idle, running = t.status === "running";
     const sessions = d?.sessions ?? [], n = sessions.length || t.session_count || 0;
     title = t.title;
-    status = badge(st.label, st.badge, true);
+    status = badge(st.label, st.badge, true) + permBadge(t);
     if (t.status === "not_started") actions += btn("Start", "start", { v: "primary", id: t.id });
     if (t.attention && !running) actions += btn("Clear attention", "clear", { id: t.id });
     if (running) actions += `<span title="Interrupt the agent, like Esc in Claude Code. A message it has not read yet is answered next." style="display:flex">${btn("Stop", "stop", { id: t.id })}</span>`;
@@ -1764,6 +1797,8 @@ function renderFocusHead(operator, t, d, fileOpen) {
       ? `<select aria-label="Project" title="Project · editable until you start" data-change="move-project" data-id="${t.id}">${S.projects.map((p) => `<option value="${p.id}"${p.id === t.project_id ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`
       : `<span class="sec">${esc(t.project_name)}</span>`;
     if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, "Copy session id · resume outside with claude --resume")}`;
+    // P3: the permission mode of this TODO's runs; "Project's" follows Settings › Projects. A change reaches a live agent at once.
+    left += `<span class="sep">·</span><select aria-label="Permission mode" title="Permission mode for this TODO's runs. Auto decides on its own; the other modes ask you here." data-change="todo-mode" data-id="${t.id}">${modeOptions(t.mode, S.projects.find((p) => p.id === t.project_id)?.mode ?? null)}</select>`;
     if (t.branch) left += `<span class="sep">·</span><span class="sec">${SVG(BRANCH, 12)}${esc(t.branch)}</span>`;
     left += infoGitHtml(t);
     if (!t.worktree_path && t.status !== "not_started") left += `<span class="sep">·</span><span>project folder, shared with other TODOs</span>`;
@@ -1923,7 +1958,8 @@ function renderChat(operator, t, d) {
   const live = !operator && running && S.events && S.live[t.id];
   if (live) html += live.kind === "thought" ? `<div class="evl"><span>now</span><span class="k"><span class="sp"></span><b>thinking</b><i>${esc(live.text.trim().split("\n").at(-1))}</i></span><span style="color:${ACTOR.agent}">agent</span></div>`
     : `<div class="evsay live"><span>now</span><div class="res-md">${md(live.text)}</div><span style="color:${ACTOR.agent}">agent</span></div>`;
-  if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t))}</div>`;
+  if (!operator && running && t.permission) html += permHtml(t, true);
+  else if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t))}</div>`;
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
@@ -2387,6 +2423,9 @@ const ACTIONS = {
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
   clear: (id) => act(call("POST", `/api/todos/${id}/clear-attention`)),
+  // P3: "<todo id>|<option id>"; the server answers 409 when the request is gone (the agent moved on or was stopped)
+  perm: (id) => { const at = id.indexOf("|"); act(call("POST", `/api/todos/${id.slice(0, at)}/permission`, { optionId: id.slice(at + 1) }), "Not answered"); },
+  noop: () => {},   // a click inside the permission card must not open the TODO
   deliver: (id) => act(call("POST", `/api/todos/${id}/deliver`), "Not delivered"),
   stop: (id) => act(call("POST", `/api/todos/${id}/stop`), "Can't stop"),
   remove: (id) => askRemove(Number(id)),
@@ -2486,6 +2525,7 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target.closest?.("[data-change]");
   if (el?.dataset.change === "move-project") moveProject(Number(el.dataset.id), Number(el.value));
+  else if (el?.dataset.change === "todo-mode") act(call("PUT", `/api/todos/${el.dataset.id}/mode`, { mode: el.value || null }), "Mode not changed");
 });
 document.addEventListener("input", (e) => { if (e.target.id === "editFirst" && S.editing) { S.editing.text = e.target.value; if (S.editing.err) { S.editing.err = ""; render(); } } });
 document.addEventListener("keydown", (e) => {
@@ -2507,7 +2547,8 @@ addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files"
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
 newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
-[pName, pPath, pPrompt].forEach((el) => el.addEventListener("input", renderProjects));
+[pName, pPath, pPrompt, pMode].forEach((el) => el.addEventListener("input", renderProjects));
+pMode.addEventListener("change", renderProjects);
 
 applyTheme();   // the head script ran before the theme buttons existed; mark the active one
 // The static markup's key labels (hints, the gear's tooltip) are written for macOS.
