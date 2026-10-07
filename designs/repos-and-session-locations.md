@@ -104,8 +104,11 @@ The one new visual idea the design needs is a **location mark**: a compact, reco
 5. New session composer with the repo pick open, and the same composer prefilled by an agent proposal.
 6. Backlog TODO with no first repo (thinking only).
 7. A location whose folder is gone (worktree removed after merge): how it greys out on the card, in Files and in the Terminal menu.
+8. Board card of a TODO whose session has ended with a waiting proposal (`next: sb-web`), next to one without.
+9. Repo filter row with a two-repo TODO counted under both chips, so the chip counts add up to more than the total.
+10. Settings › Repos with two or three repos (and the colour or glyph field, if D1 lands on one).
 
-## 6. Data and migration (implementation sketch)
+## 6. Data and migration (implementation sketch, not for the design)
 
 - Rename table `projects` → `repos` (or keep the table and rename in UI only; renaming is cleaner for the operator's tools and the code).
 - `todos.project_id` → `todos.first_repo_id` (nullable).
