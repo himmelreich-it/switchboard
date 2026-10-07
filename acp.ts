@@ -1,5 +1,5 @@
 // The agent driver: Agent Client Protocol (ACP) over stdio, one agent process per live session.
-// Nothing about TODOs here; runner.ts decides what a session is for. See designs/acp-design.md and acp-spike.md.
+// Nothing about TODOs here; runner.ts decides what a session is for. See designs/acp/ (investigation, design, spike).
 import * as acp from "@agentclientprotocol/sdk";
 import { dirname, join } from "node:path";
 
