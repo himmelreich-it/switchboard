@@ -266,7 +266,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .gh-btn { height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; flex: none; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .gh-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .gh-btn > span { width: 6px; height: 6px; flex: none; border: 1px solid currentColor; }
-/* a three-way choice in an inset box (theme; Board/Backlog and file roots use it too) */
+/* a three-way choice in an inset box (theme; file roots use it too) */
 .seg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; flex: none; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
 .seg > button { height: 28px; padding: 0 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 .seg > button:hover { color: var(--text-primary); }
@@ -291,12 +291,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .operator-body { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 
-/* Board / Backlog (items 86-88) */
-.bb-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: -12px; }
-.bb-switch { height: 40px; }
-.bb-switch > button { height: 32px; padding: 0 16px; font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; }
-.bb-switch .n { font-family: var(--font-mono); font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--text-muted); }
-.bb-switch .wait { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
+/* Backlog list (item 88) */
 .bl-list { display: flex; flex-direction: column; gap: 1px; background: var(--border-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); overflow: hidden; }
 .bl-row { display: grid; grid-template-columns: minmax(88px, 128px) minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 10px 12px 10px 16px; background: var(--surface-1); cursor: pointer; transition: background var(--fast); }
 .bl-row:hover { background: var(--surface-2); }
@@ -636,7 +631,8 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
   <div class="tl-space"></div>
   <div class="brand"><span class="brand-mark"></span><span>SWITCH<b>BOARD</b></span></div>
   <nav class="views" role="tablist" aria-label="Views">
-    <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="todos"><span id="waitTodos" class="wait" hidden></span><span>TODOs</span><span id="cTodos" class="n">0</span></div>
+    <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="backlog" title="Not started yet · B"><span>Backlog</span><span id="cBacklog" class="n">0</span></div>
+    <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="board" title="Started work · B"><span id="waitTodos" class="wait" hidden></span><span>Board</span><span id="cBoard" class="n">0</span></div>
     <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="removed"><span>Removed</span><span id="cRemoved" class="n">0</span></div>
     <div role="tab" tabindex="0" class="navtab" id="settingsTab" data-act="nav" data-id="settings" hidden><span>Settings</span><span role="button" tabindex="0" class="x" data-act="close-settings" aria-label="Close settings" title="Close · Esc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
   </nav>
@@ -651,11 +647,6 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
   <!-- Overview -->
   <div id="vOverview" class="view" hidden>
     <div class="ov">
-      <div class="bb-row">
-        <div id="bbSwitch" class="seg bb-switch" role="radiogroup" aria-label="TODO view"></div>
-        <span class="row small"><span class="kbd">B</span>switch</span>
-        <span id="bbHint" class="push small"></span>
-      </div>
       <div class="top-grid">
         <div id="newPanel" class="panel panel--lime">
           <div class="row"><span class="panel-title">New TODO</span><span class="push row small"><span class="kbd">N</span>focus</span></div>
@@ -1230,6 +1221,7 @@ function nextWaiting() {
   if (other) toast("info", "Nothing waiting in " + filterProject().name, `${other} waiting in other projects. Show all to see them.`);
   else toast("success", "Nothing waiting on you", "Back to the overview.");
 }
+function openBoard(v) { S.focusFrom = null; goOverview(); setBoard(v); }
 function setBoard(v) {
   S.board = v;
   try { localStorage.setItem("switchboard-board-view", v); } catch (e) {}
@@ -1580,12 +1572,15 @@ function render() {
 function renderHeader() {
   const lv = live();
   const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
-  $("cTodos").textContent = lv.filter((t) => t.status !== "not_started").length;   // started work only; the backlog counts on its switch
+  const ideas = lv.filter((t) => t.status === "not_started").length;   // all projects, whatever the filter (item 63)
+  $("cBacklog").textContent = ideas;
+  $("cBoard").textContent = lv.length - ideas;
   $("waitTodos").hidden = !n;
   $("waitTodos").title = `${n} waiting on you`;
   $("cRemoved").textContent = S.todos.length - lv.length;
   $("settingsTab").hidden = !S.settingsOpen;
-  document.querySelectorAll("nav.views .navtab").forEach((b) => b.setAttribute("aria-selected", b.dataset.id === S.view));
+  const tab = S.view !== "todos" ? S.view : S.mode === "focus" ? S.focusFrom ?? S.board : S.board;   // Focus stays under the side it came from
+  document.querySelectorAll("nav.views .navtab").forEach((b) => b.setAttribute("aria-selected", b.dataset.id === tab));
   $("gearBtn").classList.toggle("mb-iconbtn--outline", S.view === "settings");
   const errT = lv.find((t) => (t.git || t.pr_number) && t.gh_error), ghErr = errT?.gh_error, gh = $("ghBtn");
   gh.hidden = !ghErr;
@@ -1629,11 +1624,6 @@ function renderOverview() {
   const isIdea = (t) => t.status === "not_started";
   const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
   const waits = (list) => list.filter((t) => t.status === "waiting").length;
-  const anyWait = waits(lv);
-  // Item 86: the switch counts follow the project filter; the amber square counts every project, as waiting does everywhere.
-  setHtml($("bbSwitch"), [["board", "Board", lv.filter((t) => !isIdea(t) && inFilter(t)).length, "Started work · B"], ["backlog", "Backlog", lv.filter((t) => isIdea(t) && inFilter(t)).length, "Not started yet · B"]]
-    .map(([id, label, n, title]) => `<button type="button" role="radio" aria-checked="${S.board === id}" tabindex="${S.board === id ? 0 : -1}" data-act="board" data-id="${id}" data-fk="board:${id}" title="${title}">${id === "board" && anyWait ? '<span class="wait"></span>' : ""}<span>${label}</span><span class="n">${n}</span></button>`).join(""));
-  $("bbHint").textContent = backlog ? "Not started. Nothing launches until you start it." : "Started work. Ideas wait in the backlog.";
   // Item 90: chip counts and "in other projects" count the current view; the amber square and "waiting" count all live TODOs.
   const chip = (id, label, list, all, dot) => {
     const w = waits(all);
@@ -2299,7 +2289,9 @@ function renderProjects() {
 
 // ---------- events ----------
 const ACTIONS = {
-  nav: (id) => (id === "todos" && S.view === "todos" ? goOverview() : setView(id)),
+  // Backlog and Board: from Settings or Removed, the tab Focus sits under returns to Focus; otherwise to that side's overview.
+  nav: (id) => (id !== "board" && id !== "backlog" ? setView(id)
+    : S.view !== "todos" && S.mode === "focus" && id === (S.focusFrom ?? S.board) ? setView("todos") : openBoard(id)),
   open: (id) => select(Number(id)),
   // a chat file chip opens the file in Files › TODO files
   "open-operator": () => select("operator"),
@@ -2395,16 +2387,17 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if ((e.key === "Enter" || e.key === " ") && !typing && e.target.matches?.('[role="button"][data-act], [role="tab"][data-act], [role="treeitem"][data-act]')) { e.preventDefault(); return e.target.click(); }
-  // Arrow keys move the choice inside a radio group (theme, filter chips, Board/Backlog, file roots).
+  // Arrow keys move the choice inside a radio group (theme, filter chips, file roots).
   if (/^Arrow/.test(e.key) && e.target.matches?.('[role="radio"]')) {
     const all = [...e.target.closest('[role="radiogroup"]').querySelectorAll('[role="radio"]:not([disabled])')];
     const next = all[(all.indexOf(e.target) + (/Right|Down/.test(e.key) ? 1 : all.length - 1)) % all.length];
     if (next) { e.preventDefault(); next.click(); (document.querySelector(`[data-fk="${CSS.escape(next.dataset.fk ?? "")}"]`) ?? next).focus(); }
     return;
   }
-  if (!typing && !mod && !e.altKey && k === "b" && S.view === "todos" && S.mode === "overview") { e.preventDefault(); return setBoard(S.board === "board" ? "backlog" : "board"); }
+  // B: toggles Board and Backlog on the overview; from Removed or Settings it returns to the side last shown.
+  if (!typing && !mod && !e.altKey && k === "b" && !(S.view === "todos" && S.mode === "focus")) { e.preventDefault(); return openBoard(S.view !== "todos" ? S.board : S.board === "board" ? "backlog" : "board"); }
   // N: the New TODO card lives in the backlog, so it switches there first (item 93).
-  if (!typing && !mod && !e.altKey && k === "n") { e.preventDefault(); S.focusFrom = null; goOverview(); setBoard("backlog"); newText.focus(); }
+  if (!typing && !mod && !e.altKey && k === "n") { e.preventDefault(); openBoard("backlog"); newText.focus(); }
 });
 
 // <select> in rendered markup: data-change names the action, like data-act for clicks.
