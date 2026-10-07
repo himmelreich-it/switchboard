@@ -790,7 +790,7 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({});
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session)$/)) && method === "POST") {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session|stop)$/)) && method === "POST") {
     const id = Number(m[1]);
     const action = m[2];
 
@@ -864,6 +864,10 @@ async function api(req: Request, path: string): Promise<Response> {
         setDraft(`todo:${id}`, "");
         deliver(id, "restore");
       }
+    } else if (action === "stop") {
+      // Like Esc in Claude Code. A message pushed but not yet taken in is answered right after.
+      if (!isRunning(liveTodo(id).id)) return fail("the agent is not running", 409);
+      interrupt(id, "user");
     } else if (action === "deliver") {
       if (isRunning(liveTodo(id).id)) return fail("the agent is running; queued messages go out when it stops", 409);
       deliver(id, "deliver");

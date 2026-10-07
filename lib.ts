@@ -86,9 +86,43 @@ export function safeFileName(name: string): string {
 }
 
 // What a committed message does, by the TODO's status:
-// not started -> stored until start; running -> queued until the run ends; idle or waiting -> sent now.
-export function deliveryAction(status: Status): "pending" | "queue" | "send" {
-  return status === "not_started" ? "pending" : status === "running" ? "queue" : "send";
+// not started -> stored until start; running -> pushed into the run; idle or waiting -> sent now.
+export function deliveryAction(status: Status): "pending" | "push" | "send" {
+  return status === "not_started" ? "pending" : status === "running" ? "push" : "send";
+}
+
+// The streaming prompt of one run: the first prompt, then whatever is pushed while it runs. Claude Code takes a pushed
+// message in after its next tool call, or as one more turn when the turn already ended. The run closes the input on its
+// first result; from then on push() returns false and the caller queues the message for the next run. The CLI still
+// answers what was pushed before the close, so nothing pushed is lost.
+export function inputChannel<T>(first: T) {
+  const items = [first];
+  let closed = false;
+  let wake: (() => void) | null = null;
+  async function* stream() {
+    while (true) {
+      while (items.length) yield items.shift()!;
+      if (closed) return;
+      await new Promise<void>((r) => (wake = r));
+      wake = null;
+    }
+  }
+  return {
+    stream: stream(),
+    get open() {
+      return !closed;
+    },
+    push(item: T) {
+      if (closed) return false;
+      items.push(item);
+      wake?.();
+      return true;
+    },
+    close() {
+      closed = true;
+      wake?.();
+    },
+  };
 }
 
 // A run that ended (normally, with an error, or by interrupt) leaves the TODO waiting while the flag is raised.
