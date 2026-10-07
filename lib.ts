@@ -151,6 +151,42 @@ export const laneOf = (t: { status: Status; permission: Permission | null }): St
 // or a denial raised stays until they or the user clear it.
 export const attentionAfterAnswer = (by: string | null): 0 | 1 => (by === "permission" ? 0 : 1);
 
+// ---------- config options (P4) ----------
+
+// A session config option as the UI shows it: the agent's option with its choices flattened (ACP allows groups).
+export type ConfigOption = { id: string; name: string; category: string | null; value: string; options: { value: string; name: string }[] };
+export function configView(raw: any[]): ConfigOption[] {
+  return (raw ?? []).filter((o) => o?.type === "select" && o.id).map((o) => ({
+    id: String(o.id), name: String(o.name ?? o.id), category: o.category ?? null, value: String(o.currentValue ?? ""),
+    options: (o.options ?? []).flatMap((x: any) => x.options ?? [x]).map((x: any) => ({ value: String(x.value), name: String(x.name ?? x.value) })),
+  }));
+}
+
+// The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config).
+// The permission mode has its own setting (P3); options without a category (Claude's `agent`) are left to the agent.
+export const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+
+// What to set for the wanted values ({config id: value}, the project's defaults under the TODO's own): the changes
+// against the agent's current options, and the values it does not offer (effort on a model without it). `models`
+// picks the model-category options only, or every other one: a model switch rewrites the others (P4 probe), so
+// runner.ts sets the model first and the rest against the options that switch left.
+export function configChanges(current: ConfigOption[], wanted: Record<string, string>, models: boolean) {
+  const set: [string, string][] = [], skipped: [string, string][] = [];
+  for (const [id, value] of Object.entries(wanted)) {
+    const o = current.find((c) => c.id === id);
+    if (id === "mode" || (o?.category === "model") !== models) continue; // an option the agent lacks: the second pass
+    if (!o || !o.options.some((x) => x.value === value)) skipped.push([id, value]);
+    else if (o.value !== value) set.push([id, value]);
+  }
+  return { set, skipped };
+}
+
+// A {config id: value} object from a request body or a column: string values only, empty ones dropped.
+export function configIn(v: unknown): Record<string, string> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([k, x]) => k !== "mode" && typeof x === "string" && x !== "").map(([k, x]) => [k, x as string]));
+}
+
 // True when `path` is inside `dir` (not `dir` itself). Both must already be absolute and resolved.
 export function isInside(path: string, dir: string): boolean {
   const rel = relative(dir, path);
@@ -382,6 +418,9 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("todos", "mode", "TEXT");            // a TODO's own permission mode (null: the project's)
   addColumn("todos", "permission", "TEXT");      // the open permission request (JSON Permission), while the agent waits
   addColumn("todos", "attention_by", "TEXT");    // who raised the attention flag: agent, app or permission
+  addColumn("todos", "config", "TEXT");          // the session's config options as the agent last reported them (JSON ConfigOption[]), P4
+  addColumn("todos", "overrides", "TEXT");       // the TODO's own config values, {config id: value} (JSON)
+  addColumn("projects", "defaults", "TEXT");     // the project's config values for its agents, {config id: value} (JSON)
   // A started TODO without a sessions row was one session, which becomes session 1: every TODO of a database from
   // before sessions, and one started by an older build on this database. Runs on every start, so it catches both.
   db.transaction(() => {

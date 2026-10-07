@@ -7,7 +7,7 @@ Date: 2026-10-07. This follows `acp-investigation.md` and your answers there:
 
 Everything below targets **stable ACP v1**. The P0 results are in `designs/acp/acp-spike.md`. Every check passed except pushing a message into a running turn (item 20), which is mixed: neither ACP path matches today's behaviour. See that file. The facts in §2 of the investigation come from reading the adapter's source, not from running it. Phase P0 verifies them before any spec change, which matches the spec's "verified in the spike" convention.
 
-## Status (2026-10-07): next is P4
+## Status (2026-10-07): next is P5
 
 Work happens on branch `feature/acp`, which is not merged into `main`.
 
@@ -17,8 +17,8 @@ Work happens on branch `feature/acp`, which is not merged into `main`.
 | P1 Claude parity | done | `acp.ts`, `apptools.ts`, `runner.ts` on ACP; spec items 20, 28, 30, 49–51, 110, 113, 128, 129 rewritten |
 | P2 Live view | done | Transcript (spec item 130): `say`, `thought`, `tool` and `plan` rows, live text over SSE `stream` events |
 | P3 Permissions | done | Spec items 131 and 132: mode per project and per TODO, `request_permission` on the card and in the chat, Waiting-lane rule, `attention_by` |
-| **P4 Config** | **next** | See §7 (mode is done in P3; model, effort, project defaults and slash commands remain) |
-| P5 Multi-agent | open | See §9 |
+| P4 Config | done | Spec items 133 and 134: model, effort and fast per project and per TODO (model first, then the rest, then the mode), slash-command completion in the composer |
+| **P5 Multi-agent** | **next** | See §9 |
 | P6 Claude terminals with app tools | optional | See §10 |
 
 **Decisions taken:**
