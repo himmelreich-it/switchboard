@@ -2387,7 +2387,8 @@ document.addEventListener("keydown", (e) => {
     if (next) { e.preventDefault(); next.click(); (document.querySelector(`[data-fk="${CSS.escape(next.dataset.fk ?? "")}"]`) ?? next).focus(); }
     return;
   }
-  if (!typing && !mod && !e.altKey && k === "b" && S.view === "todos" && S.mode === "overview") { e.preventDefault(); return setBoard(S.board === "board" ? "backlog" : "board"); }
+  // B: toggles Board and Backlog on the overview; from Removed or Settings it returns to the side last shown.
+  if (!typing && !mod && !e.altKey && k === "b" && !(S.view === "todos" && S.mode === "focus")) { e.preventDefault(); return openBoard(S.view !== "todos" ? S.board : S.board === "board" ? "backlog" : "board"); }
   // N: the New TODO card lives in the backlog, so it switches there first (item 93).
   if (!typing && !mod && !e.altKey && k === "n") { e.preventDefault(); openBoard("backlog"); newText.focus(); }
 });
