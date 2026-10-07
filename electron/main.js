@@ -18,13 +18,14 @@ function loginShellEnv() {
     return {};
   }
 }
-// ponytail: Windows has no login shell to read; the app inherits the environment it was started with.
+// Windows has no login shell to read; the app inherits the environment it was started with (PATH from the user's settings).
 if (app.isPackaged && process.platform !== "win32") Object.assign(process.env, loginShellEnv());
 
 const URL = `http://127.0.0.1:${process.env.PORT ?? 4477}`;
 const HOME = process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard");
 const mac = process.platform === "darwin";
 const linux = process.platform === "linux";
+const windows = process.platform === "win32";
 let server, win;
 
 async function waitForServer() {
@@ -76,12 +77,12 @@ app.whenReady().then(async () => {
   win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 960, minHeight: 600, title: "switchboard", icon: join(ICONS, "flat/switchboard-flat-256.png"),
     backgroundColor: "#0A0813",
-    // macOS: our 40px title bar holds the traffic lights (item 121). Linux: it holds Electron's window controls, above
-    // its 1px bottom border, and there is no menu bar (the accelerators still work). ponytail: Windows keeps the native frame.
+    // macOS: our 40px title bar holds the traffic lights (item 121). Linux and Windows: it holds Electron's window
+    // controls, above its 1px bottom border, and there is no menu bar (the accelerators still work).
     ...(mac ? { titleBarStyle: "hidden", trafficLightPosition: { x: 14, y: 14 } }
-      : linux ? { titleBarStyle: "hidden", titleBarOverlay: { color: "#0A0813", symbolColor: "#BDB9DE", height: 39 } } : {}),
+      : { titleBarStyle: "hidden", titleBarOverlay: { color: "#0A0813", symbolColor: "#BDB9DE", height: 39 } }),
   });
-  if (linux) win.webContents.on("did-finish-load", followTheme);
+  if (linux || windows) win.webContents.on("did-finish-load", followTheme);
   // Full screen hides the traffic lights, so the page drops the room it leaves for them.
   win.on("enter-full-screen", () => page("document.documentElement.classList.add('fullscreen')"));
   win.on("leave-full-screen", () => page("document.documentElement.classList.remove('fullscreen')"));
