@@ -1,13 +1,14 @@
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
+import type { ServerWebSocket, Subprocess } from "bun";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  ghOutcome, parseGitStatus, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, uniqueSlug,
+  contextFile, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type Pr, type Status,
 } from "./lib";
-import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, start, stopAll } from "./runner";
+import { CONTRACT, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, newSession, start, stopAll, worktreeRoot } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 const HOST = "127.0.0.1";
@@ -21,44 +22,21 @@ export const HOME = realpathSync(process.env.SWITCHBOARD_HOME ?? join(homedir(),
 const dbPath = join(HOME, "db.sqlite");
 const fresh = !existsSync(dbPath);
 export const db = new Database(dbPath);
-db.exec(`
-CREATE TABLE IF NOT EXISTS projects (
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL,
-  agent_prompt TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS todos (
-  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), title TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('not_started','running','waiting','idle')), attention INTEGER NOT NULL DEFAULT 0,
-  session_id TEXT, worktree_path TEXT, pr_number INTEGER, last_tool TEXT, last_read_at TEXT,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
-CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY, todo_id INTEGER,
-  author TEXT NOT NULL CHECK (author IN ('user','agent','user via operator','operator','app')), body TEXT NOT NULL,
-  state TEXT NOT NULL CHECK (state IN ('pending','queued','delivered')), file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT);
-CREATE TABLE IF NOT EXISTS drafts (key TEXT PRIMARY KEY, body TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE);
-CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL,
-  actor TEXT NOT NULL CHECK (actor IN ('user','agent','app','operator')), detail TEXT, at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
-CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
-CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
-`);
-// Databases made before set_pr existed.
-if (!db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'pr_number'").get()) db.exec("ALTER TABLE todos ADD COLUMN pr_number INTEGER");
+migrateDb(db);
 
 export type Todo = {
   id: number; project_id: number; title: string; status: Status; attention: number; session_id: string | null;
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
-  removed_at: string | null; removed_by: string | null;
+  removed_at: string | null; removed_by: string | null; ctx: string | null;
 };
+export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null };
 export type Project = { id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string };
 
 export const now = () => new Date().toISOString();
 export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = ?").get(id) as Todo | null;
 export const projectRow = (id: number) => db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null;
-export const filesOf = (todoId: number) => db.query("SELECT id, path FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string }[];
+export const filesOf = (todoId: number) =>
+  db.query("SELECT id, path, session_no FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null }[];
 export const artifactDir = (slug: string, todoId: number) => join(HOME, "data", slug, String(todoId));
 export const attachmentsOf = (messageId: number) =>
   db.query("SELECT id, name, path FROM attachments WHERE message_id = ? ORDER BY id").all(messageId) as { id: number; name: string; path: string }[];
@@ -111,18 +89,25 @@ export function setTodo(id: number, fields: Partial<Todo>, touch = true) {
   db.run(`UPDATE todos SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`, [...keys.map((k) => f[k]), id]);
   changed(id);
 }
+// The live session's number (items 68, 77): agent and app messages, events and files belong to the session they
+// happen in; a user message gets its session when it is delivered (take() in runner.ts).
+export const liveSessionNo = (todoId: number | null) =>
+  todoId === null ? null : ((db.query("SELECT MAX(no) AS n FROM sessions WHERE todo_id = ?").get(todoId) as any)?.n ?? null) as number | null;
+export const sessionsOf = (todoId: number) =>
+  db.query("SELECT no, session_id, started_at, ended_at FROM sessions WHERE todo_id = ? ORDER BY no").all(todoId) as Session[];
 export function addMessage(todoId: number | null, author: string, body: string, state = "delivered", fileId: number | null = null) {
   const at = now();
   const id = Number(db.run(
-    "INSERT INTO messages (todo_id, author, body, state, file_id, committed_at, delivered_at) VALUES (?,?,?,?,?,?,?)",
-    [todoId, author, body, state, fileId, at, state === "delivered" ? at : null],
+    "INSERT INTO messages (todo_id, author, body, state, file_id, committed_at, delivered_at, session_no) VALUES (?,?,?,?,?,?,?,?)",
+    [todoId, author, body, state, fileId, at, state === "delivered" ? at : null, state === "delivered" ? liveSessionNo(todoId) : null],
   ).lastInsertRowid);
   if (todoId !== null) db.run("UPDATE todos SET updated_at = ? WHERE id = ?", [at, todoId]);
   changed(todoId);
   return id;
 }
-export function addEvent(todoId: number | null, kind: string, actor: string, detail: string | null = null) {
-  db.run("INSERT INTO events (todo_id, kind, actor, detail, at) VALUES (?,?,?,?,?)", [todoId, kind, actor, detail, now()]);
+export function addEvent(todoId: number | null, kind: string, actor: string, detail: string | null = null, meta: object | null = null) {
+  db.run("INSERT INTO events (todo_id, kind, actor, detail, at, session_no, meta) VALUES (?,?,?,?,?,?,?)",
+    [todoId, kind, actor, detail, now(), liveSessionNo(todoId), meta && JSON.stringify(meta)]);
   changed(todoId);
 }
 
@@ -233,6 +218,9 @@ SELECT t.*, p.name AS project_name,
   (SELECT COUNT(*) FROM messages m WHERE m.todo_id = t.id) AS message_count,
   (SELECT COUNT(*) FROM messages m WHERE m.todo_id = t.id AND m.state = 'queued') AS queued_count,
   (SELECT COUNT(*) FROM messages m WHERE m.todo_id = t.id AND m.state = 'pending') AS pending_count,
+  (SELECT COUNT(*) FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.todo_id = t.id AND m.state = 'pending') AS pending_attachments,
+  (SELECT COUNT(*) FROM sessions s WHERE s.todo_id = t.id) AS session_count,
+  (SELECT author FROM messages m WHERE m.todo_id = t.id ORDER BY m.id LIMIT 1) AS creator,
   EXISTS (SELECT 1 FROM messages m WHERE m.todo_id = t.id AND m.author = 'agent'
           AND (t.last_read_at IS NULL OR m.committed_at > t.last_read_at)) AS unread,
   EXISTS (SELECT 1 FROM drafts d WHERE d.key = 'todo:' || t.id) AS has_draft,
@@ -248,7 +236,7 @@ FROM todos t JOIN projects p ON p.id = t.project_id`;
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -258,7 +246,7 @@ export async function summaries(where = "1", args: any[] = []) {
       ...r, attention: !!r.attention, unread: !!r.unread, has_draft: !!r.has_draft,
       last_message: r.last_message ? JSON.parse(r.last_message) : null,
       last_agent_message: r.last_agent_message ? JSON.parse(r.last_agent_message) : null,
-      file_names: names, file_count: names.length,
+      file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null,
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
     };
@@ -266,18 +254,43 @@ export async function summaries(where = "1", args: any[] = []) {
 }
 
 function messageOut(id: number) {
-  const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, f.path AS file_path
+  const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, m.session_no, f.path AS file_path
     FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.id = ?`).get(id) as any;
   const { file_path, ...rest } = m;
   return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name, path }) => ({ id, name, size: Bun.file(path).size })) };
 }
 
-function fileOut(f: { id: number; path: string }) {
+function fileOut(f: { id: number; path: string; session_no: number | null }) {
   try {
-    return { id: f.id, name: basename(f.path), path: f.path, lines: readFileSync(f.path, "utf8").trimEnd().split("\n").length, mtime: statSync(f.path).mtimeMs };
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines: readFileSync(f.path, "utf8").trimEnd().split("\n").length, mtime: statSync(f.path).mtimeMs };
   } catch {
-    return { id: f.id, name: basename(f.path), path: f.path, lines: null, mtime: null }; // deleted on disk
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines: null, mtime: null }; // deleted on disk
   }
+}
+
+// Item 85: every file in the artifact folder is a TODO file, also one written from a terminal. Files no session
+// registered get session_no NULL ("added outside a session"). uploads/ (attachments) and terminal/ (context) are skipped.
+// Symlinks are skipped: they could point the editor at files outside the folder, or loop.
+// ponytail: stops after 500 files; an artifact folder holds plans and notes, not a checkout.
+function registerDiskFiles(t: Todo) {
+  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  if (!existsSync(dir)) return;
+  const found: string[] = [];
+  const walk = (d: string, top: boolean) => {
+    let names: string[];
+    try { names = readdirSync(d); } catch { return; }
+    for (const n of names) {
+      if (found.length >= 500 || n.startsWith(".") || (top && (n === "uploads" || n === "terminal"))) continue;
+      const p = join(d, n);
+      try {
+        const st = lstatSync(p);
+        if (st.isDirectory()) walk(p, false);
+        else if (st.isFile()) found.push(p);
+      } catch {}
+    }
+  };
+  walk(realpathSync(dir), true);
+  for (const p of found) db.run("INSERT OR IGNORE INTO files (todo_id, path) VALUES (?, ?)", [t.id, p]);
 }
 
 async function projectOut(p: Project) {
@@ -357,6 +370,173 @@ function uploadsIn(v: unknown): Upload[] {
   return v;
 }
 
+// ---------- worktree and project files (items 101-110) ----------
+
+// A request names a root and a path relative to it. The real path must lie inside the project's local folder or its
+// worktree root (item 110), so the worktree skill's symlinks into the main folder open and nothing else does.
+function rootDir(t: Todo, root: string) {
+  const base = root === "worktree" ? t.worktree_path : root === "project" ? projectRow(t.project_id)!.local_path : null;
+  if (!base || !existsSync(base)) throw httpError(404, root === "worktree" ? "this TODO has no worktree on disk" : "unknown root");
+  return base;
+}
+function fsTarget(t: Todo, root: string, rel: string, write = false) {
+  const p = projectRow(t.project_id)!;
+  const base = rootDir(t, root);
+  if (typeof rel !== "string" || !rel || isAbsolute(rel)) throw httpError(400, "path must be relative to the root");
+  const lexical = resolve(base, rel);
+  if (!isInside(lexical, resolve(base))) throw httpError(403, `${rel} is outside the ${root}`);
+  // A link whose target is missing would make a write create that target, wherever it points.
+  if (!existsSync(lexical)) { let link = false; try { link = lstatSync(lexical).isSymbolicLink(); } catch {} if (link) throw httpError(403, `${rel} is a link to a missing file`); }
+  const real = existsSync(lexical) ? realpathSync(lexical) : join(realpathSync(dirname(lexical)), basename(lexical));
+  const allowed = [realpathSync(p.local_path), realpathSync(worktreeRoot(p.local_path))];
+  if (!allowed.some((d) => isInside(real, d))) throw httpError(403, `${rel} points outside the project`);
+  if (write && (rel.split("/").includes(".git") || real.split("/").includes(".git"))) throw httpError(403, "writes inside .git/ are refused");
+  return { base, real };
+}
+// The base the marks and Diff compare with: the merge base of HEAD with origin/HEAD, else HEAD.
+async function diffBase(dir: string) {
+  const mb = await sh(["git", "-C", dir, "merge-base", "HEAD", "origin/HEAD"]);
+  if (mb.ok) return { sha: mb.out, label: "merge-base" };
+  const head = await sh(["git", "-C", dir, "rev-parse", "HEAD"]);
+  return head.ok ? { sha: head.out, label: "HEAD" } : null;
+}
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i;
+const MAX_TEXT = 2 * 1024 * 1024;
+// ponytail: a whole read per request; fine for source files, the 2 MB cut keeps big files out of the JSON.
+function fileFacts(real: string) {
+  const st = statSync(real);
+  if (!st.isFile()) throw httpError(400, "not a file");
+  const image = IMAGE_EXT.test(real) && !/\.svg$/i.test(real);
+  if (image || st.size > MAX_TEXT) return { size: st.size, mtime: st.mtimeMs, image, large: !image, binary: false, content: null };
+  const buf = readFileSync(real);
+  const binary = buf.subarray(0, 8192).includes(0);
+  return { size: st.size, mtime: st.mtimeMs, image, large: false, binary, content: binary ? null : buf.toString("utf8") };
+}
+
+// ---------- terminals (items 111-120) ----------
+
+// Kept in memory only: a terminal ends with its tab, its TODO's removal or the app (item 115).
+type Term = {
+  id: number; todoId: number; kind: "shell" | "claude"; root: "worktree" | "project"; cwd: string; no: number; message: string;
+  title: string | null; proc: Subprocess | null; exited: boolean; code: number | null; signal: string | null;
+  buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<{ tid: number }>>; cols: number; rows: number; fresh: boolean;
+};
+const terms = new Map<number, Term>();
+const termNos = new Map<string, number>();   // "todo:kind" -> last number; numbers only count up (Shell 1, Shell 2, ...)
+let termSeq = 0;
+const TERM_BUF = 256 * 1024;   // scrollback replayed when a page attaches
+export const TERM_UNSUPPORTED = process.platform === "win32" ? "Terminals are not supported on Windows yet."
+  : !versionAtLeast(Bun.version, "1.3.5") ? `Terminals need Bun 1.3.5 or newer. This server runs Bun ${Bun.version}.` : null;
+const termOut = (x: Term) => ({ id: x.id, kind: x.kind, root: x.root, cwd: x.cwd, no: x.no, title: x.title, exited: x.exited, code: x.code, signal: x.signal });
+const termsOf = (todoId: number) => [...terms.values()].filter((x) => x.todoId === todoId);
+const enc8 = new TextEncoder(), dec8 = new TextDecoder();
+
+// Item 114: the TODO as a Claude terminal reads it, rewritten at each launch.
+async function writeContext(t: Todo) {
+  const [s] = await summaries("t.id = ?", [t.id]);
+  const msgs = db.query("SELECT author, body, committed_at AS at, session_no FROM messages WHERE todo_id = ? ORDER BY id").all(t.id) as any[];
+  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  const g = s.git, pr = s.pr;
+  const text = contextFile({
+    title: s.title, project: s.project_name, status: s.status, first: msgs[0]?.body ?? "", worktree: s.worktree_path, branch: s.branch,
+    git: g ? [g.commits != null && `${g.commits} commits`, g.changed && `${g.changed} changed`, g.untracked && `${g.untracked} untracked`,
+      g.push === "none" ? "not pushed" : g.push === "unpushed" ? `${g.unpushed} unpushed` : g.push].filter(Boolean).join(" · ") : null,
+    pr: pr ? `#${pr.number} ${pr.state}${pr.draft ? " (draft)" : ""} · ${pr.url}` : s.pr_number ? `#${s.pr_number}` : null,
+    sessions: sessionsOf(t.id), messages: msgs, files: filesOf(t.id).map((f) => f.path),
+  });
+  mkdirSync(join(dir, "terminal"), { recursive: true });
+  writeFileSync(join(dir, "terminal", "context.md"), text);
+}
+
+function termSend(x: Term, data: Uint8Array | string) { for (const ws of x.sockets) ws.send(data); }
+async function spawnTerm(x: Term) {
+  const t = todoRow(x.todoId)!;
+  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  mkdirSync(dir, { recursive: true });
+  let cmd: string[];
+  if (x.kind === "claude") {
+    const claude = Bun.which("claude");
+    if (!claude) throw httpError(400, "claude is not on PATH");
+    await writeContext(t);
+    if (terms.get(x.id) !== x || x.proc) return;   // closed, or restarted twice, while the context file was written
+    // Run directly with its arguments, not through a shell, so the first message needs no quoting.
+    // `--add-dir` takes every folder after it, so `--` ends it before the first message.
+    cmd = [claude, "--add-dir", dir, ...(x.message ? ["--", x.message] : [])];
+  } else cmd = [process.env.SWITCHBOARD_SHELL || process.env.SHELL || "/bin/zsh", "-l"];
+  const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
+  delete env.SWITCHBOARD_PARENT;   // a `bun server.ts` started in the terminal must not take this server's stdin rule
+  Object.assign(x, { exited: false, code: null, signal: null, buf: [], bufLen: 0, title: null });
+  let proc: Subprocess;
+  try { proc = Bun.spawn(cmd, {
+    cwd: x.cwd, env,
+    terminal: {
+      cols: x.cols, rows: x.rows,
+      data: (_term, data) => {
+        x.buf.push(data); x.bufLen += data.length;
+        while (x.bufLen > TERM_BUF && x.buf.length > 1) x.bufLen -= x.buf.shift()!.length;
+        const title = parseOscTitle(dec8.decode(data));
+        if (title !== null && title !== x.title) { x.title = title; emit({ type: "terminals", id: x.todoId }); }
+        termSend(x, data);
+      },
+    },
+  }); } catch (e: any) {
+    // e.g. the worktree was deleted after a merge: the tab shows the failure instead of a terminal with no process
+    x.exited = true;
+    emit({ type: "terminals", id: x.todoId });
+    throw httpError(400, `could not start ${cmd[0]}: ${e.message}`);
+  }
+  x.proc = proc;
+  emit({ type: "terminals", id: x.todoId });
+  // The exit code comes from the process; the PTY's own exit callback only reports that the stream closed.
+  proc.exited.then((code) => {
+    if (x.proc !== proc) return;
+    x.exited = true;
+    x.signal = proc.signalCode ?? null;
+    x.code = x.signal ? null : code;
+    termSend(x, JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
+    emit({ type: "terminals", id: x.todoId });
+  });
+}
+function killTerm(x: Term) {
+  const p = x.proc;
+  x.proc = null;
+  try { p?.kill("SIGHUP"); p?.terminal?.close(); } catch {}
+}
+export function closeTerms(todoId: number | null) {
+  for (const x of [...terms.values()]) if (todoId === null || x.todoId === todoId) {
+    killTerm(x);
+    for (const ws of x.sockets) ws.close();
+    terms.delete(x.id);
+  }
+  if (todoId !== null) emit({ type: "terminals", id: todoId });
+}
+const termWs = {
+  open(ws: ServerWebSocket<{ tid: number }>) {
+    const x = terms.get(ws.data.tid);
+    if (!x) return ws.close(4404, "no such terminal");
+    x.sockets.add(ws);
+    // Reset, then the recent output, then live output; the first resize makes full-screen programs redraw.
+    ws.send(enc8.encode("\x1bc"));
+    for (const b of x.buf) ws.send(b);
+    if (x.exited) ws.send(JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
+    x.fresh = true;
+  },
+  message(ws: ServerWebSocket<{ tid: number }>, msg: string | Buffer) {
+    const x = terms.get(ws.data.tid);
+    if (!x?.proc || x.exited) return;
+    if (typeof msg !== "string") return void x.proc.terminal?.write(msg);
+    const c = JSON.parse(msg);
+    if (c.type !== "resize") return;
+    const cols = Math.max(2, Math.min(500, c.cols | 0)), rows = Math.max(2, Math.min(300, c.rows | 0));
+    // A page that attaches with the same size would not send SIGWINCH, so vim or Claude Code would not redraw.
+    if (x.fresh && cols === x.cols && rows === x.rows) x.proc.terminal?.resize(cols, rows - 1);
+    x.fresh = false;
+    x.cols = cols; x.rows = rows;
+    x.proc.terminal?.resize(cols, rows);
+  },
+  close(ws: ServerWebSocket<{ tid: number }>) { terms.get(ws.data.tid)?.sockets.delete(ws); },
+};
+
 const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
 
 async function api(req: Request, path: string): Promise<Response> {
@@ -377,7 +557,8 @@ async function api(req: Request, path: string): Promise<Response> {
   if (path === "/api/meta" && method === "GET") {
     const w = db.query("SELECT COUNT(*) AS n FROM todos WHERE status = 'waiting' AND removed_at IS NULL").get() as any;
     const last = getMeta("last_project_id");
-    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n });
+    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n,
+      shell: basename(process.env.SWITCHBOARD_SHELL || process.env.SHELL || "zsh") });
   }
 
   // ----- projects -----
@@ -424,7 +605,42 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!instruction) return fail("the first instruction is required");
     const id = createTodo(Number(body.project_id), instruction, "user", uploadsIn(body.attachments));
     setMeta("last_project_id", String(Number(body.project_id)));
+    if (body.start === true) start(id);   // Add & start (item 92): one request, so the TODO never sits in the backlog
     return json((await summaries("t.id = ?", [id]))[0]);
+  }
+
+  // Items 94-97: the first instruction and the project can change until the TODO starts.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/edit$/)) && method === "POST") {
+    const t = liveTodo(Number(m[1]));
+    if (t.status !== "not_started") return fail("this TODO has started; its first instruction and project are fixed now", 409);
+    const first = db.query("SELECT id, body FROM messages WHERE todo_id = ? ORDER BY id LIMIT 1").get(t.id) as { id: number; body: string };
+    const instruction = body.instruction === undefined ? null : String(body.instruction).trim();
+    if (instruction === "") return fail("the first instruction is required");
+    const to = body.project_id === undefined ? null : projectRow(Number(body.project_id));
+    if (body.project_id !== undefined && !to) return fail("choose a project");
+    const from = projectRow(t.project_id)!;
+    db.transaction(() => {
+      if (instruction !== null && instruction !== first.body) {
+        db.run("UPDATE messages SET body = ? WHERE id = ?", [instruction, first.id]);
+        // The title is the first instruction until an agent sets one (item 7).
+        setTodo(t.id, t.title === first.body ? { title: instruction } : {});
+        addEvent(t.id, "edited", "user", "first instruction");
+      }
+      if (to && to.id !== from.id) {
+        if (termsOf(t.id).some((x) => !x.exited)) throw httpError(409, "close this TODO's terminals first; they run in the old project's folders");
+        // Nothing else is stored per project before the start: the artifact folder holds only the attachments.
+        // HOME is a real path, so the stored paths start with these folders exactly.
+        const a = artifactDir(from.slug, t.id), b = artifactDir(to.slug, t.id);
+        if (existsSync(a)) { mkdirSync(join(b, ".."), { recursive: true }); renameSync(a, b); }
+        for (const tbl of ["attachments", "files"])
+          db.run(`UPDATE ${tbl} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`, [b + "/", a.length + 2, a.length + 1, a + "/"]);
+        setTodo(t.id, { project_id: to.id });
+        addEvent(t.id, "edited", "user", `project ${from.name} → ${to.name}\nMoved data/${from.slug}/${t.id}/ → data/${to.slug}/${t.id}/\nAttachment paths rewritten.`);
+        emit({ type: "projects" });
+      }
+    })();
+    emit({ type: "todos" });
+    return json((await summaries("t.id = ?", [t.id]))[0]);
   }
 
   if ((m = path.match(/^\/api\/todos\/(\d+)\/files\/(\d+)$/))) {
@@ -434,7 +650,8 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!f) return fail("no such file", 404);
     if (method === "GET") {
       if (!existsSync(f.path)) return fail(`${f.path} no longer exists on disk`, 404);
-      return json({ id: f.id, name: basename(f.path), path: f.path, content: readFileSync(f.path, "utf8"), mtime: statSync(f.path).mtimeMs });
+      if (new URL(req.url).searchParams.has("raw")) return new Response(Bun.file(f.path), { headers: { "content-security-policy": "sandbox" } });
+      return json({ id: f.id, name: basename(f.path), path: f.path, ...fileFacts(f.path) });
     }
     if (method === "PUT") {
       if (typeof body.content !== "string") return fail("content is required");
@@ -442,8 +659,102 @@ async function api(req: Request, path: string): Promise<Response> {
       const mtime = existsSync(f.path) ? statSync(f.path).mtimeMs : null;
       if (!body.force && mtime !== body.base_mtime) return json({ error: "changed", mtime }, 409);
       writeFileSync(f.path, body.content); // the agent is not told; the user hands work back with a chat message
-      changed(id);
+      addEvent(id, "file saved", "user", `${basename(f.path)} · agent not notified`);
       return json({ mtime: statSync(f.path).mtimeMs });
+    }
+  }
+
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(tree|fs|fs\/raw|diff)$/))) {
+    const t = todoOr404(Number(m[1])), what = m[2];
+    const url = new URL(req.url), root = url.searchParams.get("root") ?? body?.root, rel = url.searchParams.get("path") ?? body?.path;
+    if (what === "tree" && method === "GET") {
+      const base = rootDir(t, String(root));
+      const b = await diffBase(base);
+      const [files, others, diff] = await Promise.all([
+        sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]),
+        sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--others", "--exclude-standard", "-z"]),
+        b ? sh(["git", "-C", base, "--no-optional-locks", "diff", "--relative", "--name-status", "-z", b.sha]) : Promise.resolve({ ok: true, out: "" }),
+      ]);
+      if (!files.ok) return fail(`git could not list ${base}`, 500);
+      const marks = parseMarks(diff.ok ? diff.out : "", others.out);
+      const paths = new Set(files.out.split("\0").filter(Boolean));
+      // The worktree skill links .env or CLAUDE.local.md into the main folder; git ignores them, the tree shows them.
+      // ponytail: only symlinks at the top of the root are found this way.
+      const links: string[] = [];
+      for (const n of readdirSync(base)) {
+        try { if (lstatSync(join(base, n)).isSymbolicLink()) { links.push(n); paths.add(n); } } catch {}
+      }
+      return json({ paths: [...paths].filter((p) => marks[p] !== "D" || existsSync(join(base, p))), marks, links, base: b, dir: base });
+    }
+    if (what === "fs" && method === "GET") {
+      const { real } = fsTarget(t, String(root), String(rel));
+      if (!existsSync(real)) return fail(`${rel} no longer exists on disk`, 404);
+      return json({ path: rel, abs: real, ...fileFacts(real) });
+    }
+    if (what === "fs/raw" && method === "GET") {
+      const { real } = fsTarget(t, String(root), String(rel));
+      if (!existsSync(real)) return fail("no such file", 404);
+      return new Response(Bun.file(real), { headers: { "content-security-policy": "sandbox" } });
+    }
+    if (what === "fs" && method === "PUT") {
+      const { real } = fsTarget(t, String(root), String(rel), true);
+      if (typeof body.content !== "string") return fail("content is required");
+      // Item 108: worktree files lock while the agent runs; the project folder has no lock, the mtime check guards it.
+      if (root === "worktree" && t.status === "running") return json({ error: "running" }, 409);
+      const mtime = existsSync(real) ? statSync(real).mtimeMs : null;
+      if (!body.force && mtime !== body.base_mtime) return json({ error: "changed", mtime }, 409);
+      writeFileSync(real, body.content);   // to the resolved file, so a symlink stays a symlink
+      addEvent(t.id, "file saved", "user", `${root} · ${rel} · agent not notified`);
+      return json({ mtime: statSync(real).mtimeMs });
+    }
+    if (what === "diff" && method === "GET") {
+      const { base, real } = fsTarget(t, String(root), String(rel));
+      const b = await diffBase(base);
+      const top = await sh(["git", "-C", base, "rev-parse", "--show-toplevel"]);
+      const inRepo = relative(top.ok ? realpathSync(top.out) : base, join(realpathSync(base), String(rel)));
+      // Not through sh(): it trims, and a diff needs the exact text. A file added since the base has no old version.
+      let old = "";
+      if (b) {
+        const pr = Bun.spawn(["git", "-C", base, "show", `${b.sha}:${inRepo}`], { stdout: "pipe", stderr: "ignore" });
+        const [text, code] = await Promise.all([new Response(pr.stdout).text(), pr.exited]);
+        if (code === 0) old = text;
+      }
+      return json({ base: old, base_sha: b?.sha ?? null, base_label: b?.label ?? null, current: existsSync(real) ? (fileFacts(real).content ?? "") : "" });
+    }
+  }
+
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/terminals(?:\/(\d+)\/(restart|close))?$/))) {
+    const id = Number(m[1]);
+    if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: termsOf(id).map(termOut), unsupported: TERM_UNSUPPORTED }); }
+    if (!m[2] && method === "POST") {
+      const t = liveTodo(id);
+      if (TERM_UNSUPPORTED) return fail(TERM_UNSUPPORTED, 409);
+      const kind = body.kind === "claude" ? "claude" : "shell";
+      const root = body.root === "worktree" && t.worktree_path && existsSync(t.worktree_path) ? "worktree" : "project";
+      const key = `${id}:${kind}`, no = (termNos.get(key) ?? 0) + 1;
+      termNos.set(key, no);
+      const x: Term = {
+        id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)!.local_path, no,
+        message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null,
+        buf: [], bufLen: 0, sockets: new Set(), fresh: false,
+        cols: Math.max(2, Math.min(500, Number(body.cols) || 100)), rows: Math.max(2, Math.min(300, Number(body.rows) || 30)),
+      };
+      terms.set(x.id, x);
+      try { await spawnTerm(x); } catch (e) { terms.delete(x.id); throw e; }
+      return json(termOut(x));
+    }
+    const x = terms.get(Number(m[2]));
+    if (!x || x.todoId !== id) return fail("no such terminal", 404);
+    if (m[3] === "close" && method === "POST") {
+      killTerm(x); for (const ws of x.sockets) ws.close(); terms.delete(x.id);
+      emit({ type: "terminals", id });
+      return json({});
+    }
+    if (m[3] === "restart" && method === "POST") {
+      killTerm(x);
+      termSend(x, enc8.encode("\x1bc"));
+      await spawnTerm(x);
+      return json(termOut(x));
     }
   }
 
@@ -458,12 +769,16 @@ async function api(req: Request, path: string): Promise<Response> {
     const id = Number(m[1]);
     const [todo] = await summaries("t.id = ?", [id]);
     if (!todo) return fail("no such TODO", 404);
+    registerDiskFiles(todoRow(id)!);
     const ids = db.query("SELECT id FROM messages WHERE todo_id = ? ORDER BY id").all(id) as { id: number }[];
     return json({
       todo,
+      sessions: sessionsOf(id),
+      artifact_dir: artifactDir(projectRow(todo.project_id)!.slug, id) + "/",
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
-      events: db.query("SELECT kind, actor, detail, at FROM events WHERE todo_id = ? ORDER BY id").all(id),
+      events: (db.query("SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").all(id) as any[])
+        .map((e) => ({ ...e, meta: e.meta ? JSON.parse(e.meta) : null })),
       draft: getDraft(`todo:${id}`),
     });
   }
@@ -475,9 +790,26 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({});
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver)$/)) && method === "POST") {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session)$/)) && method === "POST") {
     const id = Number(m[1]);
     const action = m[2];
+
+    // Item 72: ends the live session and starts the next with the hand-over header, the queued messages and this one.
+    if (action === "new-session") {
+      const t = liveTodo(id);
+      if (t.status === "not_started") return fail("start the TODO first; its first session starts with Start", 409);
+      if (isRunning(id)) return fail("the agent is running; a new session can start once it stops", 409);
+      const text = String(body.body ?? "").trim();
+      const uploads = uploadsIn(body.attachments);
+      const mid = db.transaction(() => {
+        const mid = addMessage(id, "user", text || "continue", "queued");
+        saveAttachments(id, mid, uploads);
+        return mid;
+      })();
+      setDraft(`todo:${id}`, "");
+      newSession(id);
+      return json(messageOut(mid));
+    }
 
     if (action === "start") {
       if (liveTodo(id).status !== "not_started") return fail("this TODO has already started", 409);
@@ -506,6 +838,7 @@ async function api(req: Request, path: string): Promise<Response> {
       setTodo(id, { removed_at: now(), removed_by: "user" });
       addEvent(id, "removed", "user");
       interrupt(id); // like Esc in Claude Code; queued messages stay queued
+      closeTerms(id); // restoring does not bring them back (item 115)
       emit({ type: "todos" });
     } else if (action === "restore") {
       const t = todoOr404(id);
@@ -548,10 +881,19 @@ async function api(req: Request, path: string): Promise<Response> {
 
   if (path === "/api/operator" && method === "GET") {
     const since = getMeta("operator_since") ?? "";
+    const messages = db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE todo_id IS NULL AND committed_at >= ? ORDER BY id").all(since) as any[];
+    // Item 127: each reply lists the tools the operator used since the message before it.
+    const used = db.query("SELECT kind, detail, at FROM events WHERE todo_id IS NULL AND actor = 'operator' AND at >= ? ORDER BY id").all(since) as any[];
+    let prev = since;
+    for (const m of messages) {
+      if (m.author === "operator") m.tools = used.filter((e) => e.at > prev && e.at <= m.at).map((e) => `${e.kind}(${e.detail ?? ""})`);
+      prev = m.at;
+    }
     return json({
       status: isRunning("operator") ? "running" : "idle",
       session_id: getMeta("operator_session_id") ?? null,
-      messages: db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE todo_id IS NULL AND committed_at >= ? ORDER BY id").all(since),
+      ctx: getMeta("operator_ctx") ? JSON.parse(getMeta("operator_ctx")!) : null,
+      messages,
       draft: getDraft("operator"),
     });
   }
@@ -571,6 +913,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (isRunning("operator")) return fail("the operator is running; wait for its reply", 409);
     // The next message starts a new session id. Older messages stay in the database but are hidden.
     setMeta("operator_session_id", null);
+    setMeta("operator_ctx", null);
     setMeta("operator_since", now());
     addEvent(null, "new operator session", "user");
     return json({});
@@ -579,18 +922,40 @@ async function api(req: Request, path: string): Promise<Response> {
   return fail("not found", 404);
 }
 
-Bun.serve({
+// Item 120: a random secret per start. Every /api/ request must carry it, so a program that can reach the port but
+// cannot read ~/.switchboard/token (another user, a container on the host network) gets no data and no shell.
+const TOKEN = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
+const TOKEN_FILE = join(HOME, "token");
+const VENDOR = join(import.meta.dir, "vendor");
+
+const httpServer = Bun.serve({
   hostname: HOST,
   port: PORT,
   idleTimeout: 0, // the default 10s would cut the SSE stream
-  async fetch(req) {
+  websocket: termWs,
+  async fetch(req, server) {
     const url = new URL(req.url);
     // Blocks DNS-rebinding pages: the Host header must name this loopback server.
     if (![`${HOST}:${PORT}`, `localhost:${PORT}`].includes(req.headers.get("host") ?? "")) return fail("bad host", 403);
     // Cross-site forms can only send simple content types; requiring JSON forces a CORS preflight, which this server never answers.
     if (req.method !== "GET" && !req.headers.get("content-type")?.startsWith("application/json")) return fail("JSON body required", 415);
+    // The page, the icon and the bundled libraries hold no data, so they stay open.
     if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")));
-    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/switchboard-icon-small.svg")));
+    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/flat/switchboard-flat-small.svg")));
+    if (url.pathname.startsWith("/vendor/")) {
+      const file = resolve(VENDOR, "." + decodeURIComponent(url.pathname.slice(7)));
+      if (!isInside(file, VENDOR) || file.startsWith(join(VENDOR, "src")) || !existsSync(file)) return fail("not found", 404);
+      return new Response(Bun.file(file), { headers: { "cache-control": "no-cache" } });
+    }
+    if (!tokenOk(TOKEN, req.headers.get("x-switchboard-token"), url.searchParams.get("token"))) return fail("open the link the server printed at start", 401);
+    // Browsers apply no CORS to WebSockets, so any website could open one; the Origin check stops websites, the token programs.
+    const ws = url.pathname.match(/^\/api\/todos\/(\d+)\/terminals\/(\d+)\/ws$/);
+    if (ws) {
+      if (![`http://${HOST}:${PORT}`, `http://localhost:${PORT}`].includes(req.headers.get("origin") ?? "")) return fail("bad origin", 403);
+      const x = terms.get(Number(ws[2]));
+      if (!x || x.todoId !== Number(ws[1])) return fail("no such terminal", 404);
+      return server.upgrade(req, { data: { tid: x.id } }) ? undefined : fail("websocket upgrade failed", 400);
+    }
     try {
       return await api(req, url.pathname);
     } catch (e: any) {
@@ -598,7 +963,10 @@ Bun.serve({
     }
   },
 });
-console.log(`switchboard on http://${HOST}:${PORT} (data in ${HOME})`);
+// Written only once the port is bound: a second copy that exits on EADDRINUSE never replaces the live server's token.
+writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
+chmodSync(TOKEN_FILE, 0o600); // mode above applies only when the file is new
+console.log(`switchboard on http://${HOST}:${PORT}/#token=${TOKEN} (data in ${HOME})`);
 
 // A run cannot survive a restart. Queued messages stay queued until the user presses Deliver.
 // Only after Bun.serve has bound the port: a second copy that fails with EADDRINUSE must not touch the live app's TODOs.
@@ -615,7 +983,12 @@ async function shutdown() {
   if (stopping) process.exit(1);
   stopping = true;
   console.log("stopping: interrupting running agents");
+  // The port frees at once, so a window reopened during the 5 s below starts a new server instead of reading this
+  // server's token and attaching to a server that is about to exit.
+  httpServer.stop(true);
+  closeTerms(null);
   await Promise.race([stopAll(), Bun.sleep(5000)]);
+  try { if (readFileSync(TOKEN_FILE, "utf8") === TOKEN) unlinkSync(TOKEN_FILE); } catch {}
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
