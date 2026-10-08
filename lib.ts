@@ -1,6 +1,6 @@
 // Pure helpers. No I/O here, so lib.test.ts can cover them (migrateDb takes the database, so the tests give it one in memory).
 import type { Database } from "bun:sqlite";
-import { basename, isAbsolute, relative } from "node:path";
+import { basename, dirname, isAbsolute, relative } from "node:path";
 
 export type Status = "not_started" | "running" | "waiting" | "idle";
 
@@ -355,6 +355,16 @@ export function parseOscTitle(chunk: string): string | null {
   let title: string | null = null;
   for (const m of chunk.matchAll(/\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g)) title = m[1]!;
   return title;
+}
+
+// The command that shows a file in the system file manager (item 106): selected in Finder or Explorer. Linux has no
+// common way to select a file, so its folder opens. Explorer wants backslashes and the quoted path glued to /select,
+// and the caller spawns it with windowsVerbatimArguments: Bun's own quoting ("/select,C:\x y\z") makes Explorer open
+// Documents instead. Windows paths cannot contain a quote, so none needs escaping.
+export function revealCommand(platform: string, file: string): string[] {
+  if (platform === "darwin") return ["open", "-R", file];
+  if (platform === "win32") return ["explorer.exe", `/select,"${file.replaceAll("/", "\\")}"`];
+  return ["xdg-open", dirname(file)];
 }
 
 // True when `version` ("1.3.14") is at least `min` ("1.3.5").

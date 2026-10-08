@@ -4,7 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  MODES, configIn, contextFile, defaultsOf, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  MODES, configIn, contextFile, defaultsOf, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Status,
 } from "./lib";
 import { authenticate, describe, sessionExists } from "./acp";
@@ -130,6 +130,15 @@ async function sh(cmd: string[], opts: { env?: Record<string, string>; timeout?:
   const p = Bun.spawn(cmd, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: opts.env && { ...process.env, ...opts.env }, timeout: opts.timeout });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { ok: code === 0, code, out: out.trim(), err: err.trim() || out.trim() };
+}
+
+// Shows a file in Finder / Explorer. Not awaited: Explorer exits with 1 even when it opened the window.
+// Verbatim arguments only matter on Windows; see revealCommand.
+function reveal(file: string) {
+  if (!existsSync(file)) throw httpError(404, `${file} no longer exists on disk`);
+  try { Bun.spawn(revealCommand(process.platform, file), { stdin: "ignore", stdout: "ignore", stderr: "ignore", windowsVerbatimArguments: true }); }
+  catch (e: any) { throw httpError(500, `could not open the folder: ${e.message}`); }
+  return json({ ok: true });
 }
 
 // ---------- git state of a worktree (local, read on every list fetch) ----------
@@ -737,11 +746,12 @@ async function api(req: Request, path: string): Promise<Response> {
     return json((await summaries("t.id = ?", [t.id]))[0]);
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/files\/(\d+)$/))) {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/files\/(\d+)(?:\/(reveal))?$/))) {
     const id = Number(m[1]);
     const t = todoOr404(id);
     const f = db.query("SELECT id, path FROM files WHERE id = ? AND todo_id = ?").get(Number(m[2]), id) as { id: number; path: string } | null;
     if (!f) return fail("no such file", 404);
+    if (m[3] === "reveal") return method === "POST" ? reveal(f.path) : fail("not found", 404);
     if (method === "GET") {
       if (!existsSync(f.path)) return fail(`${f.path} no longer exists on disk`, 404);
       if (new URL(req.url).searchParams.has("raw")) return new Response(Bun.file(f.path), { headers: { "content-security-policy": "sandbox" } });
@@ -758,7 +768,7 @@ async function api(req: Request, path: string): Promise<Response> {
     }
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/(tree|fs|fs\/raw|diff)$/))) {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(tree|fs|fs\/raw|fs\/reveal|diff)$/))) {
     const t = todoOr404(Number(m[1])), what = m[2];
     const url = new URL(req.url), root = url.searchParams.get("root") ?? body?.root, rel = url.searchParams.get("path") ?? body?.path;
     if (what === "tree" && method === "GET") {
@@ -790,6 +800,7 @@ async function api(req: Request, path: string): Promise<Response> {
       if (!existsSync(real)) return fail("no such file", 404);
       return new Response(Bun.file(real), { headers: { "content-security-policy": "sandbox" } });
     }
+    if (what === "fs/reveal" && method === "POST") return reveal(fsTarget(t, String(root), String(rel)).real);
     if (what === "fs" && method === "PUT") {
       const { real } = fsTarget(t, String(root), String(rel), true);
       if (typeof body.content !== "string") return fail("content is required");
