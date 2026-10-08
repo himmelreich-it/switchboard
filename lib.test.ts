@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  contextFile, cutToTwoLines, deliveryAction, inputChannel, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, usageStep,
+  contextFile, cutToTwoLines, deliveryAction, inputChannel, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, usageStep,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
 } from "./lib";
 
@@ -215,4 +215,10 @@ test("terminal helpers", () => {
   expect(ctx).toContain("Check with the user before you commit");
   expect(contextFile({ title: "T", project: "p", status: "not_started", first: "x", worktree: null, branch: null, git: null, pr: null, sessions: [], messages: [], files: [] }))
     .toContain("not started (in the backlog)");
+});
+
+test("revealCommand", () => {
+  expect(revealCommand("darwin", "/a/b c.md")).toEqual(["open", "-R", "/a/b c.md"]);
+  expect(revealCommand("win32", "C:/code/a b/c.md")).toEqual(["explorer.exe", '/select,"C:\\code\\a b\\c.md"']);
+  expect(revealCommand("linux", "/a/b/c.md")).toEqual(["xdg-open", "/a/b"]);
 });

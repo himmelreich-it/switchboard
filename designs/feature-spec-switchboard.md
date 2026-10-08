@@ -188,8 +188,9 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - Text files over 2 MB show "Large file · 3.4 MB. Not shown."
      - A path the server refuses, a file that vanished, or a read error shows "Can't open: <reason>", plus a toast.
 105. A file outside TODO files that is marked, was saved in this page, or has unsaved edits also has a **Diff** mode. It compares the merge-base version with what the editor shows: the unsaved draft if there is one, otherwise the file on disk. It shows the whole file, with old and new line numbers and added and removed lines tinted, and no syntax colours. It is read-only and stays available while Edit is locked. Its footer says what it compares: "Diff · merge-base <sha> (origin/HEAD) → on disk · read-only", or "… → your unsaved edits". A deleted file opens in Diff only.
-106. The file view has **Copy path** and **Add to message**.
+106. The file view has **Copy path**, **Open folder** and **Add to message**.
      - Copy path copies the absolute path, with the toast "Copied" and the path.
+     - Open folder shows the file in the system file manager: selected in Finder on macOS and in Explorer on Windows; on Linux its folder opens with `xdg-open`. The server opens it, so it works in the browser and in the window app. A failure shows the toast "Can't open folder" with the reason.
      - Add to message appends the path to the TODO's message draft: relative to the worktree for worktree files, absolute for Project and TODO files. Its toast "Added to message" has a Go to chat action (item 125). The file stays open in the Files tab.
 107. Read and Edit modes use a code editor (CodeMirror 6) for every file, including TODO files. Read mode is the same editor, read-only, except for markdown, which reads rendered (item 52). ⌘E switches between Read and Edit, ⌘S saves, and ⌘F opens the editor's search in Edit mode (item 59). The key hints read "⌘E edit ⌘S save ⌘F find".
      - Editing is light on purpose: there is no creating, renaming or deleting of files, no search across files, no LSP and no git actions. The agent or a terminal does those.
