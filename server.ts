@@ -8,7 +8,7 @@ import {
   type ConfigOption, type Pr, type Status,
 } from "./lib";
 import { authenticate, describe, sessionExists } from "./acp";
-import { DEFAULT_AGENT, agentList, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
+import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import { CONTRACT, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, closeAgent, metaKey, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
 
@@ -477,8 +477,14 @@ const terms = new Map<number, Term>();
 const termNos = new Map<string, number>();   // "todo:kind" -> last number; numbers only count up (Shell 1, Shell 2, ...)
 let termSeq = 0;
 const TERM_BUF = 256 * 1024;   // scrollback replayed when a page attaches
-export const TERM_UNSUPPORTED = process.platform === "win32" ? "Terminals are not supported on Windows yet."
-  : !versionAtLeast(Bun.version, "1.3.5") ? `Terminals need Bun 1.3.5 or newer. This server runs Bun ${Bun.version}.` : null;
+// Bun's PTY runs on Windows (ConPTY) since 1.4; 1.4.2 is the version it was checked with.
+const TERM_MIN = process.platform === "win32" ? "1.4.2" : "1.3.5";
+export const TERM_UNSUPPORTED = !versionAtLeast(Bun.version, TERM_MIN) ? `Terminals need Bun ${TERM_MIN} or newer${process.platform === "win32" ? " on Windows" : ""}. This server runs Bun ${Bun.version}.` : null;
+// The shell of a new terminal: a login shell on macOS and Linux; PowerShell (else cmd.exe) on Windows, which has none.
+const SHELL = process.env.SWITCHBOARD_SHELL || (process.platform === "win32"
+  ? Bun.which("pwsh") || Bun.which("powershell") || process.env.COMSPEC || "cmd.exe"
+  : process.env.SHELL || "/bin/zsh");
+const LOGIN_SHELL = process.platform !== "win32";
 const termOut = (x: Term) => ({ id: x.id, kind: x.kind, root: x.root, cwd: x.cwd, no: x.no, title: x.title, exited: x.exited, code: x.code, signal: x.signal });
 const termsOf = (todoId: number) => [...terms.values()].filter((x) => x.todoId === todoId);
 const enc8 = new TextEncoder(), dec8 = new TextDecoder();
@@ -507,7 +513,7 @@ async function spawnTerm(x: Term) {
   mkdirSync(dir, { recursive: true });
   let cmd: string[], secret: string | null = null;
   if (x.kind === "claude") {
-    const claude = Bun.which("claude");
+    const claude = onPath("claude", []);
     if (!claude) throw httpError(400, "claude is not on PATH");
     await writeContext(t);
     if (terms.get(x.id) !== x || x.proc) return;   // closed, or restarted twice, while the context file was written
@@ -520,9 +526,9 @@ async function spawnTerm(x: Term) {
     writeFileSync(contract, TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir));
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
     // `--add-dir` and the other list flags take every argument after them, so `--` ends them before the first message.
-    cmd = [claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.join(","),
+    cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.join(","),
       ...(x.message ? ["--", x.message] : [])];
-  } else cmd = [process.env.SWITCHBOARD_SHELL || process.env.SHELL || "/bin/zsh", "-l"];
+  } else cmd = LOGIN_SHELL ? [SHELL, "-l"] : [SHELL];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
   if (secret) env.SWITCHBOARD_MCP_SECRET = secret;
   delete env.SWITCHBOARD_PARENT;   // a `bun server.ts` started in the terminal must not take this server's stdin rule
@@ -568,7 +574,8 @@ function killTerm(x: Term) {
   const p = x.proc;
   x.proc = null;
   endGrant(x);
-  try { p?.kill("SIGHUP"); p?.terminal?.close(); } catch {}
+  // Windows has no SIGHUP (Bun throws on it): the default kill ends the process there.
+  try { process.platform === "win32" ? p?.kill() : p?.kill("SIGHUP"); p?.terminal?.close(); } catch {}
 }
 export function closeTerms(todoId: number | null) {
   for (const x of [...terms.values()]) if (todoId === null || x.todoId === todoId) {
@@ -629,7 +636,7 @@ async function api(req: Request, path: string): Promise<Response> {
     // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
     // P5: the agents, and per agent its last seen config options.
     return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
-      shell: basename(process.env.SWITCHBOARD_SHELL || process.env.SHELL || "zsh") });
+      shell: basename(SHELL).replace(/\.exe$/i, ""), login_shell: LOGIN_SHELL });
   }
 
   // ----- projects -----
