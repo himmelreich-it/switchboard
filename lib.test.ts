@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView,
 } from "./lib";
@@ -277,4 +277,10 @@ test("configIn keeps string values and drops the mode", () => {
   expect(configIn({ model: "opus", effort: "", mode: "plan", fast: 1 })).toEqual({ model: "opus" });
   expect(configIn(null)).toEqual({});
   expect(configIn(["x"])).toEqual({});
+});
+
+test("revealCommand", () => {
+  expect(revealCommand("darwin", "/a/b c.md")).toEqual(["open", "-R", "/a/b c.md"]);
+  expect(revealCommand("win32", "C:/code/a b/c.md")).toEqual(["explorer.exe", '/select,"C:\\code\\a b\\c.md"']);
+  expect(revealCommand("linux", "/a/b/c.md")).toEqual(["xdg-open", "/a/b"]);
 });

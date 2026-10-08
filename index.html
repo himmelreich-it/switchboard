@@ -2229,7 +2229,7 @@ function renderFile(t) {
   const sizeText = f.deleted ? "" : f.binary || f.image || f.large ? fmtBytes(f.size) : `${fmtBytes(new Blob([f.text ?? ""]).size)} · ${plural(lines, "line")}`;
   setHtml($("fileHead"), `${btn("← Files", "close-file", { v: "ghost" })}<span class="p">${esc(shown)}</span>${sizeText ? `<span class="sz">${sizeText}</span>` : ""}
     ${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}${dirty ? badge("Unsaved", "amber") : ""}
-    <span class="push row">${btn("Copy path", "copy-path", { v: "ghost", dis: !f.abs })}${btn("Add to message", "add-path", { dis: !f.abs })}${btn("Save", "save-file", { v: "primary", dis: locked || !dirty || f.deleted })}</span>`);
+    <span class="push row">${btn("Copy path", "copy-path", { v: "ghost", dis: !f.abs })}${btn("Open folder", "open-folder", { v: "ghost", dis: !f.abs })}${btn("Add to message", "add-path", { dis: !f.abs })}${btn("Save", "save-file", { v: "primary", dis: locked || !dirty || f.deleted })}</span>`);
   const modes = f.binary || f.image || f.large ? [] : f.deleted ? [["diff", "Diff"]] : [["read", "Read"], ["edit", locked ? "Edit · locked" : "Edit"], ...(canDiff ? [["diff", "Diff"]] : [])];
   $("fileTabsLine").hidden = !modes.length;
   setHtml($("fileTabs"), tabs(modes, mode, "file-mode"));
@@ -2627,6 +2627,7 @@ const ACTIONS = {
   "file-root": (id) => { S.fileRoot[S.sel] = id; if (S.file?.todoId === S.sel) closeFile(); need("tree"); render(); },
   changed: () => { S.changedOnly = !S.changedOnly; render(); },
   "copy-path": () => S.file?.abs && copyText(S.file.abs, "Copied", S.file.abs),
+  "open-folder": () => { const f = S.file; f?.abs && act(call("POST", f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}/reveal` : fsUrl(f, "fs/reveal")), "Can't open folder"); },
   "add-path": addPathToMessage,
   "md-tool": (id) => S.cm?.handle?.format(id),
   "term-menu": () => { S.termMenu = !S.termMenu; render(); },
