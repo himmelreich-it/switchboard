@@ -9,8 +9,8 @@ import {
 } from "./lib";
 import { authenticate, describe, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
-import { handleMcp } from "./apptools";
-import { CONTRACT, agentConfigs, answerPermission, applyConfig, closeAgent, metaKey, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
+import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
+import { CONTRACT, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, closeAgent, metaKey, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 export const HOST = "127.0.0.1";
@@ -102,11 +102,11 @@ export const liveSessionNo = (todoId: number | null) =>
   todoId === null ? null : ((db.query("SELECT MAX(no) AS n FROM sessions WHERE todo_id = ?").get(todoId) as any)?.n ?? null) as number | null;
 export const sessionsOf = (todoId: number) =>
   db.query("SELECT no, session_id, started_at, ended_at, agent FROM sessions WHERE todo_id = ? ORDER BY no").all(todoId) as Session[];
-export function addMessage(todoId: number | null, author: string, body: string, state = "delivered", fileId: number | null = null) {
+export function addMessage(todoId: number | null, author: string, body: string, state = "delivered", fileId: number | null = null, via: string | null = null) {
   const at = now();
   const id = Number(db.run(
-    "INSERT INTO messages (todo_id, author, body, state, file_id, committed_at, delivered_at, session_no) VALUES (?,?,?,?,?,?,?,?)",
-    [todoId, author, body, state, fileId, at, state === "delivered" ? at : null, state === "delivered" ? liveSessionNo(todoId) : null],
+    "INSERT INTO messages (todo_id, author, body, state, file_id, committed_at, delivered_at, session_no, via) VALUES (?,?,?,?,?,?,?,?,?)",
+    [todoId, author, body, state, fileId, at, state === "delivered" ? at : null, state === "delivered" ? liveSessionNo(todoId) : null, via],
   ).lastInsertRowid);
   if (todoId !== null) db.run("UPDATE todos SET updated_at = ? WHERE id = ?", [at, todoId]);
   changed(todoId);
@@ -269,7 +269,7 @@ export async function summaries(where = "1", args: any[] = []) {
 }
 
 function messageOut(id: number) {
-  const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, m.session_no, f.path AS file_path
+  const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, m.session_no, m.via, f.path AS file_path
     FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.id = ?`).get(id) as any;
   const { file_path, ...rest } = m;
   return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name, path }) => ({ id, name, size: Bun.file(path).size })) };
@@ -470,6 +470,7 @@ function fileFacts(real: string) {
 type Term = {
   id: number; todoId: number; kind: "shell" | "claude"; root: "worktree" | "project"; cwd: string; no: number; message: string;
   title: string | null; proc: Subprocess | null; exited: boolean; code: number | null; signal: string | null;
+  secret: string | null;   // a Claude terminal's grant for the app tools (P6), revoked when its process ends
   buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<{ tid: number }>>; cols: number; rows: number; fresh: boolean;
 };
 const terms = new Map<number, Term>();
@@ -504,17 +505,26 @@ async function spawnTerm(x: Term) {
   const t = todoRow(x.todoId)!;
   const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
   mkdirSync(dir, { recursive: true });
-  let cmd: string[];
+  let cmd: string[], secret: string | null = null;
   if (x.kind === "claude") {
     const claude = Bun.which("claude");
     if (!claude) throw httpError(400, "claude is not on PATH");
     await writeContext(t);
     if (terms.get(x.id) !== x || x.proc) return;   // closed, or restarted twice, while the context file was written
+    // P6: the app tools, granted to this process and named in files rather than argv. The header is a ${VAR} reference
+    // that Claude Code expands from its environment, so the secret is in neither the file nor the command line.
+    const g = grant({ kind: "worker", todoId: t.id, dir, onPost: () => {}, via: `Claude ${x.no}` }, () => "${SWITCHBOARD_MCP_SECRET}");
+    x.secret = secret = g.secret;
+    const mcp = join(dir, "terminal", "mcp.json"), contract = join(dir, "terminal", "contract.md");
+    writeFileSync(mcp, JSON.stringify({ mcpServers: { app: { type: "http", url: g.server.url, headers: { "X-Switchboard-Session": "${SWITCHBOARD_MCP_SECRET}" } } } }, null, 1));
+    writeFileSync(contract, TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir));
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
-    // `--add-dir` takes every folder after it, so `--` ends it before the first message.
-    cmd = [claude, "--add-dir", dir, ...(x.message ? ["--", x.message] : [])];
+    // `--add-dir` and the other list flags take every argument after them, so `--` ends them before the first message.
+    cmd = [claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.join(","),
+      ...(x.message ? ["--", x.message] : [])];
   } else cmd = [process.env.SWITCHBOARD_SHELL || process.env.SHELL || "/bin/zsh", "-l"];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
+  if (secret) env.SWITCHBOARD_MCP_SECRET = secret;
   delete env.SWITCHBOARD_PARENT;   // a `bun server.ts` started in the terminal must not take this server's stdin rule
   Object.assign(x, { exited: false, code: null, signal: null, buf: [], bufLen: 0, title: null });
   let proc: Subprocess;
@@ -533,6 +543,7 @@ async function spawnTerm(x: Term) {
   }); } catch (e: any) {
     // e.g. the worktree was deleted after a merge: the tab shows the failure instead of a terminal with no process
     x.exited = true;
+    endGrant(x);
     emit({ type: "terminals", id: x.todoId });
     throw httpError(400, `could not start ${cmd[0]}: ${e.message}`);
   }
@@ -542,15 +553,21 @@ async function spawnTerm(x: Term) {
   proc.exited.then((code) => {
     if (x.proc !== proc) return;
     x.exited = true;
+    endGrant(x);
     x.signal = proc.signalCode ?? null;
     x.code = x.signal ? null : code;
     termSend(x, JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
     emit({ type: "terminals", id: x.todoId });
   });
 }
+function endGrant(x: Term) {
+  if (x.secret) revoke(x.secret);
+  x.secret = null;
+}
 function killTerm(x: Term) {
   const p = x.proc;
   x.proc = null;
+  endGrant(x);
   try { p?.kill("SIGHUP"); p?.terminal?.close(); } catch {}
 }
 export function closeTerms(todoId: number | null) {
@@ -805,7 +822,7 @@ async function api(req: Request, path: string): Promise<Response> {
       termNos.set(key, no);
       const x: Term = {
         id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)!.local_path, no,
-        message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null,
+        message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null, secret: null,
         buf: [], bufLen: 0, sockets: new Set(), fresh: false,
         cols: Math.max(2, Math.min(500, Number(body.cols) || 100)), rows: Math.max(2, Math.min(300, Number(body.rows) || 30)),
       };
