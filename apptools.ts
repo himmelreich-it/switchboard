@@ -18,7 +18,8 @@ export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "atta
 export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message"].map((n) => `mcp__app__${n}`);
 
 // `onPost` tells the run that the agent posted a chat message this turn (so its final text is not posted as well).
-type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void } | { kind: "operator" };
+// `via` names the Claude terminal a grant belongs to (P6): its chat messages carry it.
+type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void; via?: string } | { kind: "operator" };
 const grants = new Map<string, Grant>();
 
 // A secret for one agent process, and the MCP server entry that names it. Revoke it when the agent process ends.
@@ -65,8 +66,8 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
       if (!f) return err(`No attached file is named ${file_name}. Call attach_file first.`);
       fileId = f.id;
     }
-    addMessage(todoId, "agent", body.trim(), "delivered", fileId);
-    addEvent(todoId, "post_message", "agent", file_name ?? null);
+    addMessage(todoId, "agent", body.trim(), "delivered", fileId, g.via ?? null);
+    addEvent(todoId, "post_message", "agent", [g.via && `from ${g.via}`, file_name].filter(Boolean).join(" · ") || null);
     g.onPost();
     return ok();
   });

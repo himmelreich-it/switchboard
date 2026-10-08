@@ -19,7 +19,7 @@ Work happens on branch `feature/acp`, which is not merged into `main`.
 | P3 Permissions | done | Spec items 131 and 132: mode per project and per TODO, `request_permission` on the card and in the chat, Waiting-lane rule, `attention_by` |
 | P4 Config | done | Spec items 133 and 134: model, effort and fast per project and per TODO (model first, then the rest, then the mode), slash-command completion in the composer |
 | **P5 Multi-agent** | **plumbing only, Claude only** | Agent per TODO and per session (`todos.agent`, `sessions.agent`), defaults per agent in `projects.defaults`, `projects.default_agent`, contract as text for non-Claude agents, `auth_required` handled, `/api/agents` with login, per-agent resume hint. Only Claude is registered: no other agent could be tested yet, so Codex and Gemini wait, and Settings › Agents stays hidden while there is one agent. Probe: `codex-acp` 2.1.1 runs on Bun (also Windows ARM64), takes HTTP MCP, and logs in with ACP `authenticate` (it opens the browser), not a terminal method. See §9 |
-| P6 Claude terminals with app tools | optional | See §10 |
+| P6 Claude terminals with app tools | done | Spec item 135: worker app tools in Claude terminals, a grant per launch, `terminal/mcp.json` and `terminal/contract.md`, messages tagged "From terminal Claude N" (`messages.via`). No `sessions` row, see §10 |
 
 **Decisions taken:**
 - **Option B.** This is a full switch: Claude and the operator run on ACP too, and the app tools are served at `/mcp/app` over HTTP.
@@ -220,7 +220,7 @@ The endpoint now exists, so a Claude terminal can get the app tools too:
 - add `--allowedTools mcp__app__*`;
 - add `--append-system-prompt` with the contract.
 
-Such a terminal session gets a `sessions` row with `kind='terminal'`. It can post messages and raise attention, but it is not driven by the app: there is no queue delivery and no transcript. **This phase is optional**, P6.
+Such a terminal session can post messages and raise attention, but it is not driven by the app: there is no queue delivery and no transcript. **Built in P6** (spec item 135), with two changes: the MCP config and the contract go in as files (`--mcp-config <file>`, `--append-system-prompt-file`), the secret as `${SWITCHBOARD_MCP_SECRET}` from the environment; and there is no `sessions` row with `kind='terminal'`, because the newest `sessions` row is the live session that messages and files are filed under. Its messages carry `messages.via` ("Claude 2") instead.
 
 ## 11. Spec changes (items R129 and up)
 

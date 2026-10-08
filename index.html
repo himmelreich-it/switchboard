@@ -1953,6 +1953,7 @@ function msgHtml(m, operator) {
   const editing = !operator && S.editing?.msgId === m.id;   // stays after a start, so a refused save keeps the text
   const flags = [];
   if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
+  if (m.via) flags.push(badge(`From terminal ${m.via}`, "violet"));
   if (m.state === "queued") flags.push(badge("Queued · delivers on idle", "blue", true));
   if (m.state === "pending") flags.push(badge("Delivers at start", "violet", true));
   if (m.state === "sending") flags.push(badge(!operator && ["idle", "waiting"].includes(cur()?.status) ? "Resuming" : "Sending", "blue"));
@@ -2458,16 +2459,16 @@ function renderTerminals(t, d) {
   if (S.cform?.todoId === t.id) {
     const f = S.cform;
     setHtml(panel, `<div class="cform">
-      <div class="row wrap">${termIcon("claude")}<span class="panel-title">New Claude</span><span class="microlabel">Separate session · your settings · no app tools or hooks</span></div>
+      <div class="row wrap">${termIcon("claude")}<span class="panel-title">New Claude</span><span class="microlabel">Separate session · your settings · app tools, no hooks</span></div>
       <div class="mb-field"><label class="mb-field__label" for="cfDir">Folder</label><input id="cfDir" class="mb-input" readonly value="${esc(f.cwd)}"></div>
       <div class="mb-field"><label class="mb-field__label" for="cfMsg">First message</label><textarea id="cfMsg" class="mb-textarea" rows="5">${esc(f.message)}</textarea><span class="mb-field__hint">Add your own ask, or keep it and give instructions once Claude has read the context.</span></div>
       <pre>cd ${esc(f.cwd)}
-claude --add-dir ${esc(artifactPath(t))} "&lt;first message&gt;"</pre>
-      <span class="small">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Runs with your own Claude Code settings, without the app's tools or hooks. Nothing it does appears in this chat.</span>
+claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append-system-prompt-file terminal/contract.md "&lt;first message&gt;"</pre>
+      <span class="small">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Runs with your own Claude Code settings and the app's tools, without its hooks. It answers you in the terminal; only what it posts with the app's tools shows in this chat, marked as coming from the terminal.</span>
       <div class="row" style="justify-content:flex-end">${btn("Cancel", "cform-cancel", { v: "ghost" })}<span class="kbd">${keys("⌘↵")}</span>${btn("Start", "cform-start", { v: "primary" })}</div></div>`);
   } else if (!list.length) {
     setHtml(panel, `<div class="term-empty"><h2>No terminals</h2>${S.termsUnsupported ? `<p>${esc(S.termsUnsupported)}</p>`
-      : `<p>Opens in ${esc(def[2])}. A shell for git, tests or a dev server, or Claude with this TODO's context. Both are your own processes: the agent isn't told about them and nothing shows in the chat.</p>
+      : `<p>Opens in ${esc(def[2])}. A shell for git, tests or a dev server, or Claude with this TODO's context. Both are your own processes and the agent isn't told about them. Claude can post to this chat with the app's tools.</p>
       <div class="row">${btn("New shell", "term-new", { id: "shell:" + def[0] }).replace("mb-btn--sm", "mb-btn--md")}${btn("New Claude", "term-new", { id: "claude:" + def[0] }).replace("mb-btn--sm", "mb-btn--md")}</div>`}</div>`);
   } else setHtml(panel, "");
   // xterm hosts stay in the page; only the selected one shows
