@@ -822,7 +822,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
     <nav class="set-nav" aria-label="Settings sections">
       <span class="microlabel" style="padding:0 10px 8px">Settings</span>
       <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Projects</span><span id="cProjects" class="n">0</span></button>
-      <button type="button" class="set-sec" data-act="set-sec" data-id="agents"><span>Agents</span><span id="cAgents" class="n">0</span></button>
+      <button type="button" id="agentsNav" class="set-sec" data-act="set-sec" data-id="agents" hidden><span>Agents</span><span id="cAgents" class="n">0</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
     </nav>
     <div id="secProjects" class="proj-grid">
@@ -2502,12 +2502,15 @@ function renderRemoved() {
 }
 
 function renderSettings() {
+  if (S.setSec === "agents" && agentsAll().length < 2) S.setSec = "projects";
   $("cProjects").textContent = S.projects.length;
   document.querySelectorAll(".set-sec").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.setSec));
   $("secProjects").hidden = S.setSec !== "projects";
   $("secAppearance").hidden = S.setSec !== "appearance";
   $("secAgents").hidden = S.setSec !== "agents";
   $("cAgents").textContent = agentsAll().length;
+  // Hidden while Claude is the only agent (P5 is limited to Claude for now); the page and its API stay for later.
+  $("agentsNav").hidden = agentsAll().length < 2;
   if (S.setSec === "projects") renderProjects();
   else if (S.setSec === "agents") renderAgents();
   else applyTheme();

@@ -185,8 +185,8 @@ export async function describe(spec: Spec): Promise<{ name: string | null; versi
   return { name: info.title ?? info.name ?? null, version: info.version ?? null, authMethods: authMethodsOf(a.init) };
 }
 
-// ACP authenticate in a short-lived agent process. The agent does the login itself (Codex opens the browser for
-// ChatGPT and stores the login in ~/.codex/); this resolves when it is done, false when the agent reports a failure.
+// ACP authenticate in a short-lived agent process. The agent does the login itself (codex-acp opens the browser for
+// ChatGPT and stores the login in ~/.codex/, P5 probe); this resolves when it is done, false when the agent reports a failure.
 export async function authenticate(spec: Spec, methodId: string, timeoutMs = 5 * 60_000): Promise<boolean> {
   const a = await spawnAgent(spec, { h: null });
   try {
