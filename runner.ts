@@ -3,10 +3,11 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { openSession as acpOpen, reopenSession, type Command, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
+import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
+import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  attentionAfterAnswer, configChanges, configIn, configView, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  attentionAfterAnswer, configChanges, configIn, configView, defaultsFor, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
   type Ctx, type Permission, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -17,7 +18,7 @@ import {
 
 // The fixed app contract (R31), appended to the claude_code system prompt before the project prompt.
 // GET /api/meta shows it with the placeholder; each run fills in the TODO's own folder.
-export const CONTRACT = `You are running inside switchboard, a local app where the user tracks this work as a TODO and steers it with short chat messages. A TODO can span several Claude Code sessions, one after another; this session is one of them.
+export const CONTRACT = `You are running inside switchboard, a local app where the user tracks this work as a TODO and steers it with short chat messages. A TODO can span several agent sessions, one after another; this session is one of them.
 
 - Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file, mcp__app__set_worktree and mcp__app__set_pr. On your first turn, call mcp__app__set_title with a short title for this TODO, unless the prompt starts with a hand-over header.
 - A prompt that starts with "This TODO continues earlier work" is a hand-over from earlier sessions. Keep the title it names, work in the worktree it names instead of creating a new one, and read the listed files you need before you start.
@@ -29,6 +30,15 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 - When anything is unclear, ask rather than guess: post a message and raise attention with mcp__app__set_attention.
 - When auto mode blocks an action, or you are unsure how to proceed, post a message and raise attention instead of routing around the block.
 - Clear your attention flag (mcp__app__set_attention with raised false) once the user's reply resolves it.`;
+
+// The contract for one agent's session: the TODO's folder filled in, and the app tools named the way that agent sees them.
+export const contractFor = (agent: string, dir: string) =>
+  CONTRACT.replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
+
+// What an agent without a system-prompt append gets in front of the first prompt of each session (design §9). After a
+// restart the resumed session still has it in its context; an edited project prompt reaches it with the next session.
+const instructionsText = (contract: string, prompt: string) =>
+  `# Switchboard instructions\n\n${[contract, prompt.trim()].filter(Boolean).join("\n\n")}\n\n# Your task\n\n`;
 
 const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
 
@@ -50,7 +60,7 @@ type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Pro
 
 // The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
-type Agent = { live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
+type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
 const agents = new Map<Key, Agent>();
 
 // `live` is set once the agent process is ready; `cancel` records a Stop that came before that; `kill` is the fallback
@@ -124,8 +134,10 @@ function askPermission(todoId: number, r: PermissionRequest): Promise<Permission
   return new Promise((resolve) => pending.set(todoId, { perm, resolve }));
 }
 
-// The permission mode of a TODO's runs: its own, else the project's, else auto (item 27).
-export const modeOf = (t: { mode: string | null }, p: { mode: string | null }) => t.mode || p.mode || "auto";
+// The permission mode of a TODO's runs: its own, else the project's for the TODO's agent, else auto for Claude (item 27)
+// and the agent's own mode (null) for the others.
+export const modeOf = (t: { mode: string | null; agent: string | null }, p: { defaults: string | null }) =>
+  t.mode || defaultsFor(p.defaults, t.agent || DEFAULT_AGENT).mode || (isClaude(t.agent) ? "auto" : null);
 
 // Sets the agent's mode when it differs from what the agent reports. A new session starts in the agent's default
 // mode, a resumed one may too, a kept process has the mode of its last run (spike finding 9), and a model switch
@@ -133,11 +145,12 @@ export const modeOf = (t: { mode: string | null }, p: { mode: string | null }) =
 // the run goes on in the agent's own mode and the user is told once per miss. Claude takes auto on Haiku without an
 // error and stays in acceptEdits (P4 probe), so the mode is checked after the switch too.
 async function applyMode(a: Agent, mode: string | null) {
-  const cur = () => a.live.configOptions.find((c) => c.id === "mode")?.currentValue;
+  const opt = () => a.live.configOptions.find((c) => c.category === "mode") ?? a.live.configOptions.find((c) => c.id === "mode");
+  const cur = () => opt()?.currentValue;
   if (!mode || cur() === mode) return void (a.modeMiss = "");
   let why = "";
   try {
-    await a.live.setConfig("mode", mode);
+    await a.live.setConfig(opt()?.id ?? "mode", mode);
   } catch (e: any) {
     why = `: ${e?.message ?? e}`;
   }
@@ -153,9 +166,12 @@ async function applyMode(a: Agent, mode: string | null) {
 // Runs before every turn and on a change in the Focus header, also mid-turn. `reset` is an option the user just set
 // back to the agent's default (no value of the TODO's or the project's): the agent's `default` value is set where it
 // offers one (Claude's model and effort), since an unset option would otherwise keep its last value.
+// The TODO's own values belong to its agent: a session that opens on another agent (New session) takes the project's.
 export async function applyConfig(todoId: number, a: Agent, reset?: string) {
   const t = todoRow(todoId)!, p = projectRow(t.project_id)!;
-  const wanted = { ...configIn(p.defaults ? JSON.parse(p.defaults) : null), ...configIn(t.overrides ? JSON.parse(t.overrides) : null) };
+  const own = (t.agent || DEFAULT_AGENT) === a.agent;
+  const d = defaultsFor(p.defaults, a.agent);
+  const wanted = { ...d.config, ...(own ? configIn(t.overrides ? JSON.parse(t.overrides) : null) : {}) };
   if (reset && !wanted[reset] && configView(a.live.configOptions).find((o) => o.id === reset)?.options.some((x) => x.value === "default")) wanted[reset] = "default";
   const errors: string[] = [];
   let skipped: [string, string][] = [];
@@ -170,26 +186,32 @@ export async function applyConfig(todoId: number, a: Agent, reset?: string) {
   const skip = skipped.map(([id, v]) => `${id} ${v}`).join(", ");
   if (skip && skip !== a.skipped) addEvent(todoId, "config skipped", "app", `the agent does not offer ${skip} now`);
   a.skipped = skip;
-  await applyMode(a, modeOf(t, p));
-  saveConfig(todoId, a.live);
+  await applyMode(a, own ? modeOf(t, p) : modeOf({ mode: null, agent: a.agent }, p));
+  saveConfig(todoId, a);
 }
 
-// The session's options as the agent reports them, for the Focus header, and the last list and slash commands seen
-// from any session, for Settings and for a TODO without a live agent (meta agent_config, agent_commands).
-function saveConfig(todoId: number, live: Live) {
-  const config = JSON.stringify(configView(live.configOptions));
+// The session's options as the agent reports them, for the Focus header, and per agent the last list and slash commands
+// seen from any of its sessions, for Settings and for a TODO without a live agent (meta agent_config, agent_commands;
+// Claude's keep the keys from before P5, the others get `.<agent>`).
+export const metaKey = (key: "agent_config" | "agent_commands", agent: string) => isClaude(agent) ? key : `${key}.${agent}`;
+function saveConfig(todoId: number, a: Agent) {
+  const config = JSON.stringify(configView(a.live.configOptions));
   if (config !== "[]") {
     if (todoRow(todoId)?.config !== config) setTodo(todoId, { config }, false);
-    if (getMeta("agent_config") !== config) setMeta("agent_config", config);
+    if (getMeta(metaKey("agent_config", a.agent)) !== config) setMeta(metaKey("agent_config", a.agent), config);
   }
-  if (live.commands.length) setMeta("agent_commands", JSON.stringify(live.commands));
+  if (a.live.commands.length) setMeta(metaKey("agent_commands", a.agent), JSON.stringify(a.live.commands));
 }
 
-// The slash commands the composer completes (P4): the live agent's, else the last ones seen from any session.
+// Every agent's last seen config options, for /api/meta.
+export const agentConfigs = () =>
+  Object.fromEntries(agentList().map((x) => [x.id, JSON.parse(getMeta(metaKey("agent_config", x.id)) ?? "[]")]));
+
+// The slash commands the composer completes (P4): the live agent's, else the last ones seen from the TODO's agent.
 export function commandsOf(todoId: number): Command[] {
   const a = liveAgent(todoId);
   if (a?.live.commands.length) return a.live.commands;
-  const stored = getMeta("agent_commands");
+  const stored = getMeta(metaKey("agent_commands", todoRow(todoId)?.agent || DEFAULT_AGENT));
   return stored ? JSON.parse(stored) : [];
 }
 
@@ -224,26 +246,31 @@ function take(todoId: number | null, state: "pending" | "queued") {
 
 // The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
 // session/resume in a new process. The config options and the permission mode are set afterwards, by applyConfig().
-async function agentFor(key: Key, sessionId: string | null, o: { cwd: string; dirs: string[]; meta: Record<string, unknown>; grant: Parameters<typeof grant>[0] }) {
-  const fingerprint = JSON.stringify([o.cwd, o.dirs, o.meta]);
+async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; grant: Parameters<typeof grant>[0] }) {
+  const fingerprint = JSON.stringify([o.agent, o.cwd, o.dirs, o.meta]);
   const had = agents.get(key);
   if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === fingerprint) {
     clearTimeout(had.idle);
     return had;
   }
   closeAgent(key);
+  const spec = specOf(o.agent);
+  if (!spec) {
+    const info = agentList().find((x) => x.id === o.agent);
+    throw new Error(info ? `${info.name} is not installed${info.hint ? `. ${info.hint}` : ""}` : `the agent ${o.agent} is no longer in Settings › Agents`);
+  }
   const sink: Agent["sink"] = { s: null };
   const handlers = { onUpdate: (u: Update) => sink.s?.onUpdate(u), onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
-  const g = grant(o.grant);
+  const g = grant(o.grant, (secret) => secretHeader(o.agent, secret));
   const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta: o.meta, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
   let live: Live;
   try {
-    live = sessionId ? await reopenSession(sessionId, opts, handlers as any) : await acpOpen(opts, handlers as any);
+    live = sessionId ? await reopenSession(spec, sessionId, opts, handlers as any) : await acpOpen(spec, opts, handlers as any);
   } catch (e) {
     revoke(g.secret);
     throw e;
   }
-  const a: Agent = { live, secret: g.secret, sink, fingerprint };
+  const a: Agent = { agent: o.agent, live, secret: g.secret, sink, fingerprint };
   agents.set(key, a);
   return a;
 }
@@ -355,8 +382,9 @@ export function start(todoId: number) {
 }
 
 // Item 72: ends the live session (it stays as history), clears attention, and starts the next session with the
-// hand-over header plus every queued message, because the ended session gets no more runs.
-export function newSession(todoId: number) {
+// hand-over header plus every queued message, because the ended session gets no more runs. `agent` switches the TODO
+// to another agent (P5); the header is plain text, so the next agent picks up from it like any other.
+export function newSession(todoId: number, agent?: string) {
   const t = todoRow(todoId)!;
   const prev = sessionsOf(todoId).at(-1)!;
   const no = prev.no + 1;
@@ -372,7 +400,7 @@ export function newSession(todoId: number) {
     last: last ? { no: last.session_no ?? prev.no, body: last.body } : null,
     files: filesOf(todoId).map((f) => ({ path: f.path, session_no: f.session_no })),
   });
-  runWorker(todoId, () => take(todoId, "queued"), { no, header }, "new session");
+  runWorker(todoId, () => take(todoId, "queued"), { no, header, agent }, "new session");
 }
 
 // Resumes the session with every queued message as one prompt. Does nothing while the TODO runs (the run's end calls
@@ -397,10 +425,12 @@ export function worktreeRoot(localPath: string) {
 // hand-over); null resumes todos.session_id. The TODO shows running at once, while the agent process starts.
 // `takeBodies` marks the messages delivered, so it is called only once the agent is ready: a setup error leaves them
 // pending or queued, and the user sees an app message instead of messages that look sent but never reached the agent.
-function runWorker(todoId: number, takeBodies: () => string[], open: { no: number; header?: string } | null, reason: string) {
+function runWorker(todoId: number, takeBodies: () => string[], open: { no: number; header?: string; agent?: string } | null, reason: string) {
   const t = todoRow(todoId)!;
   const p = projectRow(t.project_id)!;
+  const agentId = open?.agent || t.agent || DEFAULT_AGENT;
   const dir = artifactDir(p.slug, todoId);
+  const contract = contractFor(agentId, dir);
   const run: Run = { done: Promise.resolve(), live: null };
   running.set(todoId, run);
   setTodo(todoId, { status: "running", last_tool: null });
@@ -411,14 +441,15 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     try {
       mkdirSync(dir, { recursive: true });
       agent = await agentFor(todoId, open ? null : t.session_id, {
+        agent: agentId,
         cwd: p.local_path,
         // The worktree root lets a `cd` into the worktree persist; the artifact folder is outside cwd and must be writable.
         dirs: [worktreeRoot(p.local_path), dir],
-        meta: {
-          systemPrompt: { append: [CONTRACT.replaceAll("{artifact_dir}", dir), p.agent_prompt.trim()].filter(Boolean).join("\n\n") },
+        meta: isClaude(agentId) ? {
+          systemPrompt: { append: [contract, p.agent_prompt.trim()].filter(Boolean).join("\n\n") },
           // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).
           claudeCode: { options: { allowedTools: WORKER_TOOLS, extraArgs: { "system-prompt-snapshot": "off" } } },
-        },
+        } : {},
         grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId) },
       });
       await applyConfig(todoId, agent);
@@ -426,8 +457,18 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       running.delete(todoId);
       interrupting.delete(todoId);
       if (open && open.no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]);
-      addMessage(todoId, "app", cutToTwoLines(`Could not start the run: ${e?.message ?? e}`));
-      addEvent(todoId, "error", "app", String(e?.stack ?? e));
+      if (e instanceof AuthRequired) {
+        // The agent has no login yet (P5): the user logs in from Settings, then starts or sends again.
+        const name = agentName(agentId);
+        addMessage(todoId, "app", `${name} needs a login: Settings › Agents › ${name} › Log in, then try again.`);
+        addEvent(todoId, "error", "app", `auth required; methods: ${e.methods.map((m) => m.id).join(", ") || "none"}`);
+        const was = todoRow(todoId)!;
+        if (!was.attention) addEvent(todoId, "attention raised", "app", `${name} needs a login`);
+        setTodo(todoId, { attention: 1, attention_by: was.attention ? was.attention_by : "app" });
+      } else {
+        addMessage(todoId, "app", cutToTwoLines(`Could not start the run: ${e?.message ?? e}`));
+        addEvent(todoId, "error", "app", String(e?.stack ?? e));
+      }
       backToStart(todoId, open);
       return;
     }
@@ -452,9 +493,11 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     }
     if (open) {
       // The agent made the session id. From here on take() and the events belong to the new session.
-      db.run("INSERT INTO sessions (todo_id, no, session_id, started_at) VALUES (?, ?, ?, ?)", [todoId, open.no, live.sessionId, now()]);
-      setTodo(todoId, { session_id: live.sessionId, ctx: null, plan: null });
-      if (open.no > 1) addEvent(todoId, "new session", "user", `session ${open.no} · ${live.sessionId}\n${open.header}`);
+      db.run("INSERT INTO sessions (todo_id, no, session_id, started_at, agent) VALUES (?, ?, ?, ?, ?)", [todoId, open.no, live.sessionId, now(), agentId]);
+      // The TODO's own mode and options were its last agent's: on another agent they would not mean the same.
+      const switched = (t.agent || DEFAULT_AGENT) !== agentId;
+      setTodo(todoId, { session_id: live.sessionId, ctx: null, plan: null, agent: agentId, ...(switched ? { mode: null, overrides: null } : {}) });
+      if (open.no > 1) addEvent(todoId, "new session", "user", `session ${open.no} · ${agentName(agentId)} · ${live.sessionId}\n${open.header}`);
     }
     if (agent.configError) {
       addMessage(todoId, "app", cutToTwoLines(agent.configError));
@@ -462,7 +505,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       agent.configError = "";
     }
     const cur = todoRow(todoId)!;
-    addEvent(todoId, "launch", "app", `${reason} · cwd ${p.local_path} · session ${live.sessionId}`);
+    addEvent(todoId, "launch", "app", `${reason} · ${agentName(agentId)} · cwd ${p.local_path} · session ${live.sessionId}`);
 
     const denied = new Set<string>();
     const deny = (name: string, input: any, why: string) => {
@@ -479,7 +522,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     agent.sink.s = {
       onUpdate: (u) => {
         // The agent changed an option itself (plan mode left, a /model command): the Focus header follows.
-        if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") saveConfig(todoId, live);
+        if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") saveConfig(todoId, agent);
         turn.onUpdate(u);
       },
       // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
@@ -488,7 +531,8 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
 
     let error = "", stop = "";
     const started = performance.now();
-    const prompt = deliveryPrompt(cur.worktree_path, takeBodies(), open?.header ?? "");
+    const prompt = (open && !isClaude(agentId) ? instructionsText(contract, p.agent_prompt) : "")
+      + deliveryPrompt(cur.worktree_path, takeBodies(), open?.header ?? "");
     addEvent(todoId, "prompt", "app");
     try {
       stop = await live.prompt(prompt);
@@ -506,7 +550,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     // or sees the TODO idle and starts its own turn.
     cancelPermission(todoId); // a request still open when the turn ended (the agent died, or gave up waiting)
     turn.finish();
-    saveConfig(todoId, live);
+    saveConfig(todoId, agent);
     clearTimeout(run.kill);
     running.delete(todoId);
     const stopped = interrupting.get(todoId);
@@ -565,6 +609,7 @@ function runOperator() {
     let agent: Agent;
     try {
       agent = await agentFor("operator", stored, {
+        agent: "claude", // the operator stays on Claude (design §8)
         cwd: HOME,
         dirs: [],
         meta: {
