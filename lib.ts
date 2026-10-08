@@ -52,26 +52,53 @@ export function handOver(o: {
   ].filter(Boolean).join("\n");
 }
 
-// The context meter (item 123), updated from each SDK message of a run. Context = what went into the last model call
-// of the main loop (input + cache read + cache write) plus what it wrote. result.usage is summed over the turn's calls,
-// so it would overstate the context. ponytail: an assistant message's output_tokens can still be streaming; that is a
-// few percent of `used`, so it is shown as is.
-export type Ctx = { used: number; window: number | null; last_in: number; last_out: number; turns: number; model?: string };
-export function usageStep(c: Ctx | null, m: any): Ctx | null {
-  const cur: Ctx = c ?? { used: 0, window: null, last_in: 0, last_out: 0, turns: 0 };
-  if (m?.type === "system" && m.subtype === "init") return { ...cur, model: m.model };
-  if (m?.type === "assistant" && m.parent_tool_use_id == null && m.message?.usage) {
-    const u = m.message.usage, input = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-    return { ...cur, last_in: input, used: input + (u.output_tokens ?? 0) };
-  }
-  if (m?.type === "system" && m.subtype === "compact_boundary") return { ...cur, used: m.compact_metadata?.post_tokens ?? cur.used };
-  if (m?.type === "result") {
-    const models = Object.entries(m.modelUsage ?? {}) as [string, any][];
-    const main = models.find(([k]) => k === cur.model) ?? models.sort((a, b) => (b[1].contextWindow ?? 0) - (a[1].contextWindow ?? 0))[0];
-    return { ...cur, last_out: m.usage?.output_tokens ?? cur.last_out, window: main?.[1].contextWindow ?? cur.window, turns: cur.turns + 1 };
-  }
-  return c;
+// The context meter (item 123), from the agent's ACP usage_update: `used` is the context of the last model call, `size`
+// the model's window. Claude names the model in `_meta["_claude/model"]`. last_in and last_out are no longer reported.
+export type Ctx = { used: number; window: number | null; last_in?: number; last_out?: number; turns: number; model?: string };
+export function ctxStep(c: Ctx | null, u: any): Ctx | null {
+  if (u?.sessionUpdate !== "usage_update") return c;
+  // Only the main loop's own context: Claude marks other cycles (a background task's follow-up, a subagent) by origin.
+  const origin = u._meta?.["_claude/origin"]?.kind;
+  if (origin && origin !== "human" && origin !== "channel") return c;
+  const cur: Ctx = c ?? { used: 0, window: null, turns: 0 };
+  return { ...cur, used: u.used ?? cur.used, window: u.size ?? cur.window, model: u._meta?.["_claude/model"] ?? cur.model };
 }
+
+// ---------- transcript (item 130) ----------
+
+const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) + `\n… ${text.length - max} more characters` : text);
+
+// One ACP tool call as a transcript row's meta, merged from its tool_call and tool_call_update notifications. Text
+// output is cut to 8 KB; diffs are kept up to 200 KB per side, enough for the code an agent writes in one call.
+export type ToolMeta = {
+  toolCallId: string; name: string; title: string; kind: string; status: string; input: any;
+  locations: { path: string; line?: number }[]; diffs: { path: string; oldText: string | null; newText: string }[]; output: string;
+};
+export function toolMeta(prev: ToolMeta | null, u: any): ToolMeta {
+  const m: ToolMeta = prev ? { ...prev } : {
+    toolCallId: u.toolCallId, name: u._meta?.claudeCode?.toolName ?? u.name ?? u.title ?? "tool", title: "", kind: "other", status: "pending",
+    input: {}, locations: [], diffs: [], output: "",
+  };
+  if (u.title) m.title = u.title;
+  if (u.kind) m.kind = u.kind;
+  if (u.status) m.status = u.status;
+  if (u.rawInput && typeof u.rawInput === "object" && Object.keys(u.rawInput).length) m.input = { ...m.input, ...u.rawInput };
+  if (Array.isArray(u.locations) && u.locations.length) m.locations = u.locations.map((l: any) => ({ path: l.path, ...(l.line ? { line: l.line } : {}) }));
+  if (Array.isArray(u.content)) {
+    const diffs = u.content.filter((c: any) => c.type === "diff");
+    if (diffs.length) m.diffs = diffs.map((d: any) => ({ path: d.path, oldText: d.oldText == null ? null : cut(d.oldText, 200_000), newText: cut(d.newText ?? "", 200_000) }));
+    const text = u.content.filter((c: any) => c.type === "content" && c.content?.type === "text").map((c: any) => c.content.text).join("\n");
+    // While the call runs the content is its description; its result replaces it.
+    if (text && (u.status === "completed" || u.status === "failed" || !m.output)) m.output = cut(text, 8000);
+  }
+  if (typeof u.rawOutput === "string" && u.rawOutput && (u.status === "completed" || u.status === "failed")) m.output = cut(u.rawOutput, 8000);
+  return m;
+}
+
+// The agent's plan (its todo list) as `done/total`, or null without one.
+export type PlanEntry = { content: string; status: "pending" | "in_progress" | "completed"; priority?: string };
+export const planCount = (entries: PlanEntry[] | null) =>
+  entries?.length ? `${entries.filter((e) => e.status === "completed").length}/${entries.length}` : null;
 
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
 export function withAttachments(body: string, paths: string[]): string {
@@ -85,48 +112,97 @@ export function safeFileName(name: string): string {
   return basename(name).replace(/[^A-Za-z0-9._-]+/g, "-").slice(-120).replace(/^[.-]+/, "") || "file";
 }
 
-// What a committed message does, by the TODO's status:
-// not started -> stored until start; running -> pushed into the run; idle or waiting -> sent now.
-export function deliveryAction(status: Status): "pending" | "push" | "send" {
-  return status === "not_started" ? "pending" : status === "running" ? "push" : "send";
-}
-
-// The streaming prompt of one run: the first prompt, then whatever is pushed while it runs. Claude Code takes a pushed
-// message in after its next tool call, or as one more turn when the turn already ended. The run closes the input on its
-// first result; from then on push() returns false and the caller queues the message for the next run. The CLI still
-// answers what was pushed before the close, so nothing pushed is lost.
-export function inputChannel<T>(first: T) {
-  const items = [first];
-  let closed = false;
-  let wake: (() => void) | null = null;
-  async function* stream() {
-    while (true) {
-      while (items.length) yield items.shift()!;
-      if (closed) return;
-      await new Promise<void>((r) => (wake = r));
-      wake = null;
-    }
-  }
-  return {
-    stream: stream(),
-    get open() {
-      return !closed;
-    },
-    push(item: T) {
-      if (closed) return false;
-      items.push(item);
-      wake?.();
-      return true;
-    },
-    close() {
-      closed = true;
-      wake?.();
-    },
-  };
+// What a committed message does, by the TODO's status (item 20):
+// not started -> stored until start; running -> queued until the turn ends; idle or waiting -> sent now.
+export function deliveryAction(status: Status): "pending" | "queue" | "send" {
+  return status === "not_started" ? "pending" : status === "running" ? "queue" : "send";
 }
 
 // A run that ended (normally, with an error, or by interrupt) leaves the TODO waiting while the flag is raised.
 export const statusAfterRun = (attention: boolean | number): Status => (attention ? "waiting" : "idle");
+
+// ---------- permissions (P3) ----------
+
+// The permission modes a project or TODO can run in: Claude's `mode` config option (spike finding 9), `auto` first
+// because it is the default. The agent itself may not offer all of them (runner.ts reports when one cannot be set).
+export const MODES = ["auto", "default", "acceptEdits", "plan", "bypassPermissions"] as const;
+
+// An open session/request_permission, as stored in todos.permission and shown on the card and in the chat: the tool
+// call's name, title, kind, input and diffs (as in a transcript row), plus the agent's options. One per TODO at most,
+// because the agent blocks until it is answered.
+export type Permission = {
+  id: string; name: string; title: string; kind: string; input: any; diffs: ToolMeta["diffs"];
+  options: { optionId: string; name: string; kind: string }[]; at: string;
+};
+export function permissionOf(r: { toolCall: any; options: any[] }, at: string): Permission {
+  const m = toolMeta(null, r.toolCall ?? {});
+  return {
+    id: m.toolCallId, name: m.name, title: m.title, kind: m.kind, input: m.input, diffs: m.diffs, at,
+    options: (r.options ?? []).map((o) => ({ optionId: String(o.optionId), name: String(o.name ?? o.optionId), kind: String(o.kind ?? "") })),
+  };
+}
+
+// The board lane: a running TODO with an open permission request needs the user now, so it shows in Waiting.
+// Otherwise the lane is the status. The tab title and ⌘J count lanes, not statuses.
+export const laneOf = (t: { status: Status; permission: Permission | null }): Status =>
+  t.status === "running" && t.permission ? "waiting" : t.status;
+
+// Answering a request clears the attention flag only when the request raised it (`attention_by`); a flag the agent
+// or a denial raised stays until they or the user clear it.
+export const attentionAfterAnswer = (by: string | null): 0 | 1 => (by === "permission" ? 0 : 1);
+
+// ---------- config options (P4) ----------
+
+// A session config option as the UI shows it: the agent's option with its choices flattened (ACP allows groups).
+export type ConfigOption = { id: string; name: string; category: string | null; value: string; options: { value: string; name: string }[] };
+export function configView(raw: any[]): ConfigOption[] {
+  return (raw ?? []).filter((o) => o?.type === "select" && o.id).map((o) => ({
+    id: String(o.id), name: String(o.name ?? o.id), category: o.category ?? null, value: String(o.currentValue ?? ""),
+    options: (o.options ?? []).flatMap((x: any) => x.options ?? [x]).map((x: any) => ({ value: String(x.value), name: String(x.name ?? x.value) })),
+  }));
+}
+
+// The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config).
+// The permission mode has its own setting (P3); options without a category (Claude's `agent`) are left to the agent.
+export const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+
+// What to set for the wanted values ({config id: value}, the project's defaults under the TODO's own): the changes
+// against the agent's current options, and the values it does not offer (effort on a model without it). `models`
+// picks the model-category options only, or every other one: a model switch rewrites the others (P4 probe), so
+// runner.ts sets the model first and the rest against the options that switch left.
+export function configChanges(current: ConfigOption[], wanted: Record<string, string>, models: boolean) {
+  const set: [string, string][] = [], skipped: [string, string][] = [];
+  for (const [id, value] of Object.entries(wanted)) {
+    const o = current.find((c) => c.id === id);
+    if (id === "mode" || (o?.category === "model") !== models) continue; // an option the agent lacks: the second pass
+    if (!o || !o.options.some((x) => x.value === value)) skipped.push([id, value]);
+    else if (o.value !== value) set.push([id, value]);
+  }
+  return { set, skipped };
+}
+
+// A {config id: value} object from a request body or a column: string values only, empty ones dropped.
+export function configIn(v: unknown): Record<string, string> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([k, x]) => k !== "mode" && typeof x === "string" && x !== "").map(([k, x]) => [k, x as string]));
+}
+
+// ---------- agents (P5) ----------
+
+// A project's defaults per agent, {agent id: {config id: value, mode: permission mode}}, as stored in projects.defaults.
+// Config ids and modes are the agent's own, so each agent keeps its own set.
+export type Defaults = Record<string, Record<string, string>>;
+export function defaultsOf(raw: string | null): Defaults {
+  const d = raw ? JSON.parse(raw) : null;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return {};
+  return Object.fromEntries(Object.entries(d).filter(([, v]) => v && typeof v === "object" && !Array.isArray(v))
+    .map(([agent, v]) => [agent, Object.fromEntries(Object.entries(v as object).filter(([, x]) => typeof x === "string" && x !== ""))]));
+}
+// One agent's defaults: its config values (without the mode) and its permission mode.
+export function defaultsFor(raw: string | null, agent: string): { config: Record<string, string>; mode: string | null } {
+  const d = defaultsOf(raw)[agent] ?? {};
+  return { config: configIn(d), mode: d.mode || null };
+}
 
 // True when `path` is inside `dir` (not `dir` itself). Both must already be absolute and resolved.
 export function isInside(path: string, dir: string): boolean {
@@ -359,11 +435,34 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
     if (!db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
   };
   addColumn("todos", "pr_number", "INTEGER");   // databases made before set_pr existed
-  addColumn("todos", "ctx", "TEXT");            // context meter of the live session (JSON, see usageStep)
+  addColumn("todos", "ctx", "TEXT");            // context meter of the live session (JSON, see ctxStep)
+  addColumn("todos", "plan", "TEXT");           // the agent's plan in its last turn (JSON entries), for the card
   addColumn("messages", "session_no", "INTEGER");
   addColumn("events", "session_no", "INTEGER");
   addColumn("events", "meta", "TEXT");           // a result's duration and tool count (JSON)
   addColumn("files", "session_no", "INTEGER");
+  addColumn("projects", "mode", "TEXT");         // permission mode for the project's agents (null: auto), P3
+  addColumn("todos", "mode", "TEXT");            // a TODO's own permission mode (null: the project's)
+  addColumn("todos", "permission", "TEXT");      // the open permission request (JSON Permission), while the agent waits
+  addColumn("todos", "attention_by", "TEXT");    // who raised the attention flag: agent, app or permission
+  addColumn("todos", "config", "TEXT");          // the session's config options as the agent last reported them (JSON ConfigOption[]), P4
+  addColumn("todos", "overrides", "TEXT");       // the TODO's own config values, {config id: value} (JSON)
+  addColumn("projects", "defaults", "TEXT");     // the project's config values per agent, {agent: {config id: value, mode}} (JSON, P5)
+  addColumn("projects", "default_agent", "TEXT"); // the agent of the project's new TODOs (null: claude), P5
+  addColumn("todos", "agent", "TEXT");           // the agent of the TODO's live session, or of its first one before the start (null: claude)
+  addColumn("sessions", "agent", "TEXT");        // the agent each session ran on (null: claude)
+  addColumn("messages", "via", "TEXT");          // the Claude terminal an agent message came from ("Claude 2"), P6; null: the TODO's agent
+  db.exec(`CREATE TABLE IF NOT EXISTS agents (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)`);
+  // P4 kept the defaults flat and the mode in projects.mode, both Claude's: they move under "claude".
+  for (const p of db.query("SELECT id, mode, defaults FROM projects WHERE mode IS NOT NULL OR defaults IS NOT NULL").all() as { id: number; mode: string | null; defaults: string | null }[]) {
+    const d = p.defaults ? JSON.parse(p.defaults) : {};
+    const nested = Object.values(d).some((v) => v && typeof v === "object");
+    if (nested && !p.mode) continue;
+    const all: Defaults = nested ? d : Object.keys(d).length ? { claude: d } : {};
+    if (p.mode) all.claude = { ...all.claude, mode: p.mode };
+    db.run("UPDATE projects SET defaults = ?, mode = NULL WHERE id = ?", [Object.keys(all).length ? JSON.stringify(all) : null, p.id]);
+  }
   // A started TODO without a sessions row was one session, which becomes session 1: every TODO of a database from
   // before sessions, and one started by an older build on this database. Runs on every start, so it catches both.
   db.transaction(() => {

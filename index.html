@@ -410,6 +410,31 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .evl .k > b { flex: none; font-weight: 400; color: var(--text-secondary); }
 .evl .k > i { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-style: normal; }
 .ev-box { margin: 2px 12px 6px 120px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--text-secondary); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+/* the transcript (item 130): the agent's text, thinking, tool calls and plan */
+.evsay { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; padding: 4px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 18px; color: var(--text-muted); }
+.evsay > .res-md { color: var(--text-secondary); }
+.evsay.live > .res-md > :last-child::after { content: "▍"; color: var(--accent-cyan); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.evl .dot { width: 6px; height: 6px; flex: none; border-radius: 50%; margin: 0 3px; background: var(--text-muted); }
+.evl .dot.in_progress, .evl .dot.pending { background: var(--accent-cyan); animation: blink 1.2s steps(2) infinite; }
+.evl .dot.completed { background: var(--accent-lime); }
+.evl .dot.failed { background: var(--accent-red); }
+.evl .dot.ended { background: var(--text-muted); }
+.evl .k > .tk { flex: none; color: var(--text-muted); }
+.ev-tool { margin: 2px 12px 6px 120px; display: flex; flex-direction: column; gap: 6px; }
+.ev-tool > .ev-box { margin: 0; max-height: 320px; overflow: auto; }
+.ev-tool .lbl { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.ev-locs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev-diff { max-height: 360px; overflow: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.ev-diff > div { display: grid; grid-template-columns: 16px minmax(0, 1fr); padding: 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
+.ev-diff > .add { background: color-mix(in srgb, var(--accent-lime) 14%, transparent); color: var(--text-primary); }
+.ev-diff > .del { background: color-mix(in srgb, var(--accent-red) 12%, transparent); }
+.ev-diff > .gap { color: var(--text-muted); }
+.ev-plan { margin: 2px 12px 6px 120px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.ev-plan > div { display: flex; gap: 8px; }
+.ev-plan > .completed { color: var(--text-muted); text-decoration: line-through; }
+.ev-plan > .in_progress { color: var(--text-primary); }
+.ev-plan > div > span { flex: none; font-family: var(--font-mono); color: var(--accent-cyan); }
 .evres { margin: 4px 0 6px; display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 12px; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; line-height: 18px; }
 .evres > .t { text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); }
 .evres > .res-md, .evres > .foot { grid-column: 2 / span 2; min-width: 0; }
@@ -469,9 +494,27 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .running-line i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-cyan); box-shadow: var(--glow-cyan); }
 .composer { flex: none; padding: 12px 20px 16px; border-top: 1px solid var(--border-subtle); background: var(--bg-base); display: flex; flex-direction: column; gap: 8px; }
 .composer-row { display: flex; gap: 8px; align-items: flex-end; }
+/* P4: slash-command completion above the composer */
+.composer { position: relative; }
+.cmd-list { position: absolute; left: 20px; right: 20px; bottom: calc(100% - 4px); z-index: 300; max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-1); box-shadow: var(--shadow-3); }
+.cmd-list[hidden] { display: none; }
+.cmd-list > div { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.cmd-list > div[aria-selected="true"] { background: var(--surface-3); }
+.cmd-list .nm { font-family: var(--font-mono); color: var(--accent-lime); white-space: nowrap; }
+.cmd-list .hint { font-family: var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+.cmd-list .ds { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .composer-row textarea { flex: 1; min-width: 0; }
 .hint-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
 .deliver-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 13px; color: var(--text-secondary); background: var(--tint-blue); border: 1px solid var(--line-blue); border-radius: var(--radius-1); }
+/* P3: a permission request the agent waits on, in the chat (full) and on the card (compact) */
+.perm { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-secondary); background: var(--tint-amber); border: 1px solid var(--line-amber); border-radius: var(--radius-1); }
+.perm .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.perm .head b { color: var(--accent-amber); font-family: var(--font-display); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.perm .head .t { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); overflow-wrap: anywhere; }
+.perm .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.perm > .ev-box { margin: 0; max-height: 200px; overflow: auto; }
+.perm > .ev-diff { max-height: 260px; overflow: auto; }
+.card .perm { padding: 8px 10px; gap: 6px; }
 .file-row { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); }
 .file-row svg { flex: none; }
 .file-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
@@ -657,6 +700,11 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
               <label class="mb-field__label" for="newProject">Project</label>
               <span class="mb-select-wrap"><select id="newProject" class="mb-select"></select></span>
               <span class="mb-field__hint">Last used</span>
+              <div id="newAgentField" class="mb-field" style="margin-top:8px" hidden>
+                <label class="mb-field__label" for="newAgent">Agent</label>
+                <span class="mb-select-wrap"><select id="newAgent" class="mb-select"></select></span>
+                <span class="mb-field__hint">The project's default unless you pick one</span>
+              </div>
             </div>
             <div class="mb-field">
               <label class="mb-field__label" for="newText">First instruction</label>
@@ -712,6 +760,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           <div class="composer">
             <div id="deliverBar" hidden></div>
             <div id="nsHead" class="ns-head" hidden></div>
+            <div id="cmdList" class="cmd-list" role="listbox" aria-label="Slash commands" hidden></div>
             <div class="composer-row">
               <label class="sr-only" for="composer">Message</label>
               <textarea id="composer" class="mb-textarea" rows="2"></textarea>
@@ -773,6 +822,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
     <nav class="set-nav" aria-label="Settings sections">
       <span class="microlabel" style="padding:0 10px 8px">Settings</span>
       <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Projects</span><span id="cProjects" class="n">0</span></button>
+      <button type="button" id="agentsNav" class="set-sec" data-act="set-sec" data-id="agents" hidden><span>Agents</span><span id="cAgents" class="n">0</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
     </nav>
     <div id="secProjects" class="proj-grid">
@@ -788,6 +838,12 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           </div>
           <div class="mb-field"><label class="mb-field__label" for="pPath">Local folder</label><input id="pPath" class="mb-input" autocomplete="off" placeholder="~/code/my-repo"><span id="pPathHint" class="mb-field__hint"></span></div>
           <div class="mb-field"><label class="mb-field__label" for="pPrompt">Agent prompt</label><textarea id="pPrompt" class="mb-textarea" rows="4"></textarea><span class="mb-field__hint">Sent on every launch and resume, after the app contract.</span></div>
+          <div id="pAgents" class="grid2">
+            <div class="mb-field"><label class="mb-field__label" for="pAgent">Default agent</label><select id="pAgent" class="mb-input"></select><span class="mb-field__hint">For the project's new TODOs. The New TODO card and New session can pick another.</span></div>
+            <div class="mb-field"><label class="mb-field__label" for="pDefAgent">Settings below for</label><select id="pDefAgent" class="mb-input"></select><span class="mb-field__hint">Each agent has its own modes and models, so each keeps its own defaults.</span></div>
+          </div>
+          <div class="mb-field" style="max-width:320px"><label class="mb-field__label" for="pMode">Permission mode</label><select id="pMode" class="mb-input"></select><span id="pModeHint" class="mb-field__hint"></span></div>
+          <div id="pConfig" class="row wrap" style="gap:14px; align-items:flex-start"></div>
           <span id="projErr" class="mb-field__error" role="alert"></span>
           <div class="row" style="justify-content:flex-end;"><button type="submit" id="projSave" class="mb-btn mb-btn--primary mb-btn--md" disabled>Save changes</button></div>
         </form>
@@ -797,6 +853,25 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           <span class="small">Every agent gets this before the project prompt. {artifact_dir} becomes the TODO's artifact folder.</span>
         </div>
       </div>
+    </div>
+    <!-- P5: the ACP agents a TODO can run on: the built-ins and the user's own -->
+    <div id="secAgents" class="set-main" hidden>
+      <h1 class="page-title">Agents</h1>
+      <span class="small">A TODO runs on one agent per session. Every agent gets the app contract and the app's tools; Claude gets the contract as its system prompt, the others as text before the first message of each session.</span>
+      <div id="agentList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <form id="agentForm" class="panel" style="padding:20px; gap:14px;">
+        <span class="microlabel">Add an agent</span>
+        <div class="grid2">
+          <div class="mb-field"><label class="mb-field__label" for="aName">Name</label><input id="aName" class="mb-input" autocomplete="off" placeholder="My agent"></div>
+          <div class="mb-field"><label class="mb-field__label" for="aCommand">Command</label><input id="aCommand" class="mb-input" autocomplete="off" placeholder="my-agent"><span class="mb-field__hint">Found on PATH. It must speak ACP over stdio.</span></div>
+        </div>
+        <div class="grid2">
+          <div class="mb-field"><label class="mb-field__label" for="aArgs">Arguments</label><input id="aArgs" class="mb-input" autocomplete="off" placeholder="--acp"></div>
+          <div class="mb-field"><label class="mb-field__label" for="aEnv">Environment</label><textarea id="aEnv" class="mb-textarea" rows="2" placeholder="NAME=value, one per line"></textarea></div>
+        </div>
+        <span id="agentErr" class="mb-field__error" role="alert"></span>
+        <div class="row" style="justify-content:flex-end;"><button type="submit" class="mb-btn mb-btn--secondary mb-btn--md">Add agent</button></div>
+      </form>
     </div>
     <div id="secAppearance" class="set-main" hidden>
       <h1 class="page-title">Appearance</h1>
@@ -875,7 +950,7 @@ const STATUS = {
 };
 const LANES = [
   { st: "waiting", label: "Waiting on you", color: "var(--accent-amber)", hint: keys("Handle one, then ⌘J for the next."), empty: "Nothing needs you right now." },
-  { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit reach the agent after its next tool call.", empty: "No agent is running." },
+  { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit reach the agent when its turn ends.", empty: "No agent is running." },
   { st: "idle", label: "Idle", color: "var(--text-secondary)", hint: "Resting state. Remove a TODO when it is done.", empty: "No idle TODOs." },
 ];
 const AUTHOR = {
@@ -969,10 +1044,10 @@ function ctxHtml(c, title, running) {
     : p >= 0.6 ? "Getting full. A good point for a new session once this step is done." : "Plenty of room.";
   const rows = [
     { text: `${c.used.toLocaleString("en-US")} of ${max.toLocaleString("en-US")} tokens · ${pct}%`, color: col },
-    { text: `last turn: ${kTok(c.last_in || 0)} in · ${kTok(c.last_out || 0)} out`, color: "var(--text-secondary)" },
+    c.last_in != null && { text: `last turn: ${kTok(c.last_in || 0)} in · ${kTok(c.last_out || 0)} out`, color: "var(--text-secondary)" },
     c.turns != null && { text: plural(c.turns, "turn") + " in this session", color: "var(--text-secondary)" },
   ].filter(Boolean);
-  return `<span class="pop right" tabindex="0"><span style="font-size:11px; text-transform:uppercase; letter-spacing:.08em">Context</span><span class="ctxbar"><i style="width:${pct}%; background:${col}"></i></span><span style="color:${p >= 0.6 ? col : "var(--text-secondary)"}">${kTok(c.used)} / ${kTok(max)}</span>${tipHtml(title + " · context" + (running ? " · updates after the turn" : ""), rows, advice + " Read from the last model call (input + cache tokens).")}</span>`;
+  return `<span class="pop right" tabindex="0"><span style="font-size:11px; text-transform:uppercase; letter-spacing:.08em">Context</span><span class="ctxbar"><i style="width:${pct}%; background:${col}"></i></span><span style="color:${p >= 0.6 ? col : "var(--text-secondary)"}">${kTok(c.used)} / ${kTok(max)}</span>${tipHtml(title + " · context" + (running ? " · updates after the turn" : ""), rows, advice + " As the agent reports it for its last model call.")}</span>`;
 }
 async function copyText(text, title, message) {
   try { await navigator.clipboard.writeText(text); toast("success", title, message); }
@@ -1022,11 +1097,16 @@ const S = {
   file: null,            // open file: {todoId, id, name, path, content (disk), mtime (base for save), text (editor), mode}
   dlg: null, toasts: [], sending: null, ghRetrying: false,
   newProject: null, projSel: null, projErr: "",
+  projDefs: {}, projDefAgent: "claude",
+  agentInfo: {}, loggingIn: null, agentErr: "",   // P5: Settings › Agents: what each agent said in initialize, a login under way   // P5: the project form's defaults per agent as edited, and the agent they show
   filter: "all",         // project filter: "all" or a project id as text, kept in localStorage
   settingsOpen: false, settingsFrom: "todos", setSec: "projects",   // Settings tab (item 122): open, the view it came from, its section
   board: "board", focusFrom: "board",   // overview side (item 86) and the side the Focus view returns to (item 91)
   events: false,                        // events mixed into the chat (item 100), kept in localStorage
   nsMode: {},                           // TODO id -> composer in new-session mode (item 71); browser only
+  nsAgent: {},                          // TODO id -> agent chosen for the new session (P5); browser only
+  newAgent: null,                       // the New TODO card's agent (P5); null: the project's default
+  live: {},   // item 130: the text a running agent is writing now, per TODO ({kind, text}), from SSE "stream" events
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
 };
 try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catch (e) {}
@@ -1043,7 +1123,7 @@ const edits = {};   // file id -> {text, mtime}: unsaved file edits survive clos
 // Upload them on paste into a server-side draft if that starts to hurt.
 const uploads = {}; // 'todo:<id>' | 'new' -> [{name, type, url (data: URL)}], waiting for the next commit
 
-const composer = $("composer"), operatorIn = $("operatorIn"), newText = $("newText"), newProject = $("newProject");
+const composer = $("composer"), operatorIn = $("operatorIn"), newText = $("newText"), newProject = $("newProject"), newAgent = $("newAgent");
 const chatLog = $("chatLog"), pName = $("pName"), pPath = $("pPath"), pPrompt = $("pPrompt"), pRepo = $("pRepo");
 
 const live = () => S.todos.filter((t) => !t.removed_at);
@@ -1051,7 +1131,37 @@ const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.to
 // A saved filter for a project that is gone (or not loaded yet) shows all, without forgetting the pick.
 const filterProject = () => S.projects.find((p) => String(p.id) === S.filter) ?? null;
 const inFilter = (t) => { const p = filterProject(); return !p || t.project_id === p.id; };
-const waitingList = () => live().filter((t) => t.status === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+// P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf).
+const laneOf = (t) => (t.status === "running" && t.permission ? "waiting" : t.status);
+const waitingList = () => live().filter((t) => laneOf(t) === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+// P5: the agents (Settings › Agents); only the found ones can run. Claude is the default everywhere.
+const agentsAll = () => S.meta?.agents ?? [{ id: "claude", name: "Claude", builtin: true, found: true }];
+const agentsFound = () => agentsAll().filter((a) => a.found);
+const agentLabel = (id) => agentsAll().find((a) => a.id === (id || "claude"))?.name ?? id;
+// Per agent, the config options last seen from any of its sessions (meta).
+const agentConfig = (agent) => S.meta?.agent_config?.[agent || "claude"] ?? [];
+const agentSelect = (value, attrs) => `<select ${attrs}>${agentsFound().map((a) => `<option value="${esc(a.id)}"${(value || "claude") === a.id ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select>`;
+// The permission modes (lib.ts MODES); the UI's labels for them. They are Claude's: another agent's modes are its own
+// `mode` option, from its session or the last one seen.
+const MODES = { auto: "Auto", default: "Default (ask)", acceptEdits: "Accept edits", plan: "Plan", bypassPermissions: "Bypass permissions" };
+const modeChoices = (agent, t) => (agent || "claude") === "claude" ? Object.entries(MODES)
+  : ((t?.config ?? agentConfig(agent)).find((o) => o.category === "mode")?.options ?? []).map((x) => [x.value, x.name]);
+// `projectDefault` undefined: the project's own select (Claude: auto first; others: the agent's own). Else a TODO's
+// select, "" first for the project's value.
+const modeOptions = (value, projectDefault, agent, t) => {
+  const claude = (agent || "claude") === "claude", choices = modeChoices(agent, t);
+  const name = (v) => choices.find(([x]) => x === v)?.[1] ?? v;
+  const first = projectDefault !== undefined ? [["", `Project's (${projectDefault ? name(projectDefault) : claude ? MODES.auto : "agent's own"})`]] : claude ? [] : [["", "Agent's own"]];
+  return first.concat(choices).map(([v, l]) => `<option value="${esc(v)}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
+};
+// P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
+// is the TODO's session's as the agent last reported it, else the last one seen from any session of that agent (meta).
+const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+const configList = (t, agent) => (t?.config ?? agentConfig(t?.agent ?? agent)).filter((o) => CONFIG_CATEGORIES.includes(o.category));
+const optName = (o, v) => o.options.find((x) => x.value === v)?.name ?? v;
+// One select's options: "" first (the project's value, or the agent's own when the project sets none), then the agent's.
+const configOptions = (o, value, inherited, inheritedFrom) => [["", inherited ? `${inheritedFrom} (${optName(o, inherited)})` : "Agent's default"], ...o.options.map((x) => [x.value, x.name])]
+  .map(([v, l]) => `<option value="${esc(v)}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
 const draftKey = () => (S.sel === "operator" ? "operator" : `todo:${S.sel}`);
 const isDirty = (f) => !!f && f.content != null && f.text !== f.content;
 // Unsaved edits are kept per file (R25): TODO files by id, worktree and project files by root and path.
@@ -1109,7 +1219,11 @@ function acceptFiles(zone, keyOf) {
 
 // ---------- loading (one queue, so a burst of SSE events becomes one fetch per resource) ----------
 const loaders = {
-  async meta() { S.meta = await call("GET", "/api/meta"); },
+  async meta() {
+    const had = JSON.stringify([S.meta?.agent_config ?? null, S.meta?.agents ?? null]);
+    S.meta = await call("GET", "/api/meta");
+    if (had !== JSON.stringify([S.meta.agent_config, S.meta.agents]) && !projDirty()) fillProjForm();   // the Settings selects come from it
+  },
   async todos() { S.todos = await call("GET", "/api/todos"); },
   async projects() {
     const keep = projDirty();
@@ -1268,8 +1382,8 @@ async function commit(key, el) {
   S.sending = { key, body: body || (ns ? "continue" : ""), files };
   render();
   try {
-    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire) });
-    if (ns) { delete S.nsMode[tid]; toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`); }
+    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
+    if (ns) { delete S.nsMode[tid]; delete S.nsAgent[tid]; toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`); }
   } catch (e) {
     drafts[key] = body;
     if (!el.value && (el === operatorIn || draftKey() === key)) el.value = body;
@@ -1291,7 +1405,8 @@ async function addTodo(start = false) {
   render();
   const files = uploads.new ?? [];
   try {
-    const t = await call("POST", "/api/todos", { project_id: pid, instruction, attachments: files.map(wire), start });
+    const agent = agentsFound().length > 1 ? newAgent.value : null;
+    const t = await call("POST", "/api/todos", { project_id: pid, instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}) });
     newText.value = "";
     uploads.new = (uploads.new ?? []).filter((u) => !files.includes(u));   // keeps files added while this was sending
     const fp = filterProject(), hidden = fp && fp.id !== pid;
@@ -1496,22 +1611,61 @@ function dropFile() { S.file = null; destroyEditor(); }
 
 // ---------- projects ----------
 const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
+// P5: the project's defaults per agent, {agent: {config id: value, mode}}, as edited; saved all at once.
+const normDefaults = (d) => JSON.stringify(Object.entries(d ?? {}).map(([a, v]) => [a, Object.entries(v).filter(([k, x]) => x && !(a === "claude" && k === "mode" && x === "auto")).sort()]).filter(([, v]) => v.length).sort());
 function projDirty() {
   const p = selProject();
   if (!p) return !!(pName.value || pPath.value || pPrompt.value);
-  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt;
+  harvestDefaults();
+  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || (pAgent.value || "claude") !== (p.default_agent ?? "claude")
+    || normDefaults(S.projDefs) !== normDefaults(p.defaults);
 }
 function fillProjForm() {
   const p = selProject();
   pName.value = p?.name ?? "";
   pPath.value = p?.local_path ?? "";
   pPrompt.value = p?.agent_prompt ?? "";
+  S.projDefs = JSON.parse(JSON.stringify(p?.defaults ?? {}));
+  const found = agentsFound();
+  $("pAgents").hidden = found.length < 2;
+  const opts = found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("");
+  pAgent.innerHTML = pDefAgent.innerHTML = opts;
+  pAgent.value = p?.default_agent ?? "claude";
+  S.projDefAgent = pDefAgent.value = pAgent.value;
+  fillDefaults();
   S.projErr = "";
+}
+// The mode and config selects for the agent picked in "Settings below for", from its edited defaults.
+function fillDefaults() {
+  const agent = S.projDefAgent ?? "claude", d = S.projDefs[agent] ?? {}, name = agentLabel(agent);
+  const choices = modeChoices(agent);
+  pMode.innerHTML = modeOptions(d.mode ?? (agent === "claude" ? "auto" : ""), undefined, agent);
+  pMode.disabled = !choices.length;
+  $("pModeHint").textContent = agent === "claude"
+    ? "For this project's agents. In auto, the agent decides and the app reports what it blocked. In the other modes it asks you on the card and in the chat. A TODO can override this in its Focus header."
+    : choices.length ? `${name}'s own modes. In the modes that ask, it asks you on the card and in the chat. A TODO can override this in its Focus header.`
+    : `${name}'s modes appear once it has run here: the list comes from the agent.`;
+  // P4: the agent's options, from the last session seen; before any session there is no list to show.
+  const opts = configList(null, agent);
+  $("pConfig").innerHTML = opts.length
+    ? opts.map((o) => `<div class="mb-field" style="min-width:200px"><label class="mb-field__label" for="pCfg-${esc(o.id)}">${esc(o.name)}</label><select id="pCfg-${esc(o.id)}" class="mb-input" data-cfg="${esc(o.id)}">${configOptions(o, d[o.id], null)}</select></div>`).join("")
+      + `<span class="mb-field__hint" style="flex-basis:100%">For this project's new and resumed sessions, applied before every turn. A TODO can override them in its Focus header. A value the model does not offer (effort on Haiku) is skipped.</span>`
+    : `<span class="mb-field__hint">Model and effort settings appear once ${esc(name)} has run here: the lists come from the agent.</span>`;
+}
+// The selects into S.projDefs for the agent they show. Values the selects do not show (an option the agent's last
+// list lacks) are kept.
+function harvestDefaults() {
+  const agent = S.projDefAgent ?? "claude";
+  const d = { ...(S.projDefs[agent] ?? {}) };
+  for (const el of $("pConfig").querySelectorAll("select[data-cfg]")) { if (el.value) d[el.dataset.cfg] = el.value; else delete d[el.dataset.cfg]; }
+  if (!pMode.disabled) { if (pMode.value && !(agent === "claude" && pMode.value === "auto")) d.mode = pMode.value; else delete d.mode; }
+  if (Object.keys(d).length) S.projDefs[agent] = d; else delete S.projDefs[agent];
 }
 $("projForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const p = selProject();
-  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value };
+  harvestDefaults();
+  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, default_agent: pAgent.value || "claude", defaults: S.projDefs };
   try {
     const saved = await call(p ? "PUT" : "POST", p ? `/api/projects/${p.id}` : "/api/projects", body);
     S.projects = [...S.projects.filter((x) => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name));
@@ -1573,7 +1727,7 @@ function render() {
 
 function renderHeader() {
   const lv = live();
-  const n = lv.filter((t) => t.status === "waiting").length;   // R41: only "waiting on you" counts, not unread
+  const n = lv.filter((t) => laneOf(t) === "waiting").length;   // R41: only "waiting on you" counts, not unread
   const ideas = lv.filter((t) => t.status === "not_started").length;   // all projects, whatever the filter (item 63)
   $("cBacklog").textContent = ideas;
   $("cBoard").textContent = lv.length - ideas;
@@ -1604,6 +1758,12 @@ function renderOverview() {
     S.newProject = filterProject()?.id ?? (S.projects.some((p) => p.id === S.meta?.last_project_id) ? S.meta.last_project_id : S.projects[0]?.id ?? null);
   newProject.value = S.newProject ?? "";
   newProject.disabled = !S.projects.length;
+  // P5: the agent select shows only when there is a choice.
+  const found = agentsFound(), np = S.projects.find((p) => p.id === S.newProject);
+  $("newAgentField").hidden = found.length < 2;
+  const akey = found.map((a) => a.id).join("|");
+  if (newAgent.dataset.key !== akey) { newAgent.innerHTML = found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(""); newAgent.dataset.key = akey; }
+  newAgent.value = S.newAgent ?? np?.default_agent ?? "claude";
   $("newNote").textContent = S.projects.length ? "Lands in the backlog. Nothing launches until you start it." : "Add a project in Settings › Projects first.";
   $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || S.newProject == null || adding;
   setHtml($("newFiles"), uploadChips("new"));
@@ -1625,7 +1785,7 @@ function renderOverview() {
   const lv = live(), fp = filterProject();
   const isIdea = (t) => t.status === "not_started";
   const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
-  const waits = (list) => list.filter((t) => t.status === "waiting").length;
+  const waits = (list) => list.filter((t) => laneOf(t) === "waiting").length;
   // Item 90: chip counts and "in other projects" count the current view; the amber square and "waiting" count all live TODOs.
   const chip = (id, label, list, all, dot) => {
     const w = waits(all);
@@ -1643,7 +1803,7 @@ function renderOverview() {
     return setHtml($("lanes"), `<div class="board-empty"><span>No started TODOs${fp ? " in " + esc(fp.name) : ""}. ${ideas ? `${plural(ideas, "idea")} in the backlog.` : "The backlog is empty too."}</span><span class="push">${btn("Open backlog", "board", { id: "backlog" })}</span></div>`);
   }
   setHtml($("lanes"), LANES.map((l) => {
-    const list = rows.filter((t) => t.status === l.st);
+    const list = rows.filter((t) => laneOf(t) === l.st);
     const empty = l.st === "waiting" && fp ? `Nothing in ${esc(fp.name)} needs you.` : l.empty;
     return `<section class="lane" aria-label="${esc(l.label)}">
       <div class="lane-head"><span class="lane-dot" style="background:${l.color}"></span><h2 class="lane-label">${l.label}</h2><span class="lane-count" style="color:${l.color}">${list.length}</span><span class="small">${l.hint}</span></div>
@@ -1662,27 +1822,43 @@ function backlogHtml(rows, fp) {
     return `<div class="bl-row" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
       <div class="c1"><span class="ellipsis" style="color:var(--text-secondary)">${esc(t.project_name)}</span><span class="muted" title="${esc(new Date(t.created_at).toLocaleString())}">${shortAge(t.created_at)}</span></div>
       <div class="c2"><span class="t">${esc(t.title)}</span>${meta ? `<span class="mono muted" style="font-size:11px">${meta}</span>` : ""}</div>
-      <div class="c3">${t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
+      <div class="c3">${t.agent && t.agent !== "claude" ? badge(agentLabel(t.agent)) : ""}${t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
         <span title="Remove · no confirmation, nothing is running" style="display:flex"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove">${SVG(CLOSE, 15)}</button></span></div>
     </div>`;
   }).join("")}</div></section>`;
 }
 
+// P3: the open permission request: what the agent wants to do, and one button per option the agent offers.
+// `full` (the chat) adds the command or the diff; the card keeps to the title.
+function permHtml(t, full) {
+  const p = t.permission;
+  if (!p) return "";
+  const title = p.title || p.input?.command || p.name;
+  const cmd = p.input?.command && p.input.command !== title ? p.input.command : "";
+  const body = !full ? "" : p.diffs?.length ? p.diffs.map((d) => `<span class="lbl">${esc(d.oldText == null ? "New file" : "Change")} · <span style="text-transform:none">${esc(d.path)}</span></span>${diffHtml(d)}`).join("")
+    : cmd ? `<pre class="ev-box">${esc(cmd)}</pre>` : Object.keys(p.input ?? {}).length && !p.title ? `<pre class="ev-box">${esc(JSON.stringify(p.input, null, 1))}</pre>` : "";
+  const opt = (o) => btn(o.name, "perm", { v: o.kind.startsWith("allow") ? "primary" : "secondary", id: `${t.id}|${o.optionId}` });
+  return `<div class="perm" data-act="noop" aria-label="Permission request"><div class="head"><b>Needs approval</b><span class="t">${esc(p.name)}${title && title !== p.name ? " · " + esc(title) : ""}</span></div>${body}
+    <div class="opts">${p.options.map(opt).join("")}</div></div>`;
+}
+const permBadge = (t) => (t.status === "running" && t.permission ? badge("Needs approval", "amber", true) : "");
+
 function cardHtml(t) {
-  const st = STATUS[t.status] ?? STATUS.idle;
+  const st = STATUS[t.status] ?? STATUS.idle, lane = laneOf(t);
   const lm = t.last_message, la = t.last_agent_message;
   // an app message (denial, failed run) is usually why the TODO needs you, so it wins over the last agent line
   const last = lm && lm.author === "app" ? lm : la ? { ...la, author: "agent" } : lm;
   const who = !last ? "" : last.author.startsWith("user") ? (t.message_count === 1 ? "You · first instruction" : "You") : AUTHOR[last.author]?.[0] ?? last.author;
-  const foot = t.status === "running" ? "● " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working")
+  const foot = t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t)
     : t.file_count ? `${plural(t.file_count, "file")} · ${t.file_names.join(", ")}` : "No files";
-  return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${t.status === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${st.edge}">
-    <div class="card-badges">${badge(st.label, st.badge, true)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
+  return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${lane === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${lane === "waiting" ? STATUS.waiting.edge : st.edge}">
+    <div class="card-badges">${badge(st.label, st.badge, true)}${permBadge(t)}${t.agent && t.agent !== "claude" ? badge(agentLabel(t.agent)) : ""}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     <div class="card-meta"><span class="proj">${esc(t.project_name)}</span>${t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : ""}</div>
     ${cardGitHtml(t)}
+    ${t.status === "running" ? permHtml(t, false) : ""}
     ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || last.files)}</span></div>` : ""}
-    <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span><span class="open-label">${t.status === "waiting" ? "Answer" : "Open"} →</span></div>
+    <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span><span class="open-label">${lane === "waiting" ? "Answer" : "Open"} →</span></div>
   </div>`;
 }
 
@@ -1728,7 +1904,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
     const st = STATUS[t.status] ?? STATUS.idle, running = t.status === "running";
     const sessions = d?.sessions ?? [], n = sessions.length || t.session_count || 0;
     title = t.title;
-    status = badge(st.label, st.badge, true);
+    status = badge(st.label, st.badge, true) + permBadge(t);
     if (t.status === "not_started") actions += btn("Start", "start", { v: "primary", id: t.id });
     if (t.attention && !running) actions += btn("Clear attention", "clear", { id: t.id });
     if (running) actions += `<span title="Interrupt the agent, like Esc in Claude Code. A message it has not read yet is answered next." style="display:flex">${btn("Stop", "stop", { id: t.id })}</span>`;
@@ -1737,7 +1913,20 @@ function renderFocusHead(operator, t, d, fileOpen) {
     left = t.status === "not_started" && S.projects.length > 1
       ? `<select aria-label="Project" title="Project · editable until you start" data-change="move-project" data-id="${t.id}">${S.projects.map((p) => `<option value="${p.id}"${p.id === t.project_id ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`
       : `<span class="sec">${esc(t.project_name)}</span>`;
-    if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, "Copy session id · resume outside with claude --resume")}`;
+    // P5: the agent, editable until the start; later New session can switch it.
+    if (t.status === "not_started" && agentsFound().length > 1) left += `<span class="sep">·</span>${agentSelect(t.agent, `aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}`;
+    else if (agentsFound().length > 1 || t.agent !== "claude") left += `<span class="sep">·</span><span class="sec">${esc(agentLabel(t.agent))}</span>`;
+    const resume = sessions.at(-1)?.resume;
+    if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, resume ? `Copy session id · resume outside with ${resume.split(" ").slice(0, -1).join(" ")}` : "Copy session id")}`;
+    const pd0 = S.projects.find((p) => p.id === t.project_id)?.defaults?.[t.agent || "claude"] ?? {};
+    // P3: the permission mode of this TODO's runs; "Project's" follows Settings › Projects. A change reaches a live agent at once.
+    if (modeChoices(t.agent, t).length)
+      left += `<span class="sep">·</span><select aria-label="Permission mode" title="Permission mode for this TODO's runs.${t.agent === "claude" ? " Auto decides on its own; the other modes ask you here." : ""}" data-change="todo-mode" data-id="${t.id}">${modeOptions(t.mode, pd0.mode ?? null, t.agent, t)}</select>`;
+    // P4: model, effort and the like; "Project's" follows Settings › Projects. A change reaches a live agent at once.
+    // An option the current model lacks (effort on Haiku) is not in the agent's list, so it does not show.
+    const pd = pd0;
+    for (const o of configList(t))
+      left += `<span class="sep">·</span><span style="margin-right:4px">${esc(o.name.toLowerCase())}</span><select aria-label="${esc(o.name)}" title="${esc(o.name)} for this TODO's runs${t.config ? ` · now ${esc(optName(o, o.value))}` : ""}" data-change="todo-config" data-id="${t.id}" data-cfg="${esc(o.id)}">${configOptions(o, t.overrides?.[o.id], pd[o.id], "Project's")}</select>`;
     if (t.branch) left += `<span class="sep">·</span><span class="sec">${SVG(BRANCH, 12)}${esc(t.branch)}</span>`;
     left += infoGitHtml(t);
     if (!t.worktree_path && t.status !== "not_started") left += `<span class="sep">·</span><span>project folder, shared with other TODOs</span>`;
@@ -1754,7 +1943,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
   setHtml(head, `<div class="title-row"><h1 id="focusTitle">${esc(title)}</h1><div class="actions">${status}${actions}</div></div>
     <div class="info"><div class="l">${left}</div>${right ? `<div class="r">${right}</div>` : ""}</div>${extra}
     ${showTabs ? `<div class="tabs-row"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", d ? d.files.length : t.file_count], ["terminal", "Terminal", termCount(t.id)]], S.tab, "tab")}</div>
-      ${S.tab === "chat" ? `<label class="mb-switch" title="Mix this TODO's events into the chat. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Events ${evCount}</span></label>` : ""}</div>` : ""}`);
+      ${S.tab === "chat" ? `<label class="mb-switch" title="Mix the transcript into the chat: what the agent writes, thinks and does, and the app's events. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Transcript ${evCount}</span></label>` : ""}</div>` : ""}`);
 }
 
 function msgHtml(m, operator) {
@@ -1764,6 +1953,7 @@ function msgHtml(m, operator) {
   const editing = !operator && S.editing?.msgId === m.id;   // stays after a start, so a refused save keeps the text
   const flags = [];
   if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
+  if (m.via) flags.push(badge(`From terminal ${m.via}`, "violet"));
   if (m.state === "queued") flags.push(badge("Queued · delivers on idle", "blue", true));
   if (m.state === "pending") flags.push(badge("Delivers at start", "violet", true));
   if (m.state === "sending") flags.push(badge(!operator && ["idle", "waiting"].includes(cur()?.status) ? "Resuming" : "Sending", "blue"));
@@ -1802,11 +1992,52 @@ function eventsHtml(evs) {
       const text = String(e.detail ?? "").replace(/^\*\*([^*\n]+)\*\*:?\s*$/gm, "#### $1");
       return `<div class="evres"><span class="muted">${fmtTime(e.at)}</span><span class="t">Result</span>${actor}<div class="res-md">${md(text)}</div>${meta ? `<span class="foot">${esc(meta)}</span>` : ""}</div>`;
     }
+    if (e.kind === "say") return `<div class="evsay"><span>${fmtTime(e.at)}</span><div class="res-md">${md(String(e.detail ?? ""))}</div>${actor}</div>`;
+    if (e.kind === "tool" && e.meta) return toolHtml(e, actor);
+    if (e.kind === "plan" && e.meta) return planEvHtml(e, actor);
     const lines = String(e.detail ?? "").split("\n"), fold = lines.length > 1, open = fold && S.openEv.has(e.id);
     const mark = fold ? SVG(open ? CHEV_D : CHEV_R, 12) : '<span class="sp"></span>';
     return `<div class="evl${fold ? " fold" : ""}"${fold ? ` data-act="ev-toggle" data-id="${e.id}" aria-expanded="${open}"` : ""}><span>${fmtTime(e.at)}</span><span class="k">${mark}<b>${esc(e.kind)}</b>${!open && e.detail ? `<i>${esc(lines[0])}</i>` : ""}</span>${actor}</div>${open ? `<pre class="ev-box">${esc(e.detail)}</pre>` : ""}`;
   }).join("")}</div>`;
 }
+// A tool call: a status dot, its kind and title; open, its input, diffs, output and the files it touched.
+const TOOL_KIND = { read: "read", edit: "edit", delete: "delete", move: "move", search: "search", execute: "run", think: "think", fetch: "fetch", switch_mode: "mode", other: "tool" };
+function toolHtml(e, actor) {
+  const m = e.meta, open = S.openEv.has(e.id);
+  const title = m.title && m.title !== m.name ? m.title : e.detail || m.name;
+  let body = "";
+  if (open) {
+    const input = m.input?.command ?? (Object.keys(m.input ?? {}).length ? JSON.stringify(m.input, null, 1) : "");
+    const parts = [];
+    if (m.locations?.length) parts.push(`<div class="ev-locs">${m.locations.map((l) => `<button type="button" class="file-chip sm" data-act="ev-loc" data-id="${esc(l.path)}" title="Open in Files">${SVG(FILE, 13)}${esc(basename(l.path))}${l.line ? ":" + l.line : ""}</button>`).join("")}</div>`);
+    if (input && !m.diffs?.length) parts.push(`<span class="lbl">Input</span><pre class="ev-box">${esc(input)}</pre>`);
+    for (const d of m.diffs ?? []) parts.push(`<span class="lbl">${esc(d.oldText == null ? "New file" : "Change")} · <span style="text-transform:none">${esc(d.path)}</span></span>${diffHtml(d)}`);
+    if (m.output) parts.push(`<span class="lbl">${m.status === "failed" ? "Failed" : "Output"}</span><pre class="ev-box">${esc(m.output)}</pre>`);
+    body = `<div class="ev-tool">${parts.join("") || '<span class="muted">No details yet.</span>'}</div>`;
+  }
+  return `<div class="evl fold" data-act="ev-toggle" data-id="${e.id}" aria-expanded="${open}"><span>${fmtTime(e.at)}</span><span class="k">${SVG(open ? CHEV_D : CHEV_R, 12)}<i class="dot ${esc(m.status)}" title="${esc(m.status.replace("_", " "))}"></i><b class="tk">${esc(TOOL_KIND[m.kind] ?? m.kind)}</b><i>${esc(title)}</i></span>${actor}</div>${body}`;
+}
+// A diff as changed lines with three lines of context, from the editor bundle's line diff (loaded on first use).
+function diffHtml(d) {
+  if (!window.SBEditor) { loadEditor().then(() => render(), () => {}); return '<div class="ev-diff"><div class="gap"> Loading diff…</div></div>'; }
+  const rows = window.SBEditor.lineDiff(d.oldText ?? "", d.newText ?? ""), keep = new Set();
+  rows.forEach((r, i) => { if (r.sign !== " ") for (let k = i - 3; k <= i + 3; k++) keep.add(k); });
+  let html = "", gap = false, n = 0;
+  for (let i = 0; i < rows.length && n < 600; i++) {
+    if (!keep.has(i)) { if (!gap) html += '<div class="gap"><span></span>⋯</div>'; gap = true; continue; }
+    gap = false; n++;
+    const r = rows[i];
+    html += `<div class="${r.sign === "+" ? "add" : r.sign === "-" ? "del" : ""}"><span>${r.sign}</span>${esc(r.text) || " "}</div>`;
+  }
+  return `<div class="ev-diff">${html || '<div class="gap"><span></span>No change</div>'}</div>`;
+}
+function planEvHtml(e, actor) {
+  const entries = e.meta.entries ?? [], open = !S.openEv.has(e.id);   // the plan starts open; a click folds it
+  const mark = { completed: "✓", in_progress: "→", pending: "·" };
+  return `<div class="evl fold" data-act="ev-toggle" data-id="${e.id}" aria-expanded="${open}"><span>${fmtTime(e.at)}</span><span class="k">${SVG(open ? CHEV_D : CHEV_R, 12)}<b>plan</b><i>${esc(e.detail ?? "")}</i></span>${actor}</div>`
+    + (open ? `<div class="ev-plan">${entries.map((x) => `<div class="${esc(x.status)}"><span>${mark[x.status] ?? "·"}</span>${esc(x.content)}</div>`).join("")}</div>` : "");
+}
+const planLine = (t) => (t.plan?.length ? ` · plan ${t.plan.filter((x) => x.status === "completed").length}/${t.plan.length}` : "");
 // Messages and (with the switch on) events of one session, in time order. Pending and queued messages come last.
 function streamHtml(msgs, evs, operator) {
   const items = msgs.map((m) => ({ at: m.at, m })).concat(evs.map((e) => ({ at: e.at, e })));
@@ -1837,8 +2068,9 @@ function timelineHtml(t, d) {
     const head = `<div class="sess"><div class="sess-row">
         <button type="button" class="sess-btn"${isLive ? ' aria-disabled="true"' : ` data-act="sess-toggle" data-id="${key}"`} aria-expanded="${open}">${SVG(open ? CHEV_D : CHEV_R, 14)}<span class="sess-no">Session ${s.no}</span><span class="sess-label">${esc(sessLabel(msgs))}</span></button>
         ${isLive ? badge("Live", "neutral", true) : ""}<span class="sess-range">${esc(sessRange(s))}</span>
-        <button type="button" class="sid-btn" data-act="copy" data-id="${esc(s.session_id)}" data-title="Session ${s.no} id" title="Copy id · claude --resume ${esc(s.session_id)} from ${esc(path)}">${esc(s.session_id.slice(0, 8))}${SVG(COPY_ICON, 12)}</button>
-      </div>${open && !isLive ? `<span class="sess-resume">Read-only here. Resume it outside the app: claude --resume ${esc(s.session_id)}, run from ${esc(path)}</span>` : ""}</div>`;
+        ${s.agent !== "claude" || sessions.some((x) => x.agent !== "claude") ? `<span class="sess-range">${esc(s.agent_name)}</span>` : ""}
+        <button type="button" class="sid-btn" data-act="copy" data-id="${esc(s.session_id)}" data-title="Session ${s.no} id" title="Copy id${s.resume ? ` · ${esc(s.resume)} from ${esc(path)}` : ""}">${esc(s.session_id.slice(0, 8))}${SVG(COPY_ICON, 12)}</button>
+      </div>${open && !isLive ? `<span class="sess-resume">Read-only here.${s.resume ? ` Resume it outside the app: ${esc(s.resume)}, run from ${esc(path)}` : ""}</span>` : ""}</div>`;
     if (open) return head + streamHtml(msgs, evsOf(s.no), false).replaceAll('data-act="edit-first"', "");
     const last = [...msgs].reverse().find((m) => m.author === "agent");
     const files = d.files.filter((f) => f.session_no === s.no);
@@ -1853,7 +2085,11 @@ function renderChat(operator, t, d) {
   let html = operator || !d ? msgs.map((m) => msgHtml(m, operator)).join("")
     : d.sessions.length > 1 ? timelineHtml(t, d) : streamHtml(msgs, S.events ? d.events : [], false);
   if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, operator);
-  if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "PreToolUse · " + t.last_tool : "working"))}</div>`;
+  const live = !operator && running && S.events && S.live[t.id];
+  if (live) html += live.kind === "thought" ? `<div class="evl"><span>now</span><span class="k"><span class="sp"></span><b>thinking</b><i>${esc(live.text.trim().split("\n").at(-1))}</i></span><span style="color:${ACTOR.agent}">agent</span></div>`
+    : `<div class="evsay live"><span>now</span><div class="res-md">${md(live.text)}</div><span style="color:${ACTOR.agent}">agent</span></div>`;
+  if (!operator && running && t.permission) html += permHtml(t, true);
+  else if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t))}</div>`;
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
@@ -1872,7 +2108,9 @@ function renderChat(operator, t, d) {
   // Item 71: the composer in new-session mode; the draft and attachments stay.
   const nsHead = $("nsHead");
   nsHead.hidden = !ns;
-  setHtml(nsHead, ns ? `<span class="sq"></span><span class="t">New session ${nSess + 1}</span><span class="small">${keys("⌘↵")} starts session ${nSess + 1}. Session ${nSess} ends and stays above as history.</span>
+  // P5: the next session may run on another agent; the hand-over is plain text, so any agent picks it up.
+  const nsAgent = ns && agentsFound().length > 1 ? agentSelect(S.nsAgent[t.id] ?? t.agent, `aria-label="Agent for session ${nSess + 1}" title="Agent for session ${nSess + 1}" data-change="ns-agent" data-id="${t.id}"`) : "";
+  setHtml(nsHead, ns ? `<span class="sq"></span><span class="t">New session ${nSess + 1}</span>${nsAgent}<span class="small">${keys("⌘↵")} starts session ${nSess + 1}. Session ${nSess} ends and stays above as history.</span>
     <span class="push row" style="gap:6px"><span class="kbd">Esc</span>${btn("Cancel", "cancel-ns", { v: "ghost", id: t.id })}</span>` : "");
   $("commitBtn").textContent = ns ? "Start session" : "Commit";
   // R56: after an app restart queued messages wait for the user; nothing is delivered on its own
@@ -1890,7 +2128,7 @@ function renderHint() {
   const handed = ns && [t.worktree_path && "worktree", t.pr_number || t.pr ? `PR #${t.pr?.number ?? t.pr_number}` : "", ...(S.detail?.files ?? []).map((f) => f.name)].filter(Boolean);
   const hint = operator ? "Delivers now. The operator acts only on what you ask."
     : !t ? "" : ns ? (handed.length ? "Handed over: " + handed.join(", ") : "Nothing to hand over yet.")
-    : t.status === "running" ? "Agent is running. It reads your message after its next tool call."
+    : t.status === "running" ? "Agent is running. Your message goes out when its turn ends."
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
   const key = operator ? null : draftKey();   // the operator chat takes no attachments
@@ -2201,7 +2439,7 @@ function renderTermFoot() {
   foot.hidden = !x || !!S.cform;
   if (foot.hidden) return;
   const focused = v.host.contains(document.activeElement);
-  setHtml(foot, `<span style="color:var(--text-secondary)">${x.kind === "claude" ? "claude · separate session" : esc(S.meta?.shell || "shell") + " · login shell"}</span><span class="cwd" title="${esc(x.cwd)}">${esc(x.cwd)}</span>
+  setHtml(foot, `<span style="color:var(--text-secondary)">${x.kind === "claude" ? "claude · separate session" : esc(S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell")}</span><span class="cwd" title="${esc(x.cwd)}">${esc(x.cwd)}</span>
     <span class="push">${v.down && !v.exit && !v.ended ? "Disconnected · reconnecting…" : focused ? "Click outside to hand keys back" : "Keys go here while focused"}</span>`);
 }
 function renderTerminals(t, d) {
@@ -2221,16 +2459,16 @@ function renderTerminals(t, d) {
   if (S.cform?.todoId === t.id) {
     const f = S.cform;
     setHtml(panel, `<div class="cform">
-      <div class="row wrap">${termIcon("claude")}<span class="panel-title">New Claude</span><span class="microlabel">Separate session · your settings · no app tools or hooks</span></div>
+      <div class="row wrap">${termIcon("claude")}<span class="panel-title">New Claude</span><span class="microlabel">Separate session · your settings · app tools, no hooks</span></div>
       <div class="mb-field"><label class="mb-field__label" for="cfDir">Folder</label><input id="cfDir" class="mb-input" readonly value="${esc(f.cwd)}"></div>
       <div class="mb-field"><label class="mb-field__label" for="cfMsg">First message</label><textarea id="cfMsg" class="mb-textarea" rows="5">${esc(f.message)}</textarea><span class="mb-field__hint">Add your own ask, or keep it and give instructions once Claude has read the context.</span></div>
       <pre>cd ${esc(f.cwd)}
-claude --add-dir ${esc(artifactPath(t))} "&lt;first message&gt;"</pre>
-      <span class="small">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Runs with your own Claude Code settings, without the app's tools or hooks. Nothing it does appears in this chat.</span>
+claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append-system-prompt-file terminal/contract.md "&lt;first message&gt;"</pre>
+      <span class="small">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Runs with your own Claude Code settings and the app's tools, without its hooks. It answers you in the terminal; only what it posts with the app's tools shows in this chat, marked as coming from the terminal.</span>
       <div class="row" style="justify-content:flex-end">${btn("Cancel", "cform-cancel", { v: "ghost" })}<span class="kbd">${keys("⌘↵")}</span>${btn("Start", "cform-start", { v: "primary" })}</div></div>`);
   } else if (!list.length) {
     setHtml(panel, `<div class="term-empty"><h2>No terminals</h2>${S.termsUnsupported ? `<p>${esc(S.termsUnsupported)}</p>`
-      : `<p>Opens in ${esc(def[2])}. A shell for git, tests or a dev server, or Claude with this TODO's context. Both are your own processes: the agent isn't told about them and nothing shows in the chat.</p>
+      : `<p>Opens in ${esc(def[2])}. A shell for git, tests or a dev server, or Claude with this TODO's context. Both are your own processes and the agent isn't told about them. Claude can post to this chat with the app's tools.</p>
       <div class="row">${btn("New shell", "term-new", { id: "shell:" + def[0] }).replace("mb-btn--sm", "mb-btn--md")}${btn("New Claude", "term-new", { id: "claude:" + def[0] }).replace("mb-btn--sm", "mb-btn--md")}</div>`}</div>`);
   } else setHtml(panel, "");
   // xterm hosts stay in the page; only the selected one shows
@@ -2265,13 +2503,63 @@ function renderRemoved() {
 }
 
 function renderSettings() {
+  if (S.setSec === "agents" && agentsAll().length < 2) S.setSec = "projects";
   $("cProjects").textContent = S.projects.length;
   document.querySelectorAll(".set-sec").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.setSec));
   $("secProjects").hidden = S.setSec !== "projects";
   $("secAppearance").hidden = S.setSec !== "appearance";
+  $("secAgents").hidden = S.setSec !== "agents";
+  $("cAgents").textContent = agentsAll().length;
+  // Hidden while Claude is the only agent (P5 is limited to Claude for now); the page and its API stay for later.
+  $("agentsNav").hidden = agentsAll().length < 2;
   if (S.setSec === "projects") renderProjects();
+  else if (S.setSec === "agents") renderAgents();
   else applyTheme();
 }
+
+// P5: each agent with its state. What it says about itself (version, ways to log in) is asked once per page load,
+// since that starts the agent; Claude logs in through Claude Code itself.
+function renderAgents() {
+  for (const a of agentsFound()) if (a.id !== "claude" && !(a.id in S.agentInfo)) {
+    S.agentInfo[a.id] = null;
+    call("GET", `/api/agents/${a.id}/describe`).then((r) => { S.agentInfo[a.id] = r; }, (e) => { S.agentInfo[a.id] = { error: e.message }; }).then(render);
+  }
+  setHtml($("agentList"), agentsAll().map((a) => {
+    const info = S.agentInfo[a.id], busy = S.loggingIn === a.id;
+    const state = !a.found ? badge("Not installed", "amber") : badge("Ready", "lime", true);
+    const login = a.found && a.id !== "claude" && info?.authMethods?.length
+      ? `<div class="row wrap" style="gap:6px"><span class="small">Log in:</span>${info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex">${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("")}</div>` : "";
+    return `<div class="panel" style="padding:14px 16px; gap:8px">
+      <div class="row wrap" style="gap:8px"><span class="mono" style="font-size:14px; font-weight:600">${esc(a.name)}</span>${state}${a.builtin ? badge("Built-in") : ""}
+        <span class="push row" style="gap:6px">${a.builtin ? "" : `<button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="agent-delete" data-id="${esc(a.id)}" aria-label="Remove ${esc(a.name)}" title="Remove ${esc(a.name)}">${SVG(TRASH, 15)}</button>`}</span></div>
+      <span class="mono muted" style="font-size:12px">${esc(a.command)}${info?.version ? ` · ${esc(info.name ?? "")} ${esc(info.version)}` : ""}</span>
+      ${!a.found && a.hint ? `<span class="small">${esc(a.hint)}</span>` : ""}${info?.error ? `<span class="small" style="color:var(--accent-amber)">${esc(info.error)}</span>` : ""}
+      ${login}</div>`;
+  }).join(""));
+  $("agentErr").textContent = S.agentErr ?? "";
+}
+async function agentLogin(key) {
+  const [id, method] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+  S.loggingIn = id;
+  render();
+  toast("info", `Logging in to ${agentLabel(id)}`, "Finish the login where the agent opened it, usually your browser.");
+  try {
+    await call("POST", `/api/agents/${id}/login`, { methodId: method });
+    toast("success", `Logged in to ${agentLabel(id)}`, "Start or message the TODO again.");
+  } catch (e) { toast("danger", "Not logged in", e.message); }
+  S.loggingIn = null;
+  render();
+}
+$("agentForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await call("POST", "/api/agents", { name: $("aName").value, command: $("aCommand").value, args: $("aArgs").value, env: $("aEnv").value });
+    for (const id of ["aName", "aCommand", "aArgs", "aEnv"]) $(id).value = "";
+    S.agentErr = "";
+  } catch (err) { S.agentErr = err.message; }
+  need("meta");
+  render();
+});
 
 function renderProjects() {
   const p = selProject();
@@ -2302,6 +2590,14 @@ const ACTIONS = {
   next: nextWaiting,
   tab: (id) => { S.tab = id; render(); },
   events: (id, el) => { S.events = el.checked; try { localStorage.setItem("switchboard-chat-events", S.events ? "1" : "0"); } catch (e) {} render(); },
+  "ev-loc": (path) => {
+    const t = cur(), proj = S.projects.find((p) => p.id === t.project_id)?.local_path;
+    const inside = (dir) => dir && (path + "/").startsWith(dir.replace(/\/$/, "") + "/") ? path.slice(dir.replace(/\/$/, "").length + 1) : null;
+    const wt = inside(t.worktree_path), pr = wt == null ? inside(proj) : null;
+    if (wt != null) openFile(null, "worktree", wt);
+    else if (pr != null) openFile(null, "project", pr);
+    else toast("info", "Not in this TODO's folders", path);
+  },
   "ev-toggle": (id) => { const k = Number(id); S.openEv.has(k) ? S.openEv.delete(k) : S.openEv.add(k); render(); },
   "sess-toggle": (id) => { S.openSess.has(id) ? S.openSess.delete(id) : S.openSess.add(id); render(); },
   copy: (id, el) => copyText(id, "Copied", `${el.dataset.title ?? "Session id"} ${id}`),
@@ -2309,6 +2605,9 @@ const ACTIONS = {
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
   clear: (id) => act(call("POST", `/api/todos/${id}/clear-attention`)),
+  // P3: "<todo id>|<option id>"; the server answers 409 when the request is gone (the agent moved on or was stopped)
+  perm: (id) => { const at = id.indexOf("|"); act(call("POST", `/api/todos/${id.slice(0, at)}/permission`, { optionId: id.slice(at + 1) }), "Not answered"); },
+  noop: () => {},   // a click inside the permission card must not open the TODO
   deliver: (id) => act(call("POST", `/api/todos/${id}/deliver`), "Not delivered"),
   stop: (id) => act(call("POST", `/api/todos/${id}/stop`), "Can't stop"),
   remove: (id) => askRemove(Number(id)),
@@ -2349,6 +2648,8 @@ const ACTIONS = {
   "open-settings": openSettings,
   "close-settings": (id, el) => { closeSettings(); },
   "set-sec": (id) => { S.setSec = id; render(); },
+  "agent-login": (id) => agentLogin(id),
+  "agent-delete": (id) => act(call("DELETE", `/api/agents/${id}`).then(() => need("meta", "projects")), "Agent not removed"),
   filter: setFilter,
   "gh-retry": () => {
     if (S.ghRetrying) return;
@@ -2409,6 +2710,12 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target.closest?.("[data-change]");
   if (el?.dataset.change === "move-project") moveProject(Number(el.dataset.id), Number(el.value));
+  if (el?.dataset.change === "todo-agent") act(call("POST", `/api/todos/${el.dataset.id}/edit`, { agent: el.value }).then(() => need("detail", "todos")), "Agent not changed");
+  if (el?.dataset.change === "ns-agent") { S.nsAgent[el.dataset.id] = el.value; render(); }
+  // A change the live agent did not take (a mode the model lacks) is stored anyway and comes back as a warning.
+  const warn = (r) => r?.warning && toast("warning", "Saved, but the agent did not take it", r.warning);
+  if (el?.dataset.change === "todo-mode") act(call("PUT", `/api/todos/${el.dataset.id}/mode`, { mode: el.value || null }).then(warn), "Mode not changed");
+  else if (el?.dataset.change === "todo-config") act(call("PUT", `/api/todos/${el.dataset.id}/config`, { id: el.dataset.cfg, value: el.value || null }).then(warn), "Setting not changed");
 });
 document.addEventListener("input", (e) => { if (e.target.id === "editFirst" && S.editing) { S.editing.text = e.target.value; if (S.editing.err) { S.editing.err = ""; render(); } } });
 document.addEventListener("keydown", (e) => {
@@ -2416,8 +2723,70 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && modKey(e)) { e.preventDefault(); saveEdit(); }
   else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); S.editing = null; render(); }
 }, true);
-composer.addEventListener("input", () => { saveDraftSoon(draftKey(), composer.value); renderHint(); });
-composer.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); commit(draftKey(), composer); } });
+composer.addEventListener("input", () => { saveDraftSoon(draftKey(), composer.value); renderHint(); renderCmds(); });
+composer.addEventListener("keydown", (e) => {
+  if (cmdKey(e)) return;
+  if (e.key === "Enter" && modKey(e)) { e.preventDefault(); commit(draftKey(), composer); }
+});
+composer.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== composer) closeCmds(); }, 0));
+
+// P4: slash commands. A message that is just "/" and a name so far opens the agent's commands, filtered by prefix
+// (then by substring); ↑↓ choose, Tab or Enter insert "/name ", Esc closes. The command goes out as plain text,
+// which is how the agent runs it. The list is the live agent's, else the last one seen; refetched after a minute.
+const cmdCache = {};   // TODO id -> {at, list}
+const CMDS = { open: false, items: [], sel: 0 };
+async function commandsFor(id) {
+  const c = cmdCache[id];
+  if (c && Date.now() - c.at < 60_000) return c.list;
+  const list = await call("GET", `/api/todos/${id}/commands`).catch(() => c?.list ?? []);
+  cmdCache[id] = { at: Date.now(), list };
+  return list;
+}
+async function renderCmds() {
+  const id = S.sel, m = composer.value.match(/^\/([^\s]*)$/);
+  if (typeof id !== "number" || !m || composer.selectionStart !== composer.value.length) return closeCmds();
+  const list = await commandsFor(id);
+  if (S.sel !== id || composer.value.match(/^\/([^\s]*)$/)?.[1] !== m[1]) return;   // typed on meanwhile
+  const q = m[1].toLowerCase();
+  const items = [...list.filter((c) => c.name.toLowerCase().startsWith(q)), ...list.filter((c) => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q))].slice(0, 50);
+  if (!items.length) return closeCmds();
+  CMDS.open = true; CMDS.items = items; CMDS.sel = Math.min(CMDS.sel, items.length - 1);
+  drawCmds();
+}
+function drawCmds() {
+  const el = $("cmdList");
+  el.hidden = false;
+  el.innerHTML = CMDS.items.map((c, i) => `<div role="option" id="cmd-${i}" aria-selected="${i === CMDS.sel}" data-cmd="${i}"><span class="nm">/${esc(c.name)}</span>${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}<span class="ds" title="${esc(c.description)}">${esc(c.description)}</span></div>`).join("");
+  composer.setAttribute("aria-activedescendant", `cmd-${CMDS.sel}`);
+  el.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+function closeCmds() {
+  if (!CMDS.open) return;
+  CMDS.open = false; CMDS.sel = 0;
+  $("cmdList").hidden = true;
+  composer.removeAttribute("aria-activedescendant");
+}
+function pickCmd(i) {
+  const c = CMDS.items[i];
+  if (!c) return;
+  composer.value = `/${c.name} `;
+  closeCmds();
+  saveDraftSoon(draftKey(), composer.value);
+  renderHint();
+  composer.focus();
+}
+// The keys the open list takes; true when it took this one.
+function cmdKey(e) {
+  if (!CMDS.open) return false;
+  const n = CMDS.items.length;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { CMDS.sel = (CMDS.sel + (e.key === "ArrowDown" ? 1 : n - 1)) % n; drawCmds(); }
+  else if (e.key === "Tab" || (e.key === "Enter" && !modKey(e) && !e.shiftKey)) pickCmd(CMDS.sel);
+  else if (e.key === "Escape") { e.stopPropagation(); closeCmds(); }
+  else return false;
+  e.preventDefault();
+  return true;
+}
+$("cmdList").addEventListener("mousedown", (e) => { const r = e.target.closest("[data-cmd]"); if (r) { e.preventDefault(); pickCmd(Number(r.dataset.cmd)); } });
 operatorIn.addEventListener("input", () => saveDraftSoon("operator", operatorIn.value));
 operatorIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commit("operator", operatorIn); } });
 newText.addEventListener("input", () => { $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || S.newProject == null || adding; });
@@ -2429,8 +2798,13 @@ acceptFiles(newText.closest(".panel"), () => "new");
 addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
-newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
-[pName, pPath, pPrompt].forEach((el) => el.addEventListener("input", renderProjects));
+newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); S.newAgent = null; render(); });
+newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; });
+[pName, pPath, pPrompt, pMode].forEach((el) => el.addEventListener("input", renderProjects));
+pMode.addEventListener("change", renderProjects);
+pAgent.addEventListener("change", renderProjects);
+pDefAgent.addEventListener("change", () => { harvestDefaults(); S.projDefAgent = pDefAgent.value; fillDefaults(); renderProjects(); });
+$("pConfig").addEventListener("change", renderProjects);
 
 applyTheme();   // the head script ran before the theme buttons existed; mark the active one
 // The static markup's key labels (hints, the gear's tooltip) are written for macOS.
@@ -2453,7 +2827,12 @@ function onEvent(ev) {
   } else if (ev.type === "operator") {
     if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   } else if (ev.type === "projects") need("projects");
+  else if (ev.type === "agents") need("meta", "projects");
   else if (ev.type === "terminals" && focusTodo && ev.id === S.sel) need("terms");
+  else if (ev.type === "stream") {
+    if (ev.item) S.live[ev.id] = ev.item; else delete S.live[ev.id];
+    if (focusTodo && ev.id === S.sel && S.events && S.tab === "chat") render();
+  }
 }
 const es = new EventSource(withToken("/api/events"));
 es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.warn(err); } };
