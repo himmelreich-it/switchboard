@@ -1,5 +1,6 @@
-// The agent registry (P5): which ACP agents a TODO can run, and what differs between them. Built-ins live here; the
-// user's own agents are rows of the `agents` table (Settings › Agents). runner.ts asks this file how to start an agent
+// The agent registry (P5): which ACP agents a TODO can run, and what differs between them. For now Claude is the only
+// built-in (Codex and Gemini wait until they can be tested); the user's own agents would be rows of the `agents` table,
+// whose Settings page stays hidden while Claude is the only agent. runner.ts asks this file how to start an agent
 // and how to talk to it; acp.ts knows nothing about agents beyond the command line it is given.
 import { dirname, join } from "node:path";
 import type { Spec } from "./acp";
@@ -16,11 +17,10 @@ export type AgentInfo = {
 
 const adapter = (pkg: string) => join(dirname(Bun.resolveSync(`${pkg}/package.json`, import.meta.dir)), "dist/index.js");
 
-// The bundled adapters run on the Bun that runs this server (verified in the spikes for Claude and Codex): no Node needed.
+// The bundled adapter runs on the Bun that runs this server (verified in the spike): no Node needed. Codex's adapter,
+// @agentclientprotocol/codex-acp, ran on Bun too (P5 probe), so it would be `adapter("@agentclientprotocol/codex-acp")`.
 const BUILTINS: { id: string; name: string; command: () => string[] | null; shown: string; hint: string | null }[] = [
   { id: "claude", name: "Claude", command: () => [process.execPath, adapter("@agentclientprotocol/claude-agent-acp")], shown: "claude-agent-acp (bundled)", hint: null },
-  { id: "codex", name: "Codex", command: () => [process.execPath, adapter("@agentclientprotocol/codex-acp")], shown: "codex-acp (bundled)", hint: null },
-  { id: "gemini", name: "Gemini", command: () => onPath("gemini", ["--acp"]), shown: "gemini --acp", hint: "Install the Gemini CLI: npm install -g @google/gemini-cli" },
 ];
 export const DEFAULT_AGENT = "claude";
 
@@ -74,7 +74,6 @@ export const toolName = (agent: string | null, tool: string) => isClaude(agent) 
 export function resumeHint(agent: string | null, sessionId: string): string | null {
   const id = agent || DEFAULT_AGENT;
   if (id === "claude") return `claude --resume ${sessionId}`;
-  if (id === "codex") return `codex resume ${sessionId}`;
   return null;
 }
 

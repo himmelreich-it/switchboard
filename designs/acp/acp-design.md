@@ -7,7 +7,7 @@ Date: 2026-10-07. This follows `acp-investigation.md` and your answers there:
 
 Everything below targets **stable ACP v1**. The P0 results are in `designs/acp/acp-spike.md`. Every check passed except pushing a message into a running turn (item 20), which is mixed: neither ACP path matches today's behaviour. See that file. The facts in §2 of the investigation come from reading the adapter's source, not from running it. Phase P0 verifies them before any spec change, which matches the spec's "verified in the spike" convention.
 
-## Status (2026-10-07): next is P5
+## Status (2026-10-08): P5 plumbing in, limited to Claude
 
 Work happens on branch `feature/acp`, which is not merged into `main`.
 
@@ -18,7 +18,7 @@ Work happens on branch `feature/acp`, which is not merged into `main`.
 | P2 Live view | done | Transcript (spec item 130): `say`, `thought`, `tool` and `plan` rows, live text over SSE `stream` events |
 | P3 Permissions | done | Spec items 131 and 132: mode per project and per TODO, `request_permission` on the card and in the chat, Waiting-lane rule, `attention_by` |
 | P4 Config | done | Spec items 133 and 134: model, effort and fast per project and per TODO (model first, then the rest, then the mode), slash-command completion in the composer |
-| **P5 Multi-agent** | **next** | See §9 |
+| **P5 Multi-agent** | **plumbing only, Claude only** | Agent per TODO and per session (`todos.agent`, `sessions.agent`), defaults per agent in `projects.defaults`, `projects.default_agent`, contract as text for non-Claude agents, `auth_required` handled, `/api/agents` with login, per-agent resume hint. Only Claude is registered: no other agent could be tested yet, so Codex and Gemini wait, and Settings › Agents stays hidden while there is one agent. Probe: `codex-acp` 2.1.1 runs on Bun (also Windows ARM64), takes HTTP MCP, and logs in with ACP `authenticate` (it opens the browser), not a terminal method. See §9 |
 | P6 Claude terminals with app tools | optional | See §10 |
 
 **Decisions taken:**
