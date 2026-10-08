@@ -25,7 +25,7 @@ const BUILTINS: { id: string; name: string; command: () => string[] | null; show
 export const DEFAULT_AGENT = "claude";
 
 // A command found on PATH, with its arguments. A Windows .cmd or .bat shim (npm's global installs) runs through cmd.exe.
-function onPath(cmd: string, args: string[]): string[] | null {
+export function onPath(cmd: string, args: string[]): string[] | null {
   const path = Bun.which(cmd);
   if (!path) return null;
   return process.platform === "win32" && /\.(cmd|bat)$/i.test(path) ? ["cmd.exe", "/d", "/s", "/c", path, ...args] : [path, ...args];

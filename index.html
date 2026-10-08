@@ -2439,7 +2439,7 @@ function renderTermFoot() {
   foot.hidden = !x || !!S.cform;
   if (foot.hidden) return;
   const focused = v.host.contains(document.activeElement);
-  setHtml(foot, `<span style="color:var(--text-secondary)">${x.kind === "claude" ? "claude · separate session" : esc(S.meta?.shell || "shell") + " · login shell"}</span><span class="cwd" title="${esc(x.cwd)}">${esc(x.cwd)}</span>
+  setHtml(foot, `<span style="color:var(--text-secondary)">${x.kind === "claude" ? "claude · separate session" : esc(S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell")}</span><span class="cwd" title="${esc(x.cwd)}">${esc(x.cwd)}</span>
     <span class="push">${v.down && !v.exit && !v.ended ? "Disconnected · reconnecting…" : focused ? "Click outside to hand keys back" : "Keys go here while focused"}</span>`);
 }
 function renderTerminals(t, d) {
