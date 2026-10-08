@@ -1,0 +1,12 @@
+import { spawnAgent, startMcp, mcpFor, log } from "./harness";
+const mcp = startMcp();
+const a = await spawnAgent("smoke");
+console.log("spawn+init ms", Math.round(a.spawnMs));
+console.log(JSON.stringify({ proto: a.init.protocolVersion, caps: a.init.agentCapabilities, auth: a.init.authMethods?.map((m: any) => m.id) }, null, 1));
+const m = mcpFor("smoke");
+const t = performance.now();
+const s = await a.req("session/new", { cwd: "/tmp/sb-acp/repo", mcpServers: [m.server] });
+console.log("session/new ms", Math.round(performance.now() - t), "id", s.sessionId);
+console.log(JSON.stringify(s.configOptions?.map((o: any) => ({ id: o.id, cat: o.category, type: o.type, cur: o.currentValue, opts: (o.options ?? []).flatMap((x: any) => x.options ?? [x]).map((x: any) => x.value) })), null, 1));
+console.log("modes", JSON.stringify(s.modes));
+a.kill(); mcp.stop(true); process.exit(0);
