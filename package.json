@@ -12,7 +12,9 @@
     "vendor": "bun vendor/build.ts",
     "package:mac": "electron-builder --mac --dir",
     "package:linux": "electron-builder --linux --dir",
+    "package:win": "electron-builder --win --dir",
     "install-local:linux": "bash scripts/install-linux.sh",
+    "install-local:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows.ps1",
     "install-local": "osascript -e 'quit app \"Switchboard\"' || true; bun run package:mac && rm -rf /Applications/Switchboard.app && cp -R dist/mac*/Switchboard.app /Applications/ && rm -rf dist && echo 'Installed /Applications/Switchboard.app'"
   },
   "build": {
@@ -47,6 +49,10 @@
       "target": "dir",
       "executableName": "switchboard",
       "category": "Development"
+    },
+    "win": {
+      "target": "dir",
+      "icon": "images/icons/flat/switchboard.ico"
     }
   },
   "devDependencies": {
