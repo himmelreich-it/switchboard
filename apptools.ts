@@ -22,14 +22,14 @@ type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void }
 const grants = new Map<string, Grant>();
 
 // A secret for one agent process, and the MCP server entry that names it. Revoke it when the agent process ends.
-export function grant(g: Grant): { secret: string; server: McpServerConfig } {
+// `header` gives the header value for the secret: Claude's is a ${VAR} reference to the agent process's environment
+// (runner.ts sets SWITCHBOARD_MCP_SECRET), see agents.ts secretHeader.
+export function grant(g: Grant, header: (secret: string) => string): { secret: string; server: McpServerConfig } {
   const secret = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
   grants.set(secret, g);
   return {
     secret,
-    // The value is expanded by Claude Code from the agent process's environment (runner.ts sets SWITCHBOARD_MCP_SECRET),
-    // because the MCP config reaches the CLI in its argv, which every user on the machine can read in /proc.
-    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: "${SWITCHBOARD_MCP_SECRET}" }] } as McpServerConfig,
+    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: header(secret) }] } as McpServerConfig,
   };
 }
 export const revoke = (secret: string) => grants.delete(secret);
@@ -58,11 +58,11 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     inputSchema: { body: z.string(), file_name: z.string().optional() },
   }, async ({ body, file_name }) => {
     if (!body.trim()) return err("body is empty");
-    if (lineCount(body) > 2) return err(`Chat messages are one or two lines. Put the longer content in a markdown file in ${dir}, register it with mcp__app__attach_file, and link it with file_name.`);
+    if (lineCount(body) > 2) return err(`Chat messages are one or two lines. Put the longer content in a markdown file in ${dir}, register it with attach_file, and link it with file_name.`);
     let fileId: number | null = null;
     if (file_name) {
       const f = filesOf(todoId).find((x) => basename(x.path) === basename(file_name));
-      if (!f) return err(`No attached file is named ${file_name}. Call mcp__app__attach_file first.`);
+      if (!f) return err(`No attached file is named ${file_name}. Call attach_file first.`);
       fileId = f.id;
     }
     addMessage(todoId, "agent", body.trim(), "delivered", fileId);
