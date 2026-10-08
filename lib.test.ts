@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import {
-  contextFile, cutToTwoLines, deliveryAction, inputChannel, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, usageStep,
+  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
+  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -35,30 +36,17 @@ test("withAttachments and safeFileName", () => {
   expect(safeFileName("../My Shot (1).png")).toBe("My-Shot-1-.png");
   expect(safeFileName("..")).toBe("file");
   expect(safeFileName(".env")).toBe("env");
-  expect(safeFileName("a/b\\c.txt")).toBe("b-c.txt");
+  expect(safeFileName("a/b\\c.txt")).toBe(process.platform === "win32" ? "c.txt" : "b-c.txt");   // a backslash separates on Windows only
   expect(safeFileName("x".repeat(300) + ".png")).toBe("x".repeat(116) + ".png");
 });
 
 test("deliveryAction and statusAfterRun", () => {
   expect(deliveryAction("not_started")).toBe("pending");
-  expect(deliveryAction("running")).toBe("push");
+  expect(deliveryAction("running")).toBe("queue");
   expect(deliveryAction("idle")).toBe("send");
   expect(deliveryAction("waiting")).toBe("send");
   expect(statusAfterRun(1)).toBe("waiting");
   expect(statusAfterRun(false)).toBe("idle");
-});
-
-test("inputChannel yields the first prompt and pushes until closed", async () => {
-  const ch = inputChannel("first");
-  const got: string[] = [];
-  const reading = (async () => { for await (const x of ch.stream) got.push(x); })();
-  expect(ch.push("second")).toBe(true);
-  await Bun.sleep(1);
-  expect(ch.push("third")).toBe(true);
-  ch.close();
-  expect(ch.push("late")).toBe(false);
-  await reading;
-  expect(got).toEqual(["first", "second", "third"]);
 });
 
 test("isInside", () => {
@@ -152,19 +140,16 @@ test("handOver leaves out lines without a value", () => {
   expect(deliveryPrompt("/w", ["go"], "HEADER")).toBe("HEADER\n\ngo");
 });
 
-test("usageStep reads the context from the last main-loop model call", () => {
-  const msgs = [
-    { type: "system", subtype: "init", model: "claude-opus-5-5" },
-    { type: "assistant", parent_tool_use_id: null, message: { usage: { input_tokens: 2, cache_read_input_tokens: 9000, cache_creation_input_tokens: 1000, output_tokens: 50 } } },
-    { type: "assistant", parent_tool_use_id: "toolu_1", message: { usage: { input_tokens: 5, cache_read_input_tokens: 99999, cache_creation_input_tokens: 0, output_tokens: 1 } } },
-    { type: "assistant", parent_tool_use_id: null, message: { usage: { input_tokens: 3, cache_read_input_tokens: 12000, cache_creation_input_tokens: 500, output_tokens: 200 } } },
-    { type: "result", usage: { output_tokens: 250 }, modelUsage: { "claude-haiku-4-5": { contextWindow: 200000 }, "claude-opus-5-5": { contextWindow: 1000000 } } },
+test("ctxStep reads the context from usage_update", () => {
+  const ups = [
+    { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
+    { sessionUpdate: "usage_update", used: 24532, size: 1000000, _meta: { "_claude/model": "claude-opus-5-5" } },
+    { sessionUpdate: "usage_update", used: 25010, size: 1000000 },
   ];
-  const c = msgs.reduce<any>((c, m) => usageStep(c, m), null);
-  expect(c).toMatchObject({ used: 12703, last_in: 12503, last_out: 250, window: 1000000, turns: 1 });
-  const after = usageStep(c, { type: "system", subtype: "compact_boundary", compact_metadata: { pre_tokens: 12703, post_tokens: 3000 } });
-  expect(after!.used).toBe(3000);
-  expect(usageStep(null, { type: "user" })).toBe(null);
+  const c = ups.reduce<any>((c, u) => ctxStep(c, u), null);
+  expect(c).toEqual({ used: 25010, window: 1000000, turns: 0, model: "claude-opus-5-5" });
+  expect(ctxStep(null, { sessionUpdate: "plan" })).toBe(null);
+  expect(ctxStep(c, { sessionUpdate: "usage_update", used: 900000, size: 1000000, _meta: { "_claude/origin": { kind: "task-notification" } } })).toBe(c);
 });
 
 test("migrateDb makes earlier TODOs session 1 and runs twice without harm", () => {
@@ -215,6 +200,83 @@ test("terminal helpers", () => {
   expect(ctx).toContain("Check with the user before you commit");
   expect(contextFile({ title: "T", project: "p", status: "not_started", first: "x", worktree: null, branch: null, git: null, pr: null, sessions: [], messages: [], files: [] }))
     .toContain("not started (in the backlog)");
+});
+
+test("toolMeta merges a tool call's updates; planCount", () => {
+  const ups = [
+    { sessionUpdate: "tool_call", toolCallId: "t1", title: "Write", kind: "edit", status: "pending", rawInput: {}, _meta: { claudeCode: { toolName: "Write" } } },
+    { sessionUpdate: "tool_call_update", toolCallId: "t1", title: "Write b.txt", rawInput: { file_path: "/r/b.txt", content: "x" },
+      content: [{ type: "diff", path: "/r/b.txt", oldText: null, newText: "x" }], locations: [{ path: "/r/b.txt" }] },
+    { sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed", content: [{ type: "content", content: { type: "text", text: "done" } }] },
+  ];
+  const m = ups.reduce<any>((m, u) => toolMeta(m, u), null);
+  expect(m).toMatchObject({ name: "Write", title: "Write b.txt", kind: "edit", status: "completed", input: { file_path: "/r/b.txt" }, output: "done",
+    locations: [{ path: "/r/b.txt" }], diffs: [{ path: "/r/b.txt", oldText: null, newText: "x" }] });
+  expect(toolMeta(null, { toolCallId: "t2", rawOutput: "x".repeat(9000), status: "completed" }).output.length).toBeLessThan(8100);
+  expect(planCount(null)).toBe(null);
+  expect(planCount([{ content: "a", status: "completed" }, { content: "b", status: "pending" }])).toBe("1/2");
+});
+
+test("permissionOf keeps what the UI shows of a request (P3)", () => {
+  const bash = permissionOf({
+    sessionId: "s", toolCall: { toolCallId: "t1", title: "rm -rf build", kind: "execute", status: "pending", rawInput: { command: "rm -rf build" }, _meta: { claudeCode: { toolName: "Bash" } } },
+    options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
+  } as any, "2026-10-07T10:00:00.000Z");
+  expect(bash).toEqual({
+    id: "t1", name: "Bash", title: "rm -rf build", kind: "execute", input: { command: "rm -rf build" }, diffs: [], at: "2026-10-07T10:00:00.000Z",
+    options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
+  });
+  const edit = permissionOf({
+    sessionId: "s", toolCall: { toolCallId: "t2", title: "Write a.txt", kind: "edit", content: [{ type: "diff", path: "/r/a.txt", oldText: null, newText: "x".repeat(300_000) }] },
+    options: [{ optionId: "allow-with-updates", name: "Allow all edits during this session", kind: "allow_always" }],
+  } as any, "2026-10-07T10:00:00.000Z");
+  expect(edit.name).toBe("Write a.txt");   // no Claude tool name in _meta: the title stands in
+  expect(edit.diffs[0]!.newText.length).toBeLessThan(200_100);
+  expect(edit.options[0]!.kind).toBe("allow_always");
+  // A bare tool call still gives something to show.
+  expect(permissionOf({ sessionId: "s", toolCall: { toolCallId: "t3" }, options: [] } as any, "now")).toMatchObject({ id: "t3", name: "tool", title: "", kind: "other", options: [] });
+});
+
+test("laneOf, attentionAfterAnswer and MODES (P3)", () => {
+  const perm: Permission = { id: "t", name: "Bash", title: "", kind: "execute", input: {}, diffs: [], options: [], at: "" };
+  expect(laneOf({ status: "waiting", permission: null })).toBe("waiting");
+  expect(laneOf({ status: "running", permission: perm })).toBe("waiting");   // a question the agent waits on needs the user now
+  expect(laneOf({ status: "running", permission: null })).toBe("running");
+  expect(laneOf({ status: "idle", permission: perm })).toBe("idle");         // stale column after a crash: the status wins
+  expect(laneOf({ status: "not_started", permission: null })).toBe("not_started");
+  // Answering clears the flag only when the request raised it.
+  expect(attentionAfterAnswer("permission")).toBe(0);
+  expect(attentionAfterAnswer("agent")).toBe(1);
+  expect(attentionAfterAnswer("app")).toBe(1);
+  expect(attentionAfterAnswer(null)).toBe(1);
+  expect(MODES[0]).toBe("auto");
+  expect(MODES).toContain("default");
+});
+
+test("configView and configChanges: the model first, then what the model left (P4)", () => {
+  const raw = [
+    { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "auto", options: [{ value: "auto", name: "Auto" }] },
+    { id: "model", name: "Model", category: "model", type: "select", currentValue: "default", options: [{ value: "default", name: "Default" }, { value: "haiku", name: "Haiku 4.5" }] },
+    { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "medium", options: [{ group: "g", name: "G", options: [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }] }] },
+    { id: "flag", name: "Flag", type: "boolean", currentValue: true },
+  ];
+  const v = configView(raw);
+  expect(v.map((o) => o.id)).toEqual(["mode", "model", "effort"]);
+  expect(v[2]).toEqual({ id: "effort", name: "Effort", category: "thought_level", value: "medium", options: [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }] });
+  const wanted = { model: "haiku", effort: "low", mode: "plan", agent: "x" };
+  expect(configChanges(v, wanted, true)).toEqual({ set: [["model", "haiku"]], skipped: [] });
+  expect(configChanges(v, wanted, false)).toEqual({ set: [["effort", "low"]], skipped: [["agent", "x"]] });
+  // Haiku has no effort option: the value is skipped, not set.
+  const haiku = v.filter((o) => o.id !== "effort").map((o) => (o.id === "model" ? { ...o, value: "haiku" } : o));
+  expect(configChanges(haiku, wanted, true).set).toEqual([]);
+  expect(configChanges(haiku, wanted, false).skipped).toEqual([["effort", "low"], ["agent", "x"]]);
+  expect(configChanges(v, { effort: "max" }, false).skipped).toEqual([["effort", "max"]]);
+});
+
+test("configIn keeps string values and drops the mode", () => {
+  expect(configIn({ model: "opus", effort: "", mode: "plan", fast: 1 })).toEqual({ model: "opus" });
+  expect(configIn(null)).toEqual({});
+  expect(configIn(["x"])).toEqual({});
 });
 
 test("revealCommand", () => {
