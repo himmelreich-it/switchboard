@@ -700,6 +700,11 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
               <label class="mb-field__label" for="newProject">Project</label>
               <span class="mb-select-wrap"><select id="newProject" class="mb-select"></select></span>
               <span class="mb-field__hint">Last used</span>
+              <div id="newAgentField" class="mb-field" style="margin-top:8px" hidden>
+                <label class="mb-field__label" for="newAgent">Agent</label>
+                <span class="mb-select-wrap"><select id="newAgent" class="mb-select"></select></span>
+                <span class="mb-field__hint">The project's default unless you pick one</span>
+              </div>
             </div>
             <div class="mb-field">
               <label class="mb-field__label" for="newText">First instruction</label>
@@ -817,6 +822,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
     <nav class="set-nav" aria-label="Settings sections">
       <span class="microlabel" style="padding:0 10px 8px">Settings</span>
       <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Projects</span><span id="cProjects" class="n">0</span></button>
+      <button type="button" class="set-sec" data-act="set-sec" data-id="agents"><span>Agents</span><span id="cAgents" class="n">0</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
     </nav>
     <div id="secProjects" class="proj-grid">
@@ -832,7 +838,11 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           </div>
           <div class="mb-field"><label class="mb-field__label" for="pPath">Local folder</label><input id="pPath" class="mb-input" autocomplete="off" placeholder="~/code/my-repo"><span id="pPathHint" class="mb-field__hint"></span></div>
           <div class="mb-field"><label class="mb-field__label" for="pPrompt">Agent prompt</label><textarea id="pPrompt" class="mb-textarea" rows="4"></textarea><span class="mb-field__hint">Sent on every launch and resume, after the app contract.</span></div>
-          <div class="mb-field" style="max-width:320px"><label class="mb-field__label" for="pMode">Permission mode</label><select id="pMode" class="mb-input"></select><span class="mb-field__hint">For this project's agents. In auto, the agent decides and the app reports what it blocked. In the other modes it asks you on the card and in the chat. A TODO can override this in its Focus header.</span></div>
+          <div id="pAgents" class="grid2">
+            <div class="mb-field"><label class="mb-field__label" for="pAgent">Default agent</label><select id="pAgent" class="mb-input"></select><span class="mb-field__hint">For the project's new TODOs. The New TODO card and New session can pick another.</span></div>
+            <div class="mb-field"><label class="mb-field__label" for="pDefAgent">Settings below for</label><select id="pDefAgent" class="mb-input"></select><span class="mb-field__hint">Each agent has its own modes and models, so each keeps its own defaults.</span></div>
+          </div>
+          <div class="mb-field" style="max-width:320px"><label class="mb-field__label" for="pMode">Permission mode</label><select id="pMode" class="mb-input"></select><span id="pModeHint" class="mb-field__hint"></span></div>
           <div id="pConfig" class="row wrap" style="gap:14px; align-items:flex-start"></div>
           <span id="projErr" class="mb-field__error" role="alert"></span>
           <div class="row" style="justify-content:flex-end;"><button type="submit" id="projSave" class="mb-btn mb-btn--primary mb-btn--md" disabled>Save changes</button></div>
@@ -843,6 +853,25 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
           <span class="small">Every agent gets this before the project prompt. {artifact_dir} becomes the TODO's artifact folder.</span>
         </div>
       </div>
+    </div>
+    <!-- P5: the ACP agents a TODO can run on: the built-ins and the user's own -->
+    <div id="secAgents" class="set-main" hidden>
+      <h1 class="page-title">Agents</h1>
+      <span class="small">A TODO runs on one agent per session. Every agent gets the app contract and the app's tools; Claude gets the contract as its system prompt, the others as text before the first message of each session.</span>
+      <div id="agentList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <form id="agentForm" class="panel" style="padding:20px; gap:14px;">
+        <span class="microlabel">Add an agent</span>
+        <div class="grid2">
+          <div class="mb-field"><label class="mb-field__label" for="aName">Name</label><input id="aName" class="mb-input" autocomplete="off" placeholder="My agent"></div>
+          <div class="mb-field"><label class="mb-field__label" for="aCommand">Command</label><input id="aCommand" class="mb-input" autocomplete="off" placeholder="my-agent"><span class="mb-field__hint">Found on PATH. It must speak ACP over stdio.</span></div>
+        </div>
+        <div class="grid2">
+          <div class="mb-field"><label class="mb-field__label" for="aArgs">Arguments</label><input id="aArgs" class="mb-input" autocomplete="off" placeholder="--acp"></div>
+          <div class="mb-field"><label class="mb-field__label" for="aEnv">Environment</label><textarea id="aEnv" class="mb-textarea" rows="2" placeholder="NAME=value, one per line"></textarea></div>
+        </div>
+        <span id="agentErr" class="mb-field__error" role="alert"></span>
+        <div class="row" style="justify-content:flex-end;"><button type="submit" class="mb-btn mb-btn--secondary mb-btn--md">Add agent</button></div>
+      </form>
     </div>
     <div id="secAppearance" class="set-main" hidden>
       <h1 class="page-title">Appearance</h1>
@@ -1068,11 +1097,15 @@ const S = {
   file: null,            // open file: {todoId, id, name, path, content (disk), mtime (base for save), text (editor), mode}
   dlg: null, toasts: [], sending: null, ghRetrying: false,
   newProject: null, projSel: null, projErr: "",
+  projDefs: {}, projDefAgent: "claude",
+  agentInfo: {}, loggingIn: null, agentErr: "",   // P5: Settings › Agents: what each agent said in initialize, a login under way   // P5: the project form's defaults per agent as edited, and the agent they show
   filter: "all",         // project filter: "all" or a project id as text, kept in localStorage
   settingsOpen: false, settingsFrom: "todos", setSec: "projects",   // Settings tab (item 122): open, the view it came from, its section
   board: "board", focusFrom: "board",   // overview side (item 86) and the side the Focus view returns to (item 91)
   events: false,                        // events mixed into the chat (item 100), kept in localStorage
   nsMode: {},                           // TODO id -> composer in new-session mode (item 71); browser only
+  nsAgent: {},                          // TODO id -> agent chosen for the new session (P5); browser only
+  newAgent: null,                       // the New TODO card's agent (P5); null: the project's default
   live: {},   // item 130: the text a running agent is writing now, per TODO ({kind, text}), from SSE "stream" events
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
 };
@@ -1090,7 +1123,7 @@ const edits = {};   // file id -> {text, mtime}: unsaved file edits survive clos
 // Upload them on paste into a server-side draft if that starts to hurt.
 const uploads = {}; // 'todo:<id>' | 'new' -> [{name, type, url (data: URL)}], waiting for the next commit
 
-const composer = $("composer"), operatorIn = $("operatorIn"), newText = $("newText"), newProject = $("newProject");
+const composer = $("composer"), operatorIn = $("operatorIn"), newText = $("newText"), newProject = $("newProject"), newAgent = $("newAgent");
 const chatLog = $("chatLog"), pName = $("pName"), pPath = $("pPath"), pPrompt = $("pPrompt"), pRepo = $("pRepo");
 
 const live = () => S.todos.filter((t) => !t.removed_at);
@@ -1101,14 +1134,30 @@ const inFilter = (t) => { const p = filterProject(); return !p || t.project_id =
 // P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf).
 const laneOf = (t) => (t.status === "running" && t.permission ? "waiting" : t.status);
 const waitingList = () => live().filter((t) => laneOf(t) === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
-// The permission modes (lib.ts MODES); the UI's labels for them.
+// P5: the agents (Settings › Agents); only the found ones can run. Claude is the default everywhere.
+const agentsAll = () => S.meta?.agents ?? [{ id: "claude", name: "Claude", builtin: true, found: true }];
+const agentsFound = () => agentsAll().filter((a) => a.found);
+const agentLabel = (id) => agentsAll().find((a) => a.id === (id || "claude"))?.name ?? id;
+// Per agent, the config options last seen from any of its sessions (meta).
+const agentConfig = (agent) => S.meta?.agent_config?.[agent || "claude"] ?? [];
+const agentSelect = (value, attrs) => `<select ${attrs}>${agentsFound().map((a) => `<option value="${esc(a.id)}"${(value || "claude") === a.id ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select>`;
+// The permission modes (lib.ts MODES); the UI's labels for them. They are Claude's: another agent's modes are its own
+// `mode` option, from its session or the last one seen.
 const MODES = { auto: "Auto", default: "Default (ask)", acceptEdits: "Accept edits", plan: "Plan", bypassPermissions: "Bypass permissions" };
-const modeOptions = (value, projectDefault) => (projectDefault !== undefined ? [["", `Project's (${MODES[projectDefault ?? "auto"] ?? projectDefault})`]] : []).concat(Object.entries(MODES))
-  .map(([v, l]) => `<option value="${v}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
+const modeChoices = (agent, t) => (agent || "claude") === "claude" ? Object.entries(MODES)
+  : ((t?.config ?? agentConfig(agent)).find((o) => o.category === "mode")?.options ?? []).map((x) => [x.value, x.name]);
+// `projectDefault` undefined: the project's own select (Claude: auto first; others: the agent's own). Else a TODO's
+// select, "" first for the project's value.
+const modeOptions = (value, projectDefault, agent, t) => {
+  const claude = (agent || "claude") === "claude", choices = modeChoices(agent, t);
+  const name = (v) => choices.find(([x]) => x === v)?.[1] ?? v;
+  const first = projectDefault !== undefined ? [["", `Project's (${projectDefault ? name(projectDefault) : claude ? MODES.auto : "agent's own"})`]] : claude ? [] : [["", "Agent's own"]];
+  return first.concat(choices).map(([v, l]) => `<option value="${esc(v)}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
+};
 // P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
-// is the TODO's session's as the agent last reported it, else the last one seen from any session (meta).
+// is the TODO's session's as the agent last reported it, else the last one seen from any session of that agent (meta).
 const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
-const configList = (t) => (t?.config ?? S.meta?.agent_config ?? []).filter((o) => CONFIG_CATEGORIES.includes(o.category));
+const configList = (t, agent) => (t?.config ?? agentConfig(t?.agent ?? agent)).filter((o) => CONFIG_CATEGORIES.includes(o.category));
 const optName = (o, v) => o.options.find((x) => x.value === v)?.name ?? v;
 // One select's options: "" first (the project's value, or the agent's own when the project sets none), then the agent's.
 const configOptions = (o, value, inherited, inheritedFrom) => [["", inherited ? `${inheritedFrom} (${optName(o, inherited)})` : "Agent's default"], ...o.options.map((x) => [x.value, x.name])]
@@ -1171,9 +1220,9 @@ function acceptFiles(zone, keyOf) {
 // ---------- loading (one queue, so a burst of SSE events becomes one fetch per resource) ----------
 const loaders = {
   async meta() {
-    const had = JSON.stringify(S.meta?.agent_config ?? null);
+    const had = JSON.stringify([S.meta?.agent_config ?? null, S.meta?.agents ?? null]);
     S.meta = await call("GET", "/api/meta");
-    if (had !== JSON.stringify(S.meta.agent_config) && !projDirty()) fillProjForm();   // the Settings selects come from it
+    if (had !== JSON.stringify([S.meta.agent_config, S.meta.agents]) && !projDirty()) fillProjForm();   // the Settings selects come from it
   },
   async todos() { S.todos = await call("GET", "/api/todos"); },
   async projects() {
@@ -1333,8 +1382,8 @@ async function commit(key, el) {
   S.sending = { key, body: body || (ns ? "continue" : ""), files };
   render();
   try {
-    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire) });
-    if (ns) { delete S.nsMode[tid]; toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`); }
+    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
+    if (ns) { delete S.nsMode[tid]; delete S.nsAgent[tid]; toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`); }
   } catch (e) {
     drafts[key] = body;
     if (!el.value && (el === operatorIn || draftKey() === key)) el.value = body;
@@ -1356,7 +1405,8 @@ async function addTodo(start = false) {
   render();
   const files = uploads.new ?? [];
   try {
-    const t = await call("POST", "/api/todos", { project_id: pid, instruction, attachments: files.map(wire), start });
+    const agent = agentsFound().length > 1 ? newAgent.value : null;
+    const t = await call("POST", "/api/todos", { project_id: pid, instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}) });
     newText.value = "";
     uploads.new = (uploads.new ?? []).filter((u) => !files.includes(u));   // keeps files added while this was sending
     const fp = filterProject(), hidden = fp && fp.id !== pid;
@@ -1561,32 +1611,61 @@ function dropFile() { S.file = null; destroyEditor(); }
 
 // ---------- projects ----------
 const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
+// P5: the project's defaults per agent, {agent: {config id: value, mode}}, as edited; saved all at once.
+const normDefaults = (d) => JSON.stringify(Object.entries(d ?? {}).map(([a, v]) => [a, Object.entries(v).filter(([k, x]) => x && !(a === "claude" && k === "mode" && x === "auto")).sort()]).filter(([, v]) => v.length).sort());
 function projDirty() {
   const p = selProject();
   if (!p) return !!(pName.value || pPath.value || pPrompt.value);
-  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || pMode.value !== (p.mode ?? "auto")
-    || JSON.stringify(projDefaults()) !== JSON.stringify(Object.fromEntries(Object.entries(p.defaults ?? {}).sort()));
+  harvestDefaults();
+  return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || (pAgent.value || "claude") !== (p.default_agent ?? "claude")
+    || normDefaults(S.projDefs) !== normDefaults(p.defaults);
 }
 function fillProjForm() {
   const p = selProject();
   pName.value = p?.name ?? "";
   pPath.value = p?.local_path ?? "";
   pPrompt.value = p?.agent_prompt ?? "";
-  pMode.innerHTML = modeOptions(p?.mode ?? "auto");
-  // P4: the agent's options, from the last session seen; before any session there is no list to show.
-  const opts = configList(null);
-  $("pConfig").innerHTML = opts.length
-    ? opts.map((o) => `<div class="mb-field" style="min-width:200px"><label class="mb-field__label" for="pCfg-${esc(o.id)}">${esc(o.name)}</label><select id="pCfg-${esc(o.id)}" class="mb-input" data-cfg="${esc(o.id)}">${configOptions(o, p?.defaults?.[o.id], null)}</select></div>`).join("")
-      + `<span class="mb-field__hint" style="flex-basis:100%">For this project's new and resumed sessions, applied before every turn. A TODO can override them in its Focus header. A value the model does not offer (effort on Haiku) is skipped.</span>`
-    : `<span class="mb-field__hint">Model and effort settings appear once an agent has run here: the lists come from the agent.</span>`;
+  S.projDefs = JSON.parse(JSON.stringify(p?.defaults ?? {}));
+  const found = agentsFound();
+  $("pAgents").hidden = found.length < 2;
+  const opts = found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("");
+  pAgent.innerHTML = pDefAgent.innerHTML = opts;
+  pAgent.value = p?.default_agent ?? "claude";
+  S.projDefAgent = pDefAgent.value = pAgent.value;
+  fillDefaults();
   S.projErr = "";
 }
-// The Settings selects as {config id: value}, sorted, without the unset ones.
-const projDefaults = () => Object.fromEntries([...$("pConfig").querySelectorAll("select[data-cfg]")].filter((el) => el.value).map((el) => [el.dataset.cfg, el.value]).sort());
+// The mode and config selects for the agent picked in "Settings below for", from its edited defaults.
+function fillDefaults() {
+  const agent = S.projDefAgent ?? "claude", d = S.projDefs[agent] ?? {}, name = agentLabel(agent);
+  const choices = modeChoices(agent);
+  pMode.innerHTML = modeOptions(d.mode ?? (agent === "claude" ? "auto" : ""), undefined, agent);
+  pMode.disabled = !choices.length;
+  $("pModeHint").textContent = agent === "claude"
+    ? "For this project's agents. In auto, the agent decides and the app reports what it blocked. In the other modes it asks you on the card and in the chat. A TODO can override this in its Focus header."
+    : choices.length ? `${name}'s own modes. In the modes that ask, it asks you on the card and in the chat. A TODO can override this in its Focus header.`
+    : `${name}'s modes appear once it has run here: the list comes from the agent.`;
+  // P4: the agent's options, from the last session seen; before any session there is no list to show.
+  const opts = configList(null, agent);
+  $("pConfig").innerHTML = opts.length
+    ? opts.map((o) => `<div class="mb-field" style="min-width:200px"><label class="mb-field__label" for="pCfg-${esc(o.id)}">${esc(o.name)}</label><select id="pCfg-${esc(o.id)}" class="mb-input" data-cfg="${esc(o.id)}">${configOptions(o, d[o.id], null)}</select></div>`).join("")
+      + `<span class="mb-field__hint" style="flex-basis:100%">For this project's new and resumed sessions, applied before every turn. A TODO can override them in its Focus header. A value the model does not offer (effort on Haiku) is skipped.</span>`
+    : `<span class="mb-field__hint">Model and effort settings appear once ${esc(name)} has run here: the lists come from the agent.</span>`;
+}
+// The selects into S.projDefs for the agent they show. Values the selects do not show (an option the agent's last
+// list lacks) are kept.
+function harvestDefaults() {
+  const agent = S.projDefAgent ?? "claude";
+  const d = { ...(S.projDefs[agent] ?? {}) };
+  for (const el of $("pConfig").querySelectorAll("select[data-cfg]")) { if (el.value) d[el.dataset.cfg] = el.value; else delete d[el.dataset.cfg]; }
+  if (!pMode.disabled) { if (pMode.value && !(agent === "claude" && pMode.value === "auto")) d.mode = pMode.value; else delete d.mode; }
+  if (Object.keys(d).length) S.projDefs[agent] = d; else delete S.projDefs[agent];
+}
 $("projForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const p = selProject();
-  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, mode: pMode.value === "auto" ? null : pMode.value, defaults: projDefaults() };
+  harvestDefaults();
+  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, default_agent: pAgent.value || "claude", defaults: S.projDefs };
   try {
     const saved = await call(p ? "PUT" : "POST", p ? `/api/projects/${p.id}` : "/api/projects", body);
     S.projects = [...S.projects.filter((x) => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name));
@@ -1679,6 +1758,12 @@ function renderOverview() {
     S.newProject = filterProject()?.id ?? (S.projects.some((p) => p.id === S.meta?.last_project_id) ? S.meta.last_project_id : S.projects[0]?.id ?? null);
   newProject.value = S.newProject ?? "";
   newProject.disabled = !S.projects.length;
+  // P5: the agent select shows only when there is a choice.
+  const found = agentsFound(), np = S.projects.find((p) => p.id === S.newProject);
+  $("newAgentField").hidden = found.length < 2;
+  const akey = found.map((a) => a.id).join("|");
+  if (newAgent.dataset.key !== akey) { newAgent.innerHTML = found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(""); newAgent.dataset.key = akey; }
+  newAgent.value = S.newAgent ?? np?.default_agent ?? "claude";
   $("newNote").textContent = S.projects.length ? "Lands in the backlog. Nothing launches until you start it." : "Add a project in Settings › Projects first.";
   $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || S.newProject == null || adding;
   setHtml($("newFiles"), uploadChips("new"));
@@ -1737,7 +1822,7 @@ function backlogHtml(rows, fp) {
     return `<div class="bl-row" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
       <div class="c1"><span class="ellipsis" style="color:var(--text-secondary)">${esc(t.project_name)}</span><span class="muted" title="${esc(new Date(t.created_at).toLocaleString())}">${shortAge(t.created_at)}</span></div>
       <div class="c2"><span class="t">${esc(t.title)}</span>${meta ? `<span class="mono muted" style="font-size:11px">${meta}</span>` : ""}</div>
-      <div class="c3">${t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
+      <div class="c3">${t.agent && t.agent !== "claude" ? badge(agentLabel(t.agent)) : ""}${t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
         <span title="Remove · no confirmation, nothing is running" style="display:flex"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove">${SVG(CLOSE, 15)}</button></span></div>
     </div>`;
   }).join("")}</div></section>`;
@@ -1767,7 +1852,7 @@ function cardHtml(t) {
   const foot = t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t)
     : t.file_count ? `${plural(t.file_count, "file")} · ${t.file_names.join(", ")}` : "No files";
   return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${lane === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${lane === "waiting" ? STATUS.waiting.edge : st.edge}">
-    <div class="card-badges">${badge(st.label, st.badge, true)}${permBadge(t)}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
+    <div class="card-badges">${badge(st.label, st.badge, true)}${permBadge(t)}${t.agent && t.agent !== "claude" ? badge(agentLabel(t.agent)) : ""}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     <div class="card-meta"><span class="proj">${esc(t.project_name)}</span>${t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : ""}</div>
     ${cardGitHtml(t)}
@@ -1828,12 +1913,18 @@ function renderFocusHead(operator, t, d, fileOpen) {
     left = t.status === "not_started" && S.projects.length > 1
       ? `<select aria-label="Project" title="Project · editable until you start" data-change="move-project" data-id="${t.id}">${S.projects.map((p) => `<option value="${p.id}"${p.id === t.project_id ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`
       : `<span class="sec">${esc(t.project_name)}</span>`;
-    if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, "Copy session id · resume outside with claude --resume")}`;
+    // P5: the agent, editable until the start; later New session can switch it.
+    if (t.status === "not_started" && agentsFound().length > 1) left += `<span class="sep">·</span>${agentSelect(t.agent, `aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}`;
+    else if (agentsFound().length > 1 || t.agent !== "claude") left += `<span class="sep">·</span><span class="sec">${esc(agentLabel(t.agent))}</span>`;
+    const resume = sessions.at(-1)?.resume;
+    if (t.session_id) left += `<span class="sep">·</span><span>session ${n > 1 ? `${n} of ${n} · ` : ""}${esc(t.session_id.slice(0, 8))}</span>${copyBtn(t.session_id, resume ? `Copy session id · resume outside with ${resume.split(" ").slice(0, -1).join(" ")}` : "Copy session id")}`;
+    const pd0 = S.projects.find((p) => p.id === t.project_id)?.defaults?.[t.agent || "claude"] ?? {};
     // P3: the permission mode of this TODO's runs; "Project's" follows Settings › Projects. A change reaches a live agent at once.
-    left += `<span class="sep">·</span><select aria-label="Permission mode" title="Permission mode for this TODO's runs. Auto decides on its own; the other modes ask you here." data-change="todo-mode" data-id="${t.id}">${modeOptions(t.mode, S.projects.find((p) => p.id === t.project_id)?.mode ?? null)}</select>`;
+    if (modeChoices(t.agent, t).length)
+      left += `<span class="sep">·</span><select aria-label="Permission mode" title="Permission mode for this TODO's runs.${t.agent === "claude" ? " Auto decides on its own; the other modes ask you here." : ""}" data-change="todo-mode" data-id="${t.id}">${modeOptions(t.mode, pd0.mode ?? null, t.agent, t)}</select>`;
     // P4: model, effort and the like; "Project's" follows Settings › Projects. A change reaches a live agent at once.
     // An option the current model lacks (effort on Haiku) is not in the agent's list, so it does not show.
-    const pd = S.projects.find((p) => p.id === t.project_id)?.defaults ?? {};
+    const pd = pd0;
     for (const o of configList(t))
       left += `<span class="sep">·</span><span style="margin-right:4px">${esc(o.name.toLowerCase())}</span><select aria-label="${esc(o.name)}" title="${esc(o.name)} for this TODO's runs${t.config ? ` · now ${esc(optName(o, o.value))}` : ""}" data-change="todo-config" data-id="${t.id}" data-cfg="${esc(o.id)}">${configOptions(o, t.overrides?.[o.id], pd[o.id], "Project's")}</select>`;
     if (t.branch) left += `<span class="sep">·</span><span class="sec">${SVG(BRANCH, 12)}${esc(t.branch)}</span>`;
@@ -1976,8 +2067,9 @@ function timelineHtml(t, d) {
     const head = `<div class="sess"><div class="sess-row">
         <button type="button" class="sess-btn"${isLive ? ' aria-disabled="true"' : ` data-act="sess-toggle" data-id="${key}"`} aria-expanded="${open}">${SVG(open ? CHEV_D : CHEV_R, 14)}<span class="sess-no">Session ${s.no}</span><span class="sess-label">${esc(sessLabel(msgs))}</span></button>
         ${isLive ? badge("Live", "neutral", true) : ""}<span class="sess-range">${esc(sessRange(s))}</span>
-        <button type="button" class="sid-btn" data-act="copy" data-id="${esc(s.session_id)}" data-title="Session ${s.no} id" title="Copy id · claude --resume ${esc(s.session_id)} from ${esc(path)}">${esc(s.session_id.slice(0, 8))}${SVG(COPY_ICON, 12)}</button>
-      </div>${open && !isLive ? `<span class="sess-resume">Read-only here. Resume it outside the app: claude --resume ${esc(s.session_id)}, run from ${esc(path)}</span>` : ""}</div>`;
+        ${s.agent !== "claude" || sessions.some((x) => x.agent !== "claude") ? `<span class="sess-range">${esc(s.agent_name)}</span>` : ""}
+        <button type="button" class="sid-btn" data-act="copy" data-id="${esc(s.session_id)}" data-title="Session ${s.no} id" title="Copy id${s.resume ? ` · ${esc(s.resume)} from ${esc(path)}` : ""}">${esc(s.session_id.slice(0, 8))}${SVG(COPY_ICON, 12)}</button>
+      </div>${open && !isLive ? `<span class="sess-resume">Read-only here.${s.resume ? ` Resume it outside the app: ${esc(s.resume)}, run from ${esc(path)}` : ""}</span>` : ""}</div>`;
     if (open) return head + streamHtml(msgs, evsOf(s.no), false).replaceAll('data-act="edit-first"', "");
     const last = [...msgs].reverse().find((m) => m.author === "agent");
     const files = d.files.filter((f) => f.session_no === s.no);
@@ -2015,7 +2107,9 @@ function renderChat(operator, t, d) {
   // Item 71: the composer in new-session mode; the draft and attachments stay.
   const nsHead = $("nsHead");
   nsHead.hidden = !ns;
-  setHtml(nsHead, ns ? `<span class="sq"></span><span class="t">New session ${nSess + 1}</span><span class="small">${keys("⌘↵")} starts session ${nSess + 1}. Session ${nSess} ends and stays above as history.</span>
+  // P5: the next session may run on another agent; the hand-over is plain text, so any agent picks it up.
+  const nsAgent = ns && agentsFound().length > 1 ? agentSelect(S.nsAgent[t.id] ?? t.agent, `aria-label="Agent for session ${nSess + 1}" title="Agent for session ${nSess + 1}" data-change="ns-agent" data-id="${t.id}"`) : "";
+  setHtml(nsHead, ns ? `<span class="sq"></span><span class="t">New session ${nSess + 1}</span>${nsAgent}<span class="small">${keys("⌘↵")} starts session ${nSess + 1}. Session ${nSess} ends and stays above as history.</span>
     <span class="push row" style="gap:6px"><span class="kbd">Esc</span>${btn("Cancel", "cancel-ns", { v: "ghost", id: t.id })}</span>` : "");
   $("commitBtn").textContent = ns ? "Start session" : "Commit";
   // R56: after an app restart queued messages wait for the user; nothing is delivered on its own
@@ -2412,9 +2506,56 @@ function renderSettings() {
   document.querySelectorAll(".set-sec").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.setSec));
   $("secProjects").hidden = S.setSec !== "projects";
   $("secAppearance").hidden = S.setSec !== "appearance";
+  $("secAgents").hidden = S.setSec !== "agents";
+  $("cAgents").textContent = agentsAll().length;
   if (S.setSec === "projects") renderProjects();
+  else if (S.setSec === "agents") renderAgents();
   else applyTheme();
 }
+
+// P5: each agent with its state. What it says about itself (version, ways to log in) is asked once per page load,
+// since that starts the agent; Claude logs in through Claude Code itself.
+function renderAgents() {
+  for (const a of agentsFound()) if (a.id !== "claude" && !(a.id in S.agentInfo)) {
+    S.agentInfo[a.id] = null;
+    call("GET", `/api/agents/${a.id}/describe`).then((r) => { S.agentInfo[a.id] = r; }, (e) => { S.agentInfo[a.id] = { error: e.message }; }).then(render);
+  }
+  setHtml($("agentList"), agentsAll().map((a) => {
+    const info = S.agentInfo[a.id], busy = S.loggingIn === a.id;
+    const state = !a.found ? badge("Not installed", "amber") : badge("Ready", "lime", true);
+    const login = a.found && a.id !== "claude" && info?.authMethods?.length
+      ? `<div class="row wrap" style="gap:6px"><span class="small">Log in:</span>${info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex">${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("")}</div>` : "";
+    return `<div class="panel" style="padding:14px 16px; gap:8px">
+      <div class="row wrap" style="gap:8px"><span class="mono" style="font-size:14px; font-weight:600">${esc(a.name)}</span>${state}${a.builtin ? badge("Built-in") : ""}
+        <span class="push row" style="gap:6px">${a.builtin ? "" : `<button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="agent-delete" data-id="${esc(a.id)}" aria-label="Remove ${esc(a.name)}" title="Remove ${esc(a.name)}">${SVG(TRASH, 15)}</button>`}</span></div>
+      <span class="mono muted" style="font-size:12px">${esc(a.command)}${info?.version ? ` · ${esc(info.name ?? "")} ${esc(info.version)}` : ""}</span>
+      ${!a.found && a.hint ? `<span class="small">${esc(a.hint)}</span>` : ""}${info?.error ? `<span class="small" style="color:var(--accent-amber)">${esc(info.error)}</span>` : ""}
+      ${login}</div>`;
+  }).join(""));
+  $("agentErr").textContent = S.agentErr ?? "";
+}
+async function agentLogin(key) {
+  const [id, method] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+  S.loggingIn = id;
+  render();
+  toast("info", `Logging in to ${agentLabel(id)}`, "Finish the login where the agent opened it, usually your browser.");
+  try {
+    await call("POST", `/api/agents/${id}/login`, { methodId: method });
+    toast("success", `Logged in to ${agentLabel(id)}`, "Start or message the TODO again.");
+  } catch (e) { toast("danger", "Not logged in", e.message); }
+  S.loggingIn = null;
+  render();
+}
+$("agentForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await call("POST", "/api/agents", { name: $("aName").value, command: $("aCommand").value, args: $("aArgs").value, env: $("aEnv").value });
+    for (const id of ["aName", "aCommand", "aArgs", "aEnv"]) $(id).value = "";
+    S.agentErr = "";
+  } catch (err) { S.agentErr = err.message; }
+  need("meta");
+  render();
+});
 
 function renderProjects() {
   const p = selProject();
@@ -2502,6 +2643,8 @@ const ACTIONS = {
   "open-settings": openSettings,
   "close-settings": (id, el) => { closeSettings(); },
   "set-sec": (id) => { S.setSec = id; render(); },
+  "agent-login": (id) => agentLogin(id),
+  "agent-delete": (id) => act(call("DELETE", `/api/agents/${id}`).then(() => need("meta", "projects")), "Agent not removed"),
   filter: setFilter,
   "gh-retry": () => {
     if (S.ghRetrying) return;
@@ -2562,6 +2705,8 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target.closest?.("[data-change]");
   if (el?.dataset.change === "move-project") moveProject(Number(el.dataset.id), Number(el.value));
+  if (el?.dataset.change === "todo-agent") act(call("POST", `/api/todos/${el.dataset.id}/edit`, { agent: el.value }).then(() => need("detail", "todos")), "Agent not changed");
+  if (el?.dataset.change === "ns-agent") { S.nsAgent[el.dataset.id] = el.value; render(); }
   // A change the live agent did not take (a mode the model lacks) is stored anyway and comes back as a warning.
   const warn = (r) => r?.warning && toast("warning", "Saved, but the agent did not take it", r.warning);
   if (el?.dataset.change === "todo-mode") act(call("PUT", `/api/todos/${el.dataset.id}/mode`, { mode: el.value || null }).then(warn), "Mode not changed");
@@ -2648,9 +2793,12 @@ acceptFiles(newText.closest(".panel"), () => "new");
 addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
-newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); });
+newProject.addEventListener("change", () => { S.newProject = Number(newProject.value); S.newAgent = null; render(); });
+newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; });
 [pName, pPath, pPrompt, pMode].forEach((el) => el.addEventListener("input", renderProjects));
 pMode.addEventListener("change", renderProjects);
+pAgent.addEventListener("change", renderProjects);
+pDefAgent.addEventListener("change", () => { harvestDefaults(); S.projDefAgent = pDefAgent.value; fillDefaults(); renderProjects(); });
 $("pConfig").addEventListener("change", renderProjects);
 
 applyTheme();   // the head script ran before the theme buttons existed; mark the active one
@@ -2674,6 +2822,7 @@ function onEvent(ev) {
   } else if (ev.type === "operator") {
     if (S.view === "todos" && (S.mode === "overview" || S.sel === "operator")) need("operator");
   } else if (ev.type === "projects") need("projects");
+  else if (ev.type === "agents") need("meta", "projects");
   else if (ev.type === "terminals" && focusTodo && ev.id === S.sel) need("terms");
   else if (ev.type === "stream") {
     if (ev.item) S.live[ev.id] = ev.item; else delete S.live[ev.id];

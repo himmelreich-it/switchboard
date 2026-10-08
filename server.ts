@@ -4,12 +4,13 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  MODES, configIn, contextFile, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  MODES, configIn, contextFile, defaultsOf, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Status,
 } from "./lib";
-import { sessionExists } from "./acp";
+import { authenticate, describe, sessionExists } from "./acp";
+import { DEFAULT_AGENT, agentList, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { handleMcp } from "./apptools";
-import { CONTRACT, answerPermission, applyConfig, closeAgent, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
+import { CONTRACT, agentConfigs, answerPermission, applyConfig, closeAgent, metaKey, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 export const HOST = "127.0.0.1";
@@ -30,9 +31,13 @@ export type Todo = {
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
+  agent: string | null;
 };
-export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null };
-export type Project = { id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string; mode: string | null; defaults: string | null };
+export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
+export type Project = {
+  id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string; mode: string | null; defaults: string | null;
+  default_agent: string | null;
+};
 
 export const now = () => new Date().toISOString();
 export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = ?").get(id) as Todo | null;
@@ -96,7 +101,7 @@ export function setTodo(id: number, fields: Partial<Todo>, touch = true) {
 export const liveSessionNo = (todoId: number | null) =>
   todoId === null ? null : ((db.query("SELECT MAX(no) AS n FROM sessions WHERE todo_id = ?").get(todoId) as any)?.n ?? null) as number | null;
 export const sessionsOf = (todoId: number) =>
-  db.query("SELECT no, session_id, started_at, ended_at FROM sessions WHERE todo_id = ? ORDER BY no").all(todoId) as Session[];
+  db.query("SELECT no, session_id, started_at, ended_at, agent FROM sessions WHERE todo_id = ? ORDER BY no").all(todoId) as Session[];
 export function addMessage(todoId: number | null, author: string, body: string, state = "delivered", fileId: number | null = null) {
   const at = now();
   const id = Number(db.run(
@@ -251,7 +256,7 @@ export async function summaries(where = "1", args: any[] = []) {
     // set_pr wins over the branch: a review worktree's local branch need not match the PR's head branch.
     const pr = store ? (r.pr_number ? store.byNumber.get(r.pr_number) : git?.branch ? store.byBranch.get(git.branch) : null) : null;
     return {
-      ...r, attention: !!r.attention, unread: !!r.unread, has_draft: !!r.has_draft,
+      ...r, agent: r.agent || DEFAULT_AGENT, attention: !!r.attention, unread: !!r.unread, has_draft: !!r.has_draft,
       last_message: r.last_message ? JSON.parse(r.last_message) : null,
       last_agent_message: r.last_agent_message ? JSON.parse(r.last_agent_message) : null,
       file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null, plan: r.plan ? JSON.parse(r.plan) : null,
@@ -307,18 +312,19 @@ async function projectOut(p: Project) {
   const r = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
   const c = db.query(`SELECT EXISTS (SELECT 1 FROM todos WHERE project_id = ? AND session_id IS NOT NULL) AS locked,
     (SELECT COUNT(*) FROM todos WHERE project_id = ? AND removed_at IS NULL) AS todo_count`).get(p.id, p.id) as any;
-  return { ...p, defaults: configIn(p.defaults ? JSON.parse(p.defaults) : null), repo: r.ok ? r.out : null, locked: !!c.locked, todo_count: c.todo_count };
+  return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, locked: !!c.locked, todo_count: c.todo_count };
 }
 
 // ---------- writes shared with runner.ts ----------
 
 // One transaction, so a failed file write leaves no TODO behind.
-export function createTodo(projectId: number, instruction: string, actor: "user" | "operator", uploads: Upload[] = []) {
+// `agent` is the agent of the first session (P5): the project's default when not given.
+export function createTodo(projectId: number, instruction: string, actor: "user" | "operator", uploads: Upload[] = [], agent: string | null = null) {
   const id = db.transaction(() => {
     const at = now();
     const id = Number(db.run(
-      "INSERT INTO todos (project_id, title, status, created_at, updated_at) VALUES (?, ?, 'not_started', ?, ?)",
-      [projectId, instruction, at, at],
+      "INSERT INTO todos (project_id, title, status, created_at, updated_at, agent) VALUES (?, ?, 'not_started', ?, ?, ?)",
+      [projectId, instruction, at, at, agent ?? projectRow(projectId)!.default_agent ?? DEFAULT_AGENT],
     ).lastInsertRowid);
     saveAttachments(id, addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending"), uploads);
     return id;
@@ -356,11 +362,30 @@ if (fresh) migrate();
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
-// A permission mode from a request body: null for "not set" (empty, null, or "auto" for a project, which is the
-// default anyway), the mode when known, undefined when not.
-const modeIn = (v: unknown): string | null | undefined => (v == null || v === "" ? null : MODES.includes(v as any) ? String(v) : undefined);
-// P4: a project's config defaults from a request body ({config id: value}), stored as JSON; null when none is set.
-const defaultsIn = (v: unknown) => { const d = configIn(v); return Object.keys(d).length ? JSON.stringify(d) : null; };
+// A permission mode from a request body: null for "not set" (empty or null), the mode when known, undefined when not.
+// Claude's modes are known here; another agent's are its own, so any name is taken and the agent reports a miss.
+const modeIn = (v: unknown, agent: string | null): string | null | undefined =>
+  v == null || v === "" ? null : !isClaude(agent) || MODES.includes(v as any) ? String(v) : undefined;
+// A project's defaults from a request body, {agent: {config id: value, mode}}, stored as JSON (null when none is set);
+// a string when a value is not taken.
+function defaultsIn(v: unknown): string | null | { error: string } {
+  const out: Record<string, Record<string, string>> = {};
+  for (const [agent, d] of Object.entries(v && typeof v === "object" && !Array.isArray(v) ? v : {})) {
+    if (!isKnown(agent)) return { error: `no agent ${agent}` };
+    const config: Record<string, string> = configIn(d);
+    const mode = modeIn((d as any)?.mode, agent);
+    if (mode === undefined) return { error: `mode must be one of ${MODES.join(", ")}` };
+    if (mode && !(isClaude(agent) && mode === "auto")) config.mode = mode; // auto is Claude's default anyway
+    if (Object.keys(config).length) out[agent] = config;
+  }
+  return Object.keys(out).length ? JSON.stringify(out) : null;
+}
+const agentIn = (v: unknown): string | null | undefined => (v == null || v === "" ? null : isKnown(String(v)) ? String(v) : undefined);
+// A custom agent's arguments (a list, or one string split on spaces) and environment ({name: value}, or NAME=value lines).
+const agentArgs = (v: unknown): string[] => Array.isArray(v) ? v.map(String) : String(v ?? "").split(/\s+/).filter(Boolean);
+const agentEnv = (v: unknown): Record<string, string> => v && typeof v === "object" && !Array.isArray(v)
+  ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, String(x)]))
+  : Object.fromEntries(String(v ?? "").split("\n").map((l) => l.trim()).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1)]));
 const httpError = (status: number, msg: string) => Object.assign(new Error(msg), { status });
 
 function todoOr404(id: number) {
@@ -585,7 +610,8 @@ async function api(req: Request, path: string): Promise<Response> {
     const w = db.query("SELECT COUNT(*) AS n FROM todos WHERE (status = 'waiting' OR (status = 'running' AND permission IS NOT NULL)) AND removed_at IS NULL").get() as any;
     const last = getMeta("last_project_id");
     // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
-    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n, agent_config: JSON.parse(getMeta("agent_config") ?? "[]"),
+    // P5: the agents, and per agent its last seen config options.
+    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
       shell: basename(process.env.SWITCHBOARD_SHELL || process.env.SHELL || "zsh") });
   }
 
@@ -599,11 +625,12 @@ async function api(req: Request, path: string): Promise<Response> {
     const localPath = expandHome(body.local_path);
     await requireRepo(localPath);
     const taken = new Set((db.query("SELECT slug FROM projects").all() as any[]).map((r) => r.slug));
-    const mode = modeIn(body.mode);
-    if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}`);
+    const defaults = defaultsIn(body.defaults), agent = agentIn(body.default_agent);
+    if (defaults && typeof defaults === "object") return fail(defaults.error);
+    if (agent === undefined) return fail(`no agent ${body.default_agent}`);
     const id = Number(db.run(
-      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, mode, defaults) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), mode, defaultsIn(body.defaults)],
+      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, defaults, default_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), defaults, agent === DEFAULT_AGENT ? null : agent],
     ).lastInsertRowid);
     emit({ type: "projects" });
     return json(await projectOut(projectRow(id)!));
@@ -619,11 +646,12 @@ async function api(req: Request, path: string): Promise<Response> {
       if ((await projectOut(p)).locked) return fail("the local folder is read-only once a TODO in this project has started");
       await requireRepo(localPath);
     }
-    const mode = body.mode === undefined ? p.mode : modeIn(body.mode);
-    if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}`);
-    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, mode = ?, defaults = ? WHERE id = ?",
-      [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), mode,
-        body.defaults === undefined ? p.defaults : defaultsIn(body.defaults), p.id]);
+    const defaults = body.defaults === undefined ? p.defaults : defaultsIn(body.defaults);
+    if (defaults && typeof defaults === "object") return fail(defaults.error);
+    const agent = body.default_agent === undefined ? p.default_agent : agentIn(body.default_agent);
+    if (agent === undefined) return fail(`no agent ${body.default_agent}`);
+    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, defaults = ?, default_agent = ? WHERE id = ?",
+      [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), defaults, agent === DEFAULT_AGENT ? null : agent, p.id]);
     emit({ type: "projects" });
     emit({ type: "todos" }); // rows show the project name
     return json(await projectOut(projectRow(p.id)!));
@@ -636,7 +664,9 @@ async function api(req: Request, path: string): Promise<Response> {
     const instruction = String(body.instruction ?? "").trim();
     if (!projectRow(Number(body.project_id))) return fail("choose a project");
     if (!instruction) return fail("the first instruction is required");
-    const id = createTodo(Number(body.project_id), instruction, "user", uploadsIn(body.attachments));
+    const agent = agentIn(body.agent);
+    if (agent === undefined) return fail(`no agent ${body.agent}`);
+    const id = createTodo(Number(body.project_id), instruction, "user", uploadsIn(body.attachments), agent);
     setMeta("last_project_id", String(Number(body.project_id)));
     if (body.start === true) start(id);   // Add & start (item 92): one request, so the TODO never sits in the backlog
     return json((await summaries("t.id = ?", [id]))[0]);
@@ -652,7 +682,14 @@ async function api(req: Request, path: string): Promise<Response> {
     const to = body.project_id === undefined ? null : projectRow(Number(body.project_id));
     if (body.project_id !== undefined && !to) return fail("choose a project");
     const from = projectRow(t.project_id)!;
+    const agent = body.agent === undefined ? null : agentIn(body.agent);
+    if (agent === undefined) return fail(`no agent ${body.agent}`);
     db.transaction(() => {
+      // P5: the agent of the first session, like the project, until the start.
+      if (agent && agent !== (t.agent || DEFAULT_AGENT)) {
+        setTodo(t.id, { agent, mode: null, overrides: null, config: null });
+        addEvent(t.id, "edited", "user", `agent ${agentName(t.agent)} → ${agentName(agent)}`);
+      }
       if (instruction !== null && instruction !== first.body) {
         db.run("UPDATE messages SET body = ? WHERE id = ?", [instruction, first.id]);
         // The title is the first instruction until an agent sets one (item 7).
@@ -806,7 +843,8 @@ async function api(req: Request, path: string): Promise<Response> {
     const ids = db.query("SELECT id FROM messages WHERE todo_id = ? ORDER BY id").all(id) as { id: number }[];
     return json({
       todo,
-      sessions: sessionsOf(id),
+      // P5: each session's agent, and how to resume it outside the app where that agent has a command for it.
+      sessions: sessionsOf(id).map((s) => ({ ...s, agent: s.agent || DEFAULT_AGENT, agent_name: agentName(s.agent), resume: resumeHint(s.agent, s.session_id) })),
       artifact_dir: artifactDir(projectRow(todo.project_id)!.slug, id) + "/",
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
@@ -827,10 +865,10 @@ async function api(req: Request, path: string): Promise<Response> {
   // otherwise the next run applies it.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/mode$/)) && method === "PUT") {
     const t = liveTodo(Number(m[1]));
-    const mode = modeIn(body.mode);
+    const mode = modeIn(body.mode, t.agent);
     if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}, or empty for the project's`);
     setTodo(t.id, { mode }, false);
-    addEvent(t.id, "mode", "user", mode ?? `project's (${modeOf({ mode }, projectRow(t.project_id)!)})`);
+    addEvent(t.id, "mode", "user", mode ?? `project's (${modeOf({ mode, agent: t.agent }, projectRow(t.project_id)!) ?? "the agent's own"})`);
     return applyNow(t.id);
   }
 
@@ -840,7 +878,7 @@ async function api(req: Request, path: string): Promise<Response> {
   if ((m = path.match(/^\/api\/todos\/(\d+)\/config$/)) && method === "PUT") {
     const t = liveTodo(Number(m[1]));
     const id = String(body.id ?? ""), value = body.value == null ? "" : String(body.value);
-    const known = (JSON.parse(t.config ?? getMeta("agent_config") ?? "[]") as ConfigOption[]).find((o) => o.id === id);
+    const known = (JSON.parse(t.config ?? getMeta(metaKey("agent_config", t.agent || DEFAULT_AGENT)) ?? "[]") as ConfigOption[]).find((o) => o.id === id);
     if (!known || id === "mode") return fail(`no config option ${id || "(none)"}`);
     if (value && !known.options.some((o) => o.value === value)) return fail(`${known.name} has no value ${value}`);
     const overrides = configIn(t.overrides ? JSON.parse(t.overrides) : null);
@@ -870,6 +908,8 @@ async function api(req: Request, path: string): Promise<Response> {
       const t = liveTodo(id);
       if (t.status === "not_started") return fail("start the TODO first; its first session starts with Start", 409);
       if (isRunning(id)) return fail("the agent is running; a new session can start once it stops", 409);
+      const agent = agentIn(body.agent);
+      if (agent === undefined) return fail(`no agent ${body.agent}`);
       const text = String(body.body ?? "").trim();
       const uploads = uploadsIn(body.attachments);
       const mid = db.transaction(() => {
@@ -878,7 +918,7 @@ async function api(req: Request, path: string): Promise<Response> {
         return mid;
       })();
       setDraft(`todo:${id}`, "");
-      newSession(id);
+      newSession(id, agent ?? undefined);
       return json(messageOut(mid));
     }
 
@@ -918,8 +958,9 @@ async function api(req: Request, path: string): Promise<Response> {
       if (!t.removed_at) return fail("this TODO is not removed", 409);
       if (t.session_id) {
         const folder = projectRow(t.project_id)!.local_path;
-        if (existsSync(folder) && !(await sessionExists(folder, t.session_id).catch(() => true)))
-          return json({ warning: `The Claude Code session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+        const spec = specOf(t.agent || DEFAULT_AGENT);
+        if (spec && existsSync(folder) && !(await sessionExists(spec, folder, t.session_id).catch(() => true)))
+          return json({ warning: `The ${agentName(t.agent)} session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
         if (t.worktree_path && !existsSync(t.worktree_path))
           return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
         if (!existsSync(folder)) return json({ warning: `The project folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
@@ -944,6 +985,56 @@ async function api(req: Request, path: string): Promise<Response> {
     } else if (action === "deliver") {
       if (isRunning(liveTodo(id).id)) return fail("the agent is running; queued messages go out when it stops", 409);
       deliver(id, "deliver");
+    }
+    return json({});
+  }
+
+  // ----- agents (P5) -----
+
+  if (path === "/api/agents" && method === "GET") return json(agentList());
+  // A custom agent: an ACP agent started as `command args…` with `env` added (Settings › Agents).
+  if (path === "/api/agents" && method === "POST") {
+    const name = String(body.name ?? "").trim(), command = String(body.command ?? "").trim();
+    if (!name || !command) return fail("name and command are required");
+    const id = slugify(String(body.id ?? name));
+    if (isKnown(id)) return fail(`an agent ${id} exists already`);
+    const args = agentArgs(body.args), env = agentEnv(body.env);
+    db.run("INSERT INTO agents (id, name, command, args, env, created_at) VALUES (?, ?, ?, ?, ?, ?)", [id, name, command, JSON.stringify(args), JSON.stringify(env), now()]);
+    emit({ type: "agents" });
+    return json(agentList().find((a) => a.id === id));
+  }
+  if ((m = path.match(/^\/api\/agents\/([\w-]+)$/)) && (method === "PUT" || method === "DELETE")) {
+    const id = m[1]!;
+    if (isBuiltin(id)) return fail("the built-in agents cannot be changed", 409);
+    const r = db.query("SELECT * FROM agents WHERE id = ?").get(id) as any;
+    if (!r) return fail("no such agent", 404);
+    if (method === "DELETE") {
+      const used = db.query("SELECT COUNT(*) AS n FROM todos WHERE agent = ? AND removed_at IS NULL").get(id) as { n: number };
+      if (used.n) return fail(`${used.n} TODO${used.n > 1 ? "s run" : " runs"} on this agent`, 409);
+      db.run("DELETE FROM agents WHERE id = ?", [id]);
+      db.run("UPDATE projects SET default_agent = NULL WHERE default_agent = ?", [id]);
+    } else {
+      db.run("UPDATE agents SET name = ?, command = ?, args = ?, env = ? WHERE id = ?", [
+        String(body.name ?? r.name).trim() || r.name, String(body.command ?? r.command).trim() || r.command,
+        body.args === undefined ? r.args : JSON.stringify(agentArgs(body.args)), body.env === undefined ? r.env : JSON.stringify(agentEnv(body.env)), id]);
+    }
+    emit({ type: "agents" });
+    return json({});
+  }
+  // What the agent says about itself: its version and its ways to log in (Settings › Agents).
+  if ((m = path.match(/^\/api\/agents\/([\w-]+)\/describe$/)) && method === "GET") {
+    const id = m[1]!, spec = specOf(id);
+    if (!spec) return fail(`${agentName(id)} is not installed`, 409);
+    try { return json(await describe(spec)); } catch (e: any) { return fail(`${agentName(id)} did not start: ${e?.message ?? e}`, 502); }
+  }
+  // Log in with one of the agent's methods. The agent does it itself (Codex opens the browser); this waits until it is done.
+  if ((m = path.match(/^\/api\/agents\/([\w-]+)\/login$/)) && method === "POST") {
+    const id = m[1]!, spec = specOf(id);
+    if (!spec) return fail(`${agentName(id)} is not installed`, 409);
+    try {
+      if (!(await authenticate(spec, String(body.methodId ?? "")))) return fail("the login did not complete", 409);
+    } catch (e: any) {
+      return fail(`the login failed: ${e?.message ?? e}`, 502);
     }
     return json({});
   }

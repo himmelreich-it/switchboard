@@ -187,6 +187,23 @@ export function configIn(v: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(v).filter(([k, x]) => k !== "mode" && typeof x === "string" && x !== "").map(([k, x]) => [k, x as string]));
 }
 
+// ---------- agents (P5) ----------
+
+// A project's defaults per agent, {agent id: {config id: value, mode: permission mode}}, as stored in projects.defaults.
+// Config ids and modes are the agent's own, so each agent keeps its own set.
+export type Defaults = Record<string, Record<string, string>>;
+export function defaultsOf(raw: string | null): Defaults {
+  const d = raw ? JSON.parse(raw) : null;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return {};
+  return Object.fromEntries(Object.entries(d).filter(([, v]) => v && typeof v === "object" && !Array.isArray(v))
+    .map(([agent, v]) => [agent, Object.fromEntries(Object.entries(v as object).filter(([, x]) => typeof x === "string" && x !== ""))]));
+}
+// One agent's defaults: its config values (without the mode) and its permission mode.
+export function defaultsFor(raw: string | null, agent: string): { config: Record<string, string>; mode: string | null } {
+  const d = defaultsOf(raw)[agent] ?? {};
+  return { config: configIn(d), mode: d.mode || null };
+}
+
 // True when `path` is inside `dir` (not `dir` itself). Both must already be absolute and resolved.
 export function isInside(path: string, dir: string): boolean {
   const rel = relative(dir, path);
@@ -420,7 +437,21 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("todos", "attention_by", "TEXT");    // who raised the attention flag: agent, app or permission
   addColumn("todos", "config", "TEXT");          // the session's config options as the agent last reported them (JSON ConfigOption[]), P4
   addColumn("todos", "overrides", "TEXT");       // the TODO's own config values, {config id: value} (JSON)
-  addColumn("projects", "defaults", "TEXT");     // the project's config values for its agents, {config id: value} (JSON)
+  addColumn("projects", "defaults", "TEXT");     // the project's config values per agent, {agent: {config id: value, mode}} (JSON, P5)
+  addColumn("projects", "default_agent", "TEXT"); // the agent of the project's new TODOs (null: claude), P5
+  addColumn("todos", "agent", "TEXT");           // the agent of the TODO's live session, or of its first one before the start (null: claude)
+  addColumn("sessions", "agent", "TEXT");        // the agent each session ran on (null: claude)
+  db.exec(`CREATE TABLE IF NOT EXISTS agents (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)`);
+  // P4 kept the defaults flat and the mode in projects.mode, both Claude's: they move under "claude".
+  for (const p of db.query("SELECT id, mode, defaults FROM projects WHERE mode IS NOT NULL OR defaults IS NOT NULL").all() as { id: number; mode: string | null; defaults: string | null }[]) {
+    const d = p.defaults ? JSON.parse(p.defaults) : {};
+    const nested = Object.values(d).some((v) => v && typeof v === "object");
+    if (nested && !p.mode) continue;
+    const all: Defaults = nested ? d : Object.keys(d).length ? { claude: d } : {};
+    if (p.mode) all.claude = { ...all.claude, mode: p.mode };
+    db.run("UPDATE projects SET defaults = ?, mode = NULL WHERE id = ?", [Object.keys(all).length ? JSON.stringify(all) : null, p.id]);
+  }
   // A started TODO without a sessions row was one session, which becomes session 1: every TODO of a database from
   // before sessions, and one started by an older build on this database. Runs on every start, so it catches both.
   db.transaction(() => {
