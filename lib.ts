@@ -64,6 +64,32 @@ export function ctxStep(c: Ctx | null, u: any): Ctx | null {
   return { ...cur, used: u.used ?? cur.used, window: u.size ?? cur.window, model: u._meta?.["_claude/model"] ?? cur.model };
 }
 
+// ---------- background tasks (item 136) ----------
+
+// The agent's background tasks still running, oldest first, kept from its ACP updates (spike 2026-10-09). A Bash call
+// with run_in_background ends at once with `backgroundTaskId` in its result; TaskStop (KillShell before it) names the
+// task it stopped. Each finished task gets a follow-up cycle of its own, ended by a usage_update of origin
+// task-notification; that does not say which task finished, so the oldest is taken off.
+export function backgroundStep(ids: string[], u: any): string[] {
+  const cc = u?._meta?.claudeCode, res = cc?.toolResponse;
+  if (u?.sessionUpdate === "tool_call_update" && res) {
+    if (typeof res.backgroundTaskId === "string") return ids.includes(res.backgroundTaskId) ? ids : [...ids, res.backgroundTaskId];
+    const stopped = res.task_id ?? res.shell_id;
+    if ((cc.toolName === "TaskStop" || cc.toolName === "KillShell") && ids.includes(stopped)) return ids.filter((id) => id !== stopped);
+  }
+  return u?.sessionUpdate === "usage_update" && u._meta?.["_claude/origin"]?.kind === "task-notification" && ids.length ? ids.slice(1) : ids;
+}
+
+// Between turns the agent can work on its own, e.g. a background task's follow-up. Such a cycle starts with any of
+// these updates (not a title or a command list) and ends with a usage_update whose origin is not the user's turn.
+export const agentActivity = (u: any) =>
+  ["agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"].includes(u?.sessionUpdate) || cycleEnd(u)
+  || (u?.sessionUpdate === "usage_update" && !u._meta?.["_claude/origin"]);
+export function cycleEnd(u: any) {
+  const kind = u?.sessionUpdate === "usage_update" && u._meta?.["_claude/origin"]?.kind;
+  return !!kind && kind !== "human" && kind !== "channel";
+}
+
 // ---------- transcript (item 130) ----------
 
 const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) + `\n… ${text.length - max} more characters` : text);
@@ -112,10 +138,11 @@ export function safeFileName(name: string): string {
   return basename(name).replace(/[^A-Za-z0-9._-]+/g, "-").slice(-120).replace(/^[.-]+/, "") || "file";
 }
 
-// What a committed message does, by the TODO's status (item 20):
-// not started -> stored until start; running -> queued until the turn ends; idle or waiting -> sent now.
-export function deliveryAction(status: Status): "pending" | "queue" | "send" {
-  return status === "not_started" ? "pending" : status === "running" ? "queue" : "send";
+// What a committed message does, by the TODO's status (item 20) and whether a turn runs (`busy`):
+// not started -> stored until start; a turn running -> queued until it ends; otherwise sent now. A TODO that shows
+// running only because its agent waits for background tasks (item 136) is not busy: the agent can answer now.
+export function deliveryAction(status: Status, busy: boolean): "pending" | "queue" | "send" {
+  return status === "not_started" ? "pending" : busy ? "queue" : "send";
 }
 
 // A run that ended (normally, with an error, or by interrupt) leaves the TODO waiting while the flag is raised.

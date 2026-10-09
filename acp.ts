@@ -44,6 +44,7 @@ export type Live = {
   // SIGTERM, so the agent can stop the processes it started; SIGKILL if it is still there 5 s later.
   close(): void;
   readonly alive: boolean;
+  readonly exited: Promise<unknown>; // settles when the agent process has exited, for whatever reason
   stderr(): string; // the agent's last log lines, for error events
 };
 
@@ -131,11 +132,15 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     close() {
       if (!alive) return;
       a.conn.close();
+      // Windows has no SIGTERM: the kill below ends the agent at once, and the shells it started (background tasks,
+      // item 136) would live on. taskkill /T ends the whole tree while it is still linked.
+      if (process.platform === "win32") Bun.spawnSync(["taskkill", "/PID", String(a.proc.pid), "/T", "/F"], { windowsHide: true });
       a.proc.kill("SIGTERM");
       setTimeout(() => alive && a.proc.kill("SIGKILL"), 5000);
     },
     // Dead as soon as either its process exited or its connection closed, whichever is seen first.
     get alive() { return alive && !a.conn.signal.aborted && a.proc.exitCode === null; },
+    exited: a.proc.exited,
     stderr: a.log,
   };
 }
