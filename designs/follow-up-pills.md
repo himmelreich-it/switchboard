@@ -1,6 +1,6 @@
 # Suggested follow-ups (pills)
 
-Status: design for review · 2026-10-09 · branch `design/follow-up-pills`
+Status: RESOLVED · 2026-10-09 · branch `design/follow-up-pills`
 
 ## Intent
 
@@ -17,14 +17,14 @@ Assumptions (not said, decided here):
 - A click is a normal committed user message (item 20): same delivery, same queueing, same history. So "Approve the
   PR" counts as the explicit go-ahead the contract requires for outward actions, because the user chose it.
 - Suggestions are optional. No obvious next step, no pills.
-- Worker TODO chats only in v1 (Q3 covers the operator's own chat).
+- Worker TODOs only: the operator's own chat gets no pills in v1.
 
 ## Design
 
 ### Who writes them
 
-The worker agent, through a new app tool (Q1 weighs the alternatives). It has the full context of the turn and costs
-nothing extra.
+The worker agent, through a new app tool. It has the full context of the turn and costs nothing extra. The operator
+does not write them (item 35: it acts only on the user's instruction), and there is no separate model call.
 
 ```
 suggest_follow_ups({ items: string[] })   // 1–2 items, each one line, ≤ 80 chars
@@ -78,8 +78,20 @@ permission request:
 ```
 
 Pill style: outlined, cyan (agent colour), `↳` prefix, wraps to a second line when both do not fit; text cut with an
-ellipsis at the pill's max width, full text in the tooltip. Keyboard: Tab reaches them; no global shortcut (Q2
-covers the card).
+ellipsis at the pill's max width, full text in the tooltip. Keyboard: Tab reaches them; no global shortcut.
+
+Board card, under the card's last messages, under the same conditions (not running, no open permission request), so
+the common case needs no Focus view:
+
+```
+  ┌ Review PR #212 ─────────────── Waiting on you ┐
+  │ AGENT Looks good, no blocking issues.          │
+  │ ↳ Approve the PR  ↳ Post the two nits          │
+  └────────────────────────────────────────────────┘
+```
+
+On the card a click sends, as in the chat, and stops the click from opening the TODO. ⇧-click opens the TODO's Focus
+view with the text in the composer. The pills take one row and are cut with an ellipsis to fit the card's width.
 
 ### Server and data
 
@@ -90,7 +102,7 @@ covers the card).
   follow-up run of item 136, which starts without a delivery) and in `commitMessage`; contract line.
 - `server.ts`: the messages route accepts `suggested` and adds the event; `summaries` returns `suggestions` so the
   UI gets them with the TODO.
-- `index.html`: pills in `renderChat`, click and ⇧-click handlers (`data-act="suggestion"`).
+- `index.html`: pills in `renderChat` and on the board card, click and ⇧-click handlers (`data-act="suggestion"`).
 - Spec: new item 137 in `designs/feature-spec-switchboard.md` (Chat), and the tool in item 135's list stays without
   it (terminals do not get it).
 
@@ -105,53 +117,19 @@ covers the card).
 - A suggestion that does something other than send text (approve via `gh` directly from the app, start a new
   session). The agent does the work after the click, as with any message.
 - More than two pills.
-- Suggestions from a separate model call (see Q1 option C).
-
----
-
-> **❓ Q1 — Who writes the suggestions** · status: OPEN
->
-> - **A. The worker agent, with `suggest_follow_ups` (recommended).** Knows the work, no extra cost or process, works
->   for every ACP agent that follows the contract. Risk: an agent that ignores the line gives no pills; acceptable,
->   pills are a convenience.
-> - **B. The operator, at the end of each worker turn.** Breaks item 35 (the operator acts only on the user's
->   instruction, never polls), costs a full operator turn per worker turn, and the operator only sees the chat, not
->   the work.
-> - **C. A small separate model call (Haiku) at turn end, from the last messages.** Works even when the agent
->   ignores the contract, but adds a model dependency outside ACP, cost per turn, latency, and guesses from less
->   context.
->
-> Recommendation: A. C can be added later as a fallback when an agent sets nothing, if A turns out unreliable.
-
-> **❓ Q2 — Pills on the board card too** · status: OPEN
->
-> ```
->   ┌ Review PR #212 ─────────────── Waiting on you ┐      ┌ Review PR #212 ──────── Waiting on you ┐
->   │ AGENT Looks good, no blocking issues.          │      │ AGENT Looks good, no blocking issues.   │
->   │ ↳ Approve the PR  ↳ Post the two nits          │      │                                         │
->   └────────────────────────────────────────────────┘      └─────────────────────────────────────────┘
->              A. card shows pills                                    B. Focus only
-> ```
->
-> - **A. Card too (recommended).** The "click and done" case is fastest from the board: approve without opening the
->   TODO. Costs one row of card height when pills exist; ⇧-click on the card opens the Focus view with the text in
->   the composer.
-> - **B. Focus chat only.** Smaller change, cards stay compact, but every pick needs opening the TODO first.
->
-> Recommendation: A.
-
-> **❓ Q3 — The operator's own chat gets pills too** · status: OPEN
->
-> - **A. Not in v1 (recommended).** The operator is conversational and replies in full markdown; follow-ups there
->   are less formulaic. Add it when wanted: same tool on the operator grant, same UI.
-> - **B. Yes, in v1.** Consistent everywhere; small extra work (operator grant, `meta` key instead of `todos` column).
->
-> Recommendation: A.
+- Suggestions from a separate model call (a fallback for agents that ignore the contract line; add if needed).
+- Pills in the operator's own chat (would be the same tool on the operator grant, stored in `meta`).
 
 ## Open Questions
 
-| ID | Question | Status | Recommendation |
-|---|---|---|---|
-| Q1 | Who writes the suggestions | OPEN | A: worker agent via `suggest_follow_ups` |
-| Q2 | Pills on the board card too | OPEN | A: card too |
-| Q3 | Operator's own chat gets pills too | OPEN | A: not in v1 |
+| ID | Question | Options | Recommendation | Status |
+|----|----------|---------|----------------|--------|
+| Q1 | Who writes the suggestions | A worker agent / B operator / C separate model call | A | RESOLVED |
+| Q2 | Pills on the board card too | A card too / B Focus only | A | RESOLVED |
+| Q3 | Operator's own chat gets pills too | A not in v1 / B yes | A | RESOLVED |
+
+## Resolved Decisions
+
+- Q1: the worker agent writes them with `suggest_follow_ups`. Accepted recommendation: full context, no extra cost, keeps item 35.
+- Q2: pills on the board card too. Accepted recommendation: "click and done" from the board.
+- Q3: no pills in the operator's own chat in v1. Accepted recommendation.
