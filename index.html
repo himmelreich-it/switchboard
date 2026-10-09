@@ -504,6 +504,12 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .cmd-list .hint { font-family: var(--font-mono); color: var(--text-muted); white-space: nowrap; }
 .cmd-list .ds { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .composer-row textarea { flex: 1; min-width: 0; }
+/* Suggested follow-ups (pills): the agent's next steps, a click sends one */
+.pills { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 2px; }
+.pill { max-width: 100%; padding: 3px 10px; border: 1px solid var(--line-cyan); border-radius: 999px; background: var(--tint-cyan); color: var(--accent-cyan); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill:hover { border-color: var(--accent-cyan); }
+.card .pills { flex-wrap: nowrap; padding: 6px 0 0; }
+.card .pill { flex: 0 1 auto; min-width: 0; }
 .hint-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
 .deliver-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 13px; color: var(--text-secondary); background: var(--tint-blue); border: 1px solid var(--line-blue); border-radius: var(--radius-1); }
 /* P3: a permission request the agent waits on, in the chat (full) and on the card (compact) */
@@ -1852,6 +1858,13 @@ function permHtml(t, full) {
 }
 const permBadge = (t) => (t.status === "running" && t.permission ? badge("Needs approval", "amber", true) : "");
 
+// Suggested follow-ups (pills): shown while the agent waits for the user. The click reads the text from S.todos by index.
+function pillsHtml(t, where) {
+  if (!t?.suggestions?.length || t.status === "running" || t.permission) return "";
+  const tip = where === "card" ? "Send to the agent · ⇧-click to open and edit first" : "Send to the agent · ⇧-click to edit first";
+  return `<div class="pills">${t.suggestions.map((s, i) =>
+    `<button type="button" class="pill" data-act="suggestion" data-id="${t.id}:${i}" title="${esc(s)}&#10;${tip}">↳ ${esc(s)}</button>`).join("")}</div>`;
+}
 function cardHtml(t) {
   const st = STATUS[t.status] ?? STATUS.idle, lane = laneOf(t);
   const lm = t.last_message, la = t.last_agent_message;
@@ -1868,6 +1881,7 @@ function cardHtml(t) {
     ${cardGitHtml(t)}
     ${t.status === "running" ? permHtml(t, false) : ""}
     ${last ? `<div class="card-last"><span class="who" style="color:${AUTHOR[last.author]?.[1] ?? "var(--text-muted)"}">${esc(who)}</span><span class="body clamp3">${esc(last.body || last.files)}</span></div>` : ""}
+    ${pillsHtml(t, "card")}
     <div class="card-foot"><span class="foot ellipsis" style="color:${t.status === "running" ? "var(--accent-cyan)" : "var(--text-muted)"}">${esc(foot)}</span><span class="open-label">${lane === "waiting" ? "Answer" : "Open"} →</span></div>
   </div>`;
 }
@@ -2100,6 +2114,7 @@ function renderChat(operator, t, d) {
     : `<div class="evsay live"><span>now</span><div class="res-md">${md(live.text)}</div><span style="color:${ACTOR.agent}">agent</span></div>`;
   if (!operator && running && t.permission) html += permHtml(t, true);
   else if (running) html += `<div class="running-line"><i></i>${esc(operator ? "running · reading state through tools" : "running · " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t))}</div>`;
+  else if (!operator) html += pillsHtml(t, "chat");
   if (!html) html = `<span class="empty">${operator ? "Fresh session. Ask about any TODO, or tell it to create or message one." : d ? "No messages yet." : "Loading…"}</span>`;
   const sig = `${key}:${msgs.length}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
@@ -2597,6 +2612,25 @@ function renderProjects() {
 
 // ---------- events ----------
 const ACTIONS = {
+  // A pill: a click sends its text as the user's message; ⇧-click puts it in the composer to edit first.
+  suggestion: async (id, el, e) => {
+    const [tid, i] = id.split(":").map(Number);
+    const t = (S.detail?.todo.id === tid && S.detail.todo) || S.todos.find((x) => x.id === tid);
+    const text = t?.suggestions?.[i];
+    if (!text) return;
+    if (e?.shiftKey) {
+      if (S.sel !== tid) select(tid);
+      const key = `todo:${tid}`, d = drafts[key] ?? "";
+      const next = d.trim() ? d.replace(/\s*$/, "\n") + text : text;
+      saveDraftSoon(key, next);
+      if (draftKey() === key) { composer.value = next; composer.focus(); }
+      return render();
+    }
+    t.suggestions = null;   // gone at once; the server clears them too
+    render();
+    try { await call("POST", `/api/todos/${tid}/messages`, { body: text, suggested: true }); }
+    catch (err) { toast("danger", "Not sent", err.message); }
+  },
   // Backlog and Board: from Settings or Removed, the tab Focus sits under returns to Focus; otherwise to that side's overview.
   nav: (id) => (id !== "board" && id !== "backlog" ? setView(id)
     : S.view !== "todos" && S.mode === "focus" && id === (S.focusFrom ?? S.board) ? setView("todos") : openBoard(id)),
@@ -2682,7 +2716,7 @@ document.addEventListener("click", (e) => {
   if (S.termMenu && !e.target.closest(".term-menu, .term-plus")) { S.termMenu = false; render(); }
   const el = e.target.closest("[data-act]");
   if (!el || el.disabled) return;
-  ACTIONS[el.dataset.act]?.(el.dataset.id, el);
+  ACTIONS[el.dataset.act]?.(el.dataset.id, el, e);
 });
 document.addEventListener("keydown", (e) => {
   const k = (e.key || "").toLowerCase(), mod = modKey(e);
