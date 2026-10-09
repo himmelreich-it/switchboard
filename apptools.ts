@@ -8,7 +8,7 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
 import { deliveryAction, isInside, lineCount } from "./lib";
-import { commitMessage } from "./runner";
+import { commitMessage, isRunning } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOST, PORT, addEvent, addMessage, createTodo, db, filesOf, liveSessionNo, refreshPrs, sessionsOf, setTodo, summaries, todoRow,
@@ -189,7 +189,7 @@ function operatorTools(s: McpServer) {
       pending: "stored; it is delivered when the user starts the TODO",
       queue: "queued; the agent gets it when its current turn ends",
       send: "delivered now",
-    }[deliveryAction(t.status)];
+    }[deliveryAction(t.status, isRunning(todo_id))];
     commitMessage(todo_id, "user via operator", body.trim());
     used("send_message", `#${todo_id}`);
     return ok(`Message ${outcome}.`);

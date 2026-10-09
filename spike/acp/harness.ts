@@ -75,7 +75,7 @@ export async function spawnAgent(label: string, opts: { permission?: PermissionP
     .connect(stream);
   const init = await conn.agent.request(acp.methods.agent.initialize, {
     protocolVersion: acp.PROTOCOL_VERSION,
-    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, ...(process.env.AIR ? { _meta: { jetbrains: { air: { version: 1, capabilities: ["asyncTasks"] } } } } : {}) },
     clientInfo: { name: "switchboard-spike", version: "0.0.0" },
   });
   log(`${label}:initialize`, init);
