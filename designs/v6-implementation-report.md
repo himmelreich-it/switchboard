@@ -71,9 +71,9 @@ Branch `design/v6`. Design: `designs/Switchboard v6.html`. Plan and inventories 
 2. **Spec update.** `designs/feature-spec-switchboard.md` still says v4. Point it at v6 and rewrite the UI items
    58, 121, 122, 86–93, 63, 124, 123, 125 and 59 (operator panel, New TODO dialog, Removed under the backlog,
    keys ⌘K, N and 1–9).
-3. **Not yet live-tested.** An approval answered from the board card or with keys 1–9 against a real agent
-   (only the UI path has been seen), the live "Writing" block while streaming, and the Electron window
-   (title bar overlay on Windows).
+3. **Not yet live-tested:** the Electron window (title bar overlay on Windows). Tested since against a scripted
+   ACP agent: Allow on the board card, keys 1 and 3 in Focus, ⌘J, N, the live "Writing" block, a message queued
+   during a turn, the running timers, Esc in the operator panel.
 4. **Open questions in `v6-plan.md`** got my defaults:
    - `T-{id}`;
    - "All repos" in the filter, "Projects" in Settings;
@@ -84,4 +84,6 @@ Branch `design/v6`. Design: `designs/Switchboard v6.html`. Plan and inventories 
 5. **Polish.**
    - Old-session expand shows the summary plus the full read-only stream; the design shows only the summary.
    - Model and Effort "Agent's default (x)" have no value before a project default exists.
-   - The code review / simplify pass has not run yet.
+   - The code review and simplify pass ran (commits e4c3d4c, f4dc8e0). Left from it: 8 `<span title>` wrappers
+     around buttons that could take a `title` option in `btn()`, three copies of the timer span markup, and two
+     byte-size formatters (`fmtSize`, `fmtBytes`).
