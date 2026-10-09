@@ -10,7 +10,7 @@ import {
 import { authenticate, describe, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
-import { CONTRACT, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, closeAgent, metaKey, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
+import { CONTRACT, DEFAULT_BACKGROUND_HOURS, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, closeAgent, metaKey, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 export const HOST = "127.0.0.1";
@@ -273,6 +273,8 @@ export async function summaries(where = "1", args: any[] = []) {
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {},
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
+      // Item 136: the agent's background tasks still running, and whether the TODO shows running only for them.
+      background: backgroundCount(r.id), background_wait: r.status === "running" && !isRunning(r.id) && backgroundCount(r.id) > 0,
     };
   }));
 }
@@ -645,7 +647,15 @@ async function api(req: Request, path: string): Promise<Response> {
     // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
     // P5: the agents, and per agent its last seen config options.
     return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
-      shell: basename(SHELL).replace(/\.exe$/i, ""), login_shell: LOGIN_SHELL });
+      shell: basename(SHELL).replace(/\.exe$/i, ""), login_shell: LOGIN_SHELL,
+      background_wait_hours: Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS });
+  }
+  // Settings › Runs (item 136): how long an agent may wait for its background tasks between turns.
+  if (path === "/api/settings" && method === "PUT") {
+    const h = Number(body.background_wait_hours);
+    if (!(h >= 0.25 && h <= 48)) return fail("background tasks: between 0.25 and 48 hours");
+    setMeta("background_wait_hours", String(h));
+    return json({ background_wait_hours: h });
   }
 
   // ----- projects -----
@@ -1015,7 +1025,8 @@ async function api(req: Request, path: string): Promise<Response> {
       }
     } else if (action === "stop") {
       // Like Esc in Claude Code. Messages queued during the turn are answered right after.
-      if (!isRunning(liveTodo(id).id)) return fail("the agent is not running", 409);
+      // Also ends the background tasks the agent waits for between turns (item 136).
+      if (!isRunning(liveTodo(id).id) && !backgroundCount(id)) return fail("the agent is not running", 409);
       interrupt(id, "user");
     } else if (action === "deliver") {
       if (isRunning(liveTodo(id).id)) return fail("the agent is running; queued messages go out when it stops", 409);

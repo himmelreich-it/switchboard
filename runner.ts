@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  attentionAfterAnswer, configChanges, configIn, configView, defaultsFor, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
   type Ctx, type Permission, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -62,6 +62,13 @@ const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, 
 const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
 // An idle agent process is closed after this; the next turn starts a new one with session/resume.
 const IDLE_CLOSE_MS = 30 * 60_000;
+// An agent with background tasks still running stays up to Settings › Runs (2 hours unless set), then it is closed and
+// the tasks end with it (item 136).
+export const DEFAULT_BACKGROUND_HOURS = 2;
+const backgroundWaitMs = () => (Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS) * 3600_000;
+// A cycle the agent runs on its own ends with its usage_update; this long without any update ends it too.
+const QUIET_MS = 10 * 60_000;
+const bgTasks = (n: number) => `${n} background task${n === 1 ? "" : "s"}`;
 
 type Key = number | "operator"; // a TODO id, or the operator
 
@@ -70,7 +77,8 @@ type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Pro
 
 // The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
-type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
+// `bg` is its background tasks still running (item 136), oldest first.
+type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
 const agents = new Map<Key, Agent>();
 
 // `live` is set once the agent process is ready; `cancel` records a Stop that came before that; `kill` is the fallback
@@ -82,6 +90,8 @@ const interrupting = new Map<Key, "user" | "app">();
 let shuttingDown = false;
 
 export const isRunning = (key: Key) => running.has(key);
+// Item 136: how many background tasks a TODO's agent has running. With no turn running the TODO still shows running.
+export const backgroundCount = (todoId: number) => agents.get(todoId)?.bg.length ?? 0;
 // A worker's open permission request (P3): the agent blocks on it, so there is at most one per TODO. The user's
 // answer, a Stop, a removal, a shutdown or the end of the turn settles it.
 const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutcome) => void }>();
@@ -90,9 +100,16 @@ const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutco
 const posted = new Set<number>();
 
 // Like Esc in Claude Code: session/cancel. If the turn has not ended 10 seconds later, the agent process is closed.
+// With no turn running, Stop ends the background tasks a TODO's agent waits for: its process is closed (item 136).
 export function interrupt(key: Key, by: "user" | "app" = "app") {
   const r = running.get(key);
-  if (!r) return;
+  if (!r) {
+    if (typeof key === "number" && backgroundCount(key)) {
+      addEvent(key, "interrupted", by, `${bgTasks(backgroundCount(key))} stopped`);
+      closeAgent(key);
+    }
+    return;
+  }
   if (interrupting.get(key) !== "app") interrupting.set(key, by);
   if (!r.live) {
     r.cancel = true;
@@ -229,6 +246,7 @@ export function commandsOf(todoId: number): Command[] {
 export const liveAgent = (todoId: number) => { const a = agents.get(todoId); return a && a.live.alive ? a : null; };
 
 // Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
+// Background tasks end with it, so a TODO that showed running only for them is idle (or waiting) again.
 export function closeAgent(key: Key) {
   const a = agents.get(key);
   if (!a) return;
@@ -236,6 +254,10 @@ export function closeAgent(key: Key) {
   clearTimeout(a.idle);
   revoke(a.secret);
   a.live.close();
+  if (typeof key === "number" && a.bg.length && !running.has(key) && todoRow(key)?.status === "running") {
+    setTodo(key, { status: statusAfterRun(todoRow(key)!.attention) });
+    addEvent(key, "run ended", "app", `${todoRow(key)!.status} · background tasks ended with the agent process`);
+  }
 }
 
 export async function stopAll() {
@@ -270,7 +292,16 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     throw new Error(info ? `${info.name} is not installed${info.hint ? `. ${info.hint}` : ""}` : `the agent ${o.agent} is no longer in Settings › Agents`);
   }
   const sink: Agent["sink"] = { s: null };
-  const handlers = { onUpdate: (u: Update) => sink.s?.onUpdate(u), onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
+  let self: Agent | null = null; // null while session/load replays the history
+  const onUpdate = (u: Update) => {
+    if (!self) return;
+    const bg = backgroundStep(self.bg, u);
+    if (bg !== self.bg && typeof key === "number") emit({ type: "todo", id: key });
+    self.bg = bg;
+    if (sink.s) sink.s.onUpdate(u);
+    else if (typeof key === "number" && agents.get(key) === self) unprompted(key, self, u);
+  };
+  const handlers = { onUpdate, onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
   const g = grant(o.grant, (secret) => secretHeader(o.agent, secret));
   const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta: o.meta, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
   let live: Live;
@@ -280,19 +311,31 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     revoke(g.secret);
     throw e;
   }
-  const a: Agent = { agent: o.agent, live, secret: g.secret, sink, fingerprint };
+  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint, bg: [] });
   agents.set(key, a);
+  // A process that dies between turns takes its background tasks along.
+  live.exited.then(() => agents.get(key) === a && !running.has(key) && closeAgent(key));
   return a;
 }
 
-// After a run: the process stays for the next turn, and closes when it has been idle for a while.
+// After a run: the process stays for the next turn, and closes when it has been idle for a while. With background
+// tasks running it waits for them up to the setting (item 136); then the user is told and asked to look.
 function parkAgent(key: Key) {
   const a = agents.get(key);
   if (!a) return;
   a.sink.s = null;
   if (!a.live.alive) return closeAgent(key);
   clearTimeout(a.idle);
-  a.idle = setTimeout(() => closeAgent(key), IDLE_CLOSE_MS);
+  const wait = a.bg.length ? backgroundWaitMs() : IDLE_CLOSE_MS;
+  a.idle = setTimeout(() => {
+    if (typeof key === "number" && a.bg.length) {
+      const what = `${bgTasks(a.bg.length)} still running after ${+(wait / 3_600_000).toFixed(2)} h: stopped with the agent process.`;
+      addMessage(key, "app", what);
+      if (!todoRow(key)!.attention) addEvent(key, "attention raised", "app", "background tasks stopped");
+      setTodo(key, { attention: 1, attention_by: todoRow(key)!.attention ? todoRow(key)!.attention_by : "app" });
+    }
+    closeAgent(key);
+  }, wait);
 }
 
 // One turn's view of the update stream: the final text, the tool calls, the context, and for a worker (`todo` set) the
@@ -376,7 +419,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
 // A committed message: stored until start, queued while the agent runs, or sent now (R20). The attachments are saved
 // in the same transaction and before deliver(), whose take() reads them. A queued message goes out when the turn ends.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = []) {
-  const action = deliveryAction(todoRow(todoId)!.status);
+  const action = deliveryAction(todoRow(todoId)!.status, running.has(todoId));
   const id = db.transaction(() => {
     const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued");
     saveAttachments(todoId, id, uploads);
@@ -517,27 +560,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     const cur = todoRow(todoId)!;
     addEvent(todoId, "launch", "app", `${reason} · ${agentName(agentId)} · cwd ${p.local_path} · session ${live.sessionId}`);
 
-    const denied = new Set<string>();
-    const deny = (name: string, input: any, why: string) => {
-      const what = toolArg(input) || why;
-      if (denied.has(name + what)) return;
-      denied.add(name + what);
-      addMessage(todoId, "app", `Auto mode blocked ${name}: ${what}`);
-      const was = todoRow(todoId)!;
-      setTodo(todoId, { attention: 1, attention_by: was.attention ? was.attention_by : "app" });
-      addEvent(todoId, "attention raised", "app", `${name} denied`);
-    };
-    const turn = turnState(todoId, deny);
-    turn.t.ctx = cur.ctx ? JSON.parse(cur.ctx) : null;
-    agent.sink.s = {
-      onUpdate: (u) => {
-        // The agent changed an option itself (plan mode left, a /model command): the Focus header follows.
-        if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") saveConfig(todoId, agent);
-        turn.onUpdate(u);
-      },
-      // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
-      onPermission: (r) => askPermission(todoId, r),
-    };
+    const turn = workerTurn(todoId, agent);
 
     let error = "", stop = "";
     const started = performance.now();
@@ -556,33 +579,111 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
         error = "";
       }
     }
-    // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
-    // or sees the TODO idle and starts its own turn.
-    cancelPermission(todoId); // a request still open when the turn ended (the agent died, or gave up waiting)
-    turn.finish();
-    saveConfig(todoId, agent);
-    clearTimeout(run.kill);
-    running.delete(todoId);
-    const stopped = interrupting.get(todoId);
-    interrupting.delete(todoId);
-    const text = turn.t.text.trim();
-    if (turn.t.ctx?.used) setTodo(todoId, { ctx: JSON.stringify({ ...turn.t.ctx, turns: turn.t.ctx.turns + 1 }) }, false);
     if (stop === "refusal" || stop === "max_tokens" || stop === "max_turn_requests") error ||= `The turn ended early: ${stop.replaceAll("_", " ")}.`;
-    if (text) addEvent(todoId, "result", "agent", text, { duration_ms: Math.round(performance.now() - started), tools: turn.t.tools });
-    if (stopped) addEvent(todoId, "interrupted", stopped);
-    if (error && !stopped) {
-      addMessage(todoId, "app", cutToTwoLines(error));
-      addEvent(todoId, "error", "app", error);
-    } else if (!posted.has(todoId) && text) addMessage(todoId, "agent", cutToTwoLines(text));
-    const status = statusAfterRun(todoRow(todoId)!.attention);
-    setTodo(todoId, { status });
-    addEvent(todoId, "run ended", "app", status);
-    if (todoRow(todoId)!.removed_at || shuttingDown) closeAgent(todoId);
-    else parkAgent(todoId);
-    refreshPrs(p.id); // the agent may have pushed or opened a PR
-    // Queued messages, including ones committed during the turn, and after a Stop (item 129), go out now.
-    if (!shuttingDown) deliver(todoId, "queued messages");
+    endRun(todoId, run, agent, turn, started, error, false);
   })();
+}
+
+// A worker turn's view of the update stream (turnState), fed by the agent's updates while it runs.
+function workerTurn(todoId: number, agent: Agent) {
+  const denied = new Set<string>();
+  const deny = (name: string, input: any, why: string) => {
+    const what = toolArg(input) || why;
+    if (denied.has(name + what)) return;
+    denied.add(name + what);
+    addMessage(todoId, "app", `Auto mode blocked ${name}: ${what}`);
+    const was = todoRow(todoId)!;
+    setTodo(todoId, { attention: 1, attention_by: was.attention ? was.attention_by : "app" });
+    addEvent(todoId, "attention raised", "app", `${name} denied`);
+  };
+  const turn = turnState(todoId, deny);
+  const ctx = todoRow(todoId)!.ctx;
+  turn.t.ctx = ctx ? JSON.parse(ctx) : null;
+  agent.sink.s = {
+    onUpdate: (u) => {
+      // The agent changed an option itself (plan mode left, a /model command): the Focus header follows.
+      if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") saveConfig(todoId, agent);
+      turn.onUpdate(u);
+    },
+    // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
+    onPermission: (r) => askPermission(todoId, r),
+  };
+  return turn;
+}
+
+// The end of a worker run: a turn, or a cycle the agent ran on its own (`background`). With background tasks still
+// running the TODO stays running (item 136); the agent waits for them parked, and takes messages as usual.
+function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof turnState>, started: number, error: string, background: boolean) {
+  // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
+  // or sees the TODO idle and starts its own turn.
+  cancelPermission(todoId); // a request still open when the turn ended (the agent died, or gave up waiting)
+  turn.finish();
+  saveConfig(todoId, agent);
+  clearTimeout(run.kill);
+  running.delete(todoId);
+  const stopped = interrupting.get(todoId);
+  interrupting.delete(todoId);
+  const text = turn.t.text.trim();
+  if (turn.t.ctx?.used) setTodo(todoId, { ctx: JSON.stringify({ ...turn.t.ctx, turns: turn.t.ctx.turns + 1 }) }, false);
+  if (text) addEvent(todoId, "result", "agent", text, { duration_ms: Math.round(performance.now() - started), tools: turn.t.tools });
+  if (stopped) addEvent(todoId, "interrupted", stopped);
+  if (error && !stopped) {
+    addMessage(todoId, "app", cutToTwoLines(error));
+    addEvent(todoId, "error", "app", error);
+  } else if (!posted.has(todoId) && text) addMessage(todoId, "agent", cutToTwoLines(text));
+  // A background task finished and the agent followed up: the user is asked to look. A follow-up that did nothing
+  // while other tasks still run (Claude sometimes ends one empty and handles it in the next) does not count.
+  if (background && !stopped && (text || turn.t.tools || !agent.bg.length)) {
+    const was = todoRow(todoId)!;
+    if (!was.attention) addEvent(todoId, "attention raised", "app", "background task finished");
+    setTodo(todoId, { attention: 1, attention_by: was.attention ? was.attention_by : "app" });
+  }
+  const waits = agent.bg.length > 0 && agent.live.alive;
+  const status = waits ? "running" : statusAfterRun(todoRow(todoId)!.attention);
+  setTodo(todoId, { status, last_tool: null });
+  addEvent(todoId, "run ended", "app", waits ? `running · waiting for ${bgTasks(agent.bg.length)}` : status);
+  if (todoRow(todoId)!.removed_at || shuttingDown) closeAgent(todoId);
+  else parkAgent(todoId);
+  refreshPrs(todoRow(todoId)!.project_id); // the agent may have pushed or opened a PR
+  // Queued messages, including ones committed during the turn, and after a Stop (item 129), go out now.
+  if (!shuttingDown) deliver(todoId, "queued messages");
+}
+
+// Item 136: an update from a parked agent, with no turn running. Between turns Claude works on its own when a
+// background task finishes: it gets the task's notification and follows up. That cycle shows as a run of its own,
+// from its first update to the usage_update that ends it (or QUIET_MS without updates, or the end of the process).
+function unprompted(todoId: number, agent: Agent, u: Update) {
+  const t = todoRow(todoId);
+  if (!agentActivity(u) || running.has(todoId) || !t || t.removed_at || shuttingDown) return;
+  const run: Run = { done: Promise.resolve(), live: agent.live };
+  running.set(todoId, run);
+  clearTimeout(agent.idle);
+  setTodo(todoId, { status: "running", last_tool: null });
+  posted.delete(todoId);
+  addEvent(todoId, "launch", "app", `background task · ${agentName(agent.agent)} · session ${agent.live.sessionId}`);
+  const turn = workerTurn(todoId, agent);
+  const started = performance.now();
+  let quiet: Timer | undefined, ended = false, done = () => {};
+  run.done = new Promise<void>((r) => (done = r));
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    clearTimeout(quiet);
+    endRun(todoId, run, agent, turn, started, agent.live.alive ? "" : "The agent process ended during a background task's follow-up.", true);
+    done();
+  };
+  const sink = agent.sink.s!;
+  agent.sink.s = {
+    ...sink,
+    onUpdate: (x) => {
+      sink.onUpdate(x);
+      clearTimeout(quiet);
+      if (cycleEnd(x)) end();
+      else quiet = setTimeout(end, QUIET_MS);
+    },
+  };
+  agent.live.exited.then(end);
+  agent.sink.s.onUpdate(u);
 }
 
 // A run that never sent its prompt: status as before. A first session that did not open goes back to not started, and
