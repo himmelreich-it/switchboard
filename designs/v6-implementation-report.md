@@ -42,7 +42,7 @@ Branch `design/v6`. Design: `designs/Switchboard v6.html`. Plan and inventories 
   - **Settings.** Projects (list, Project card, Agent defaults card), Agents rows (Found / Not found, Add
     agent form), and Runs and Appearance (kept).
   - **Toasts.** Bottom right, one line, still stacking up to 3, with actions.
-- **server.ts.** The TODO summary gains `run_started_at` (last prompt/launch), used for the timers.
+- **Run start.** New column `todos.run_started_at`, set with `status = running` in `runner.ts`, used for the timers.
 - **Verified** against the design scenes in Playwright at 1440×900:
   - board, backlog with Removed, New TODO dialog, operator panel, settings and agents;
   - Focus with Bash approval and with Edit approval;
