@@ -1,8 +1,8 @@
 import type { ServerWebSocket, Subprocess } from "bun";
 import { Database } from "bun:sqlite";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   MODES, configIn, contextFile, defaultsOf, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Status,
@@ -10,7 +10,10 @@ import {
 import { authenticate, describe, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
-import { CONTRACT, DEFAULT_BACKGROUND_HOURS, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, closeAgent, metaKey, commandsOf, commitMessage, commitOperatorMessage, deliver, interrupt, isRunning, liveAgent, modeOf, newSession, start, stopAll, worktreeRoot } from "./runner";
+import {
+  CONTRACT, DEFAULT_BACKGROUND_HOURS, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, cancelRouting, changeRepo, closeAgent, metaKey, commandsOf, commitMessage,
+  commitOperatorMessage, deliver, interrupt, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
+} from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
 export const HOST = "127.0.0.1";
@@ -27,24 +30,26 @@ export const db = new Database(dbPath);
 migrateDb(db);
 
 export type Todo = {
-  id: number; project_id: number; title: string; status: Status; attention: number; session_id: string | null;
+  id: number; project_id: number | null; title: string; status: Status; attention: number; session_id: string | null;
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
-  agent: string | null; suggestions: string | null;
+  agent: string | null; suggestions: string | null; run_started_at: string | null; routing: string | null; routed_at: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
 export type Project = {
   id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string; mode: string | null; defaults: string | null;
-  default_agent: string | null;
+  default_agent: string | null; profile: string | null; profile_at: string | null; profile_edited: number | null;
 };
 
 export const now = () => new Date().toISOString();
 export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = ?").get(id) as Todo | null;
-export const projectRow = (id: number) => db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null;
+// A TODO's repo: null before routing and for a no-repo TODO (801).
+export const projectRow = (id: number | null) => (id == null ? null : db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null);
 export const filesOf = (todoId: number) =>
   db.query("SELECT id, path, session_no FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null }[];
-export const artifactDir = (slug: string, todoId: number) => join(HOME, "data", slug, String(todoId));
+// Since 801 the folder no longer depends on the repo, so it exists before routing and never moves.
+export const artifactDir = (todoId: number) => join(HOME, "data", String(todoId));
 export const attachmentsOf = (messageId: number) =>
   db.query("SELECT id, name, path FROM attachments WHERE message_id = ? ORDER BY id").all(messageId) as { id: number; name: string; path: string }[];
 
@@ -53,7 +58,7 @@ export type Upload = { name: string; data: string };
 // Written to <artifact folder>/uploads/<message id>-<n>-<name>, so two pasted "image.png" never collide.
 export function saveAttachments(todoId: number, messageId: number, uploads: Upload[]) {
   if (!uploads.length) return;
-  const dir = join(artifactDir(projectRow(todoRow(todoId)!.project_id)!.slug, todoId), "uploads");
+  const dir = join(artifactDir(todoId), "uploads");
   mkdirSync(dir, { recursive: true });
   uploads.forEach((u, i) => {
     const name = safeFileName(u.name);
@@ -72,6 +77,27 @@ const getDraft = (key: string) => (db.query("SELECT body FROM drafts WHERE key =
 export function setDraft(key: string, body: string) {
   if (!body.trim()) db.run("DELETE FROM drafts WHERE key = ?", [key]);
   else db.run("INSERT INTO drafts (key, body) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET body = excluded.body", [key, body]);
+}
+
+// 801: artifact folders move once from data/<project slug>/<todo id>/ to data/<todo id>/, and the stored file and
+// attachment paths with them. HOME is a real path, so the stored paths start with these folders exactly.
+// ponytail: a project slug that is a number ("12") shares its name with TODO 12's new folder; that TODO's folder stays
+// and the log says so.
+function moveArtifactFolders() {
+  if (getMeta("artifact_layout") === "todo-id") return;
+  const rows = db.query("SELECT t.id, p.slug FROM todos t JOIN projects p ON p.id = t.project_id ORDER BY t.id").all() as { id: number; slug: string }[];
+  for (const r of rows) {
+    const a = join(HOME, "data", r.slug, String(r.id)), b = artifactDir(r.id);
+    if (!existsSync(a)) continue;
+    if (existsSync(b)) { console.error(`artifact folders: ${b} exists already, so ${a} stays where it is`); continue; }
+    renameSync(a, b);
+    for (const tbl of ["attachments", "files"])
+      db.run(`UPDATE ${tbl} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`, [b + sep, a.length + 2, a.length + 1, a + sep]);
+    db.run("INSERT INTO events (todo_id, kind, actor, detail, at) VALUES (?, 'moved', 'app', ?, ?)", [r.id, `data/${r.slug}/${r.id}/ → data/${r.id}/`, now()]);
+    console.log(`artifact folders: moved data/${r.slug}/${r.id}/ to data/${r.id}/`);
+  }
+  for (const slug of new Set(rows.map((r) => r.slug))) try { rmdirSync(join(HOME, "data", slug)); } catch {} // only when empty
+  setMeta("artifact_layout", "todo-id");
 }
 
 // ---------- live updates (one SSE stream; the browser refetches what it shows) ----------
@@ -178,7 +204,7 @@ export function refreshPrs(projectId: number) {
 // A TODO is looked up when it has a worktree (by its branch) or a PR registered with set_pr (by number, also without a worktree).
 const PR_TODOS = "removed_at IS NULL AND (worktree_path IS NOT NULL OR pr_number IS NOT NULL)";
 export async function refreshAllPrs() {
-  const ids = db.query(`SELECT DISTINCT project_id AS id FROM todos WHERE ${PR_TODOS}`).all() as { id: number }[];
+  const ids = db.query(`SELECT DISTINCT project_id AS id FROM todos WHERE project_id IS NOT NULL AND ${PR_TODOS}`).all() as { id: number }[];
   await Promise.all(ids.map((r) => refreshPrs(r.id)));
 }
 
@@ -252,13 +278,13 @@ SELECT t.*, p.name AS project_name,
   (SELECT json_object('body', body, 'at', committed_at) FROM messages m
    WHERE m.todo_id = t.id AND m.author = 'agent' ORDER BY m.id DESC LIMIT 1) AS last_agent_message,
   (SELECT json_group_array(path) FROM (SELECT path FROM files f WHERE f.todo_id = t.id ORDER BY f.id)) AS file_paths
-FROM todos t JOIN projects p ON p.id = t.project_id`;
+FROM todos t LEFT JOIN projects p ON p.id = t.project_id`;
 
 // ponytail: two git processes per TODO with a worktree on every list fetch; cache gitState() per path for a few seconds
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, suggestions, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, suggestions, routing, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -271,7 +297,7 @@ export async function summaries(where = "1", args: any[] = []) {
       file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null, plan: r.plan ? JSON.parse(r.plan) : null,
       permission: permission ? JSON.parse(permission) : null,
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {},
-      suggestions: suggestions ? JSON.parse(suggestions) : null,
+      suggestions: suggestions ? JSON.parse(suggestions) : null, routing: routing ? JSON.parse(routing) : null,
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
       // Item 136: the agent's background tasks still running, and whether the TODO shows running only for them.
@@ -300,7 +326,7 @@ function fileOut(f: { id: number; path: string; session_no: number | null }) {
 // Symlinks are skipped: they could point the editor at files outside the folder, or loop.
 // ponytail: stops after 500 files; an artifact folder holds plans and notes, not a checkout.
 function registerDiskFiles(t: Todo) {
-  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  const dir = artifactDir(t.id);
   if (!existsSync(dir)) return;
   const found: string[] = [];
   const walk = (d: string, top: boolean) => {
@@ -324,19 +350,20 @@ async function projectOut(p: Project) {
   const r = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
   const c = db.query(`SELECT EXISTS (SELECT 1 FROM todos WHERE project_id = ? AND session_id IS NOT NULL) AS locked,
     (SELECT COUNT(*) FROM todos WHERE project_id = ? AND removed_at IS NULL) AS todo_count`).get(p.id, p.id) as any;
-  return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, locked: !!c.locked, todo_count: c.todo_count };
+  return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, locked: !!c.locked, todo_count: c.todo_count,
+    profile_edited: !!p.profile_edited, scanning: isScanning(p.id), scan_error: scanError(p.id) };
 }
 
 // ---------- writes shared with runner.ts ----------
 
-// One transaction, so a failed file write leaves no TODO behind.
-// `agent` is the agent of the first session (P5): the project's default when not given.
-export function createTodo(projectId: number, instruction: string, actor: "user" | "operator", uploads: Upload[] = [], agent: string | null = null) {
+// One transaction, so a failed file write leaves no TODO behind. A new TODO has no repo: routing picks it at Start (801).
+// `agent` is the agent of the first session (P5); when not given, routing takes the repo's default.
+export function createTodo(instruction: string, actor: "user" | "operator", uploads: Upload[] = [], agent: string | null = null) {
   const id = db.transaction(() => {
     const at = now();
     const id = Number(db.run(
-      "INSERT INTO todos (project_id, title, status, created_at, updated_at, agent) VALUES (?, ?, 'not_started', ?, ?, ?)",
-      [projectId, instruction, at, at, agent ?? projectRow(projectId)!.default_agent ?? DEFAULT_AGENT],
+      "INSERT INTO todos (title, status, created_at, updated_at, agent) VALUES (?, 'not_started', ?, ?, ?)",
+      [instruction, at, at, agent],
     ).lastInsertRowid);
     saveAttachments(id, addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending"), uploads);
     return id;
@@ -438,13 +465,13 @@ function uploadsIn(v: unknown): Upload[] {
 // A request names a root and a path relative to it. The real path must lie inside the project's local folder or its
 // worktree root (item 110), so the worktree skill's symlinks into the main folder open and nothing else does.
 function rootDir(t: Todo, root: string) {
-  const base = root === "worktree" ? t.worktree_path : root === "project" ? projectRow(t.project_id)!.local_path : null;
-  if (!base || !existsSync(base)) throw httpError(404, root === "worktree" ? "this TODO has no worktree on disk" : "unknown root");
+  const base = root === "worktree" ? t.worktree_path : root === "project" ? projectRow(t.project_id)?.local_path : null;
+  if (!base || !existsSync(base)) throw httpError(404, root === "worktree" ? "this TODO has no worktree on disk" : root === "project" ? "this TODO has no repo" : "unknown root");
   return base;
 }
 function fsTarget(t: Todo, root: string, rel: string, write = false) {
-  const p = projectRow(t.project_id)!;
   const base = rootDir(t, root);
+  const p = projectRow(t.project_id)!;   // rootDir found a folder, so the TODO has a repo
   if (typeof rel !== "string" || !rel || isAbsolute(rel)) throw httpError(400, "path must be relative to the root");
   const lexical = resolve(base, rel);
   if (!isInside(lexical, resolve(base))) throw httpError(403, `${rel} is outside the ${root}`);
@@ -505,10 +532,10 @@ const enc8 = new TextEncoder(), dec8 = new TextDecoder();
 async function writeContext(t: Todo) {
   const [s] = await summaries("t.id = ?", [t.id]);
   const msgs = db.query("SELECT author, body, committed_at AS at, session_no FROM messages WHERE todo_id = ? ORDER BY id").all(t.id) as any[];
-  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  const dir = artifactDir(t.id);
   const g = s.git, pr = s.pr;
   const text = contextFile({
-    title: s.title, project: s.project_name, status: s.status, first: msgs[0]?.body ?? "", worktree: s.worktree_path, branch: s.branch,
+    title: s.title, project: s.project_name ?? (t.routed_at ? "none (thinking only)" : "not picked yet"), status: s.status, first: msgs[0]?.body ?? "", worktree: s.worktree_path, branch: s.branch,
     git: g ? [g.commits != null && `${g.commits} commits`, g.changed && `${g.changed} changed`, g.untracked && `${g.untracked} untracked`,
       g.push === "none" ? "not pushed" : g.push === "unpushed" ? `${g.unpushed} unpushed` : g.push].filter(Boolean).join(" · ") : null,
     pr: pr ? `#${pr.number} ${pr.state}${pr.draft ? " (draft)" : ""} · ${pr.url}` : s.pr_number ? `#${s.pr_number}` : null,
@@ -521,7 +548,7 @@ async function writeContext(t: Todo) {
 function termSend(x: Term, data: Uint8Array | string) { for (const ws of x.sockets) ws.send(data); }
 async function spawnTerm(x: Term) {
   const t = todoRow(x.todoId)!;
-  const dir = artifactDir(projectRow(t.project_id)!.slug, t.id);
+  const dir = artifactDir(t.id);
   mkdirSync(dir, { recursive: true });
   let cmd: string[], secret: string | null = null;
   if (x.kind === "claude") {
@@ -644,10 +671,9 @@ async function api(req: Request, path: string): Promise<Response> {
   if (path === "/api/meta" && method === "GET") {
     // The Waiting lane (laneOf): the status, or a running agent waiting for a permission answer.
     const w = db.query("SELECT COUNT(*) AS n FROM todos WHERE (status = 'waiting' OR (status = 'running' AND permission IS NOT NULL)) AND removed_at IS NULL").get() as any;
-    const last = getMeta("last_project_id");
     // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
     // P5: the agents, and per agent its last seen config options.
-    return json({ last_project_id: last ? Number(last) : null, contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
+    return json({ contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
       shell: basename(SHELL).replace(/\.exe$/i, ""), login_shell: LOGIN_SHELL,
       background_wait_hours: Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS });
   }
@@ -676,6 +702,7 @@ async function api(req: Request, path: string): Promise<Response> {
       "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, defaults, default_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), defaults, agent === DEFAULT_AGENT ? null : agent],
     ).lastInsertRowid);
+    scanRepo(id);   // the profile routing reads (801)
     emit({ type: "projects" });
     return json(await projectOut(projectRow(id)!));
   }
@@ -696,9 +723,25 @@ async function api(req: Request, path: string): Promise<Response> {
     if (agent === undefined) return fail(`no agent ${body.default_agent}`);
     db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, defaults = ?, default_agent = ? WHERE id = ?",
       [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), defaults, agent === DEFAULT_AGENT ? null : agent, p.id]);
+    // 801: a profile the user edits is marked edited, so a Rescan asks before it overwrites it.
+    if (body.profile !== undefined && String(body.profile).trim() !== (p.profile ?? ""))
+      db.run("UPDATE projects SET profile = ?, profile_edited = 1 WHERE id = ?", [String(body.profile).trim() || null, p.id]);
     emit({ type: "projects" });
     emit({ type: "todos" }); // rows show the project name
     return json(await projectOut(projectRow(p.id)!));
+  }
+
+  // 801: Rescan writes the profile again; an edited one only with force. Scan all scans every repo without a profile.
+  if ((m = path.match(/^\/api\/projects\/(\d+)\/scan$/)) && method === "POST") {
+    const p = projectRow(Number(m[1]));
+    if (!p) return fail("no such repo", 404);
+    if (p.profile_edited && body.force !== true) return json({ error: "edited" }, 409);
+    scanRepo(p.id);
+    return json({});
+  }
+  if (path === "/api/projects/scan-all" && method === "POST") {
+    for (const p of db.query("SELECT id FROM projects WHERE profile IS NULL").all() as { id: number }[]) scanRepo(p.id);
+    return json({});
   }
 
   // ----- TODOs -----
@@ -706,26 +749,21 @@ async function api(req: Request, path: string): Promise<Response> {
   if (path === "/api/todos" && method === "GET") return json(await summaries());
   if (path === "/api/todos" && method === "POST") {
     const instruction = String(body.instruction ?? "").trim();
-    if (!projectRow(Number(body.project_id))) return fail("choose a project");
     if (!instruction) return fail("the first instruction is required");
     const agent = agentIn(body.agent);
     if (agent === undefined) return fail(`no agent ${body.agent}`);
-    const id = createTodo(Number(body.project_id), instruction, "user", uploadsIn(body.attachments), agent);
-    setMeta("last_project_id", String(Number(body.project_id)));
+    const id = createTodo(instruction, "user", uploadsIn(body.attachments), agent);
     if (body.start === true) start(id);   // Add & start (item 92): one request, so the TODO never sits in the backlog
     return json((await summaries("t.id = ?", [id]))[0]);
   }
 
-  // Items 94-97: the first instruction and the project can change until the TODO starts.
+  // Items 94-97: the first instruction and the agent can change until the TODO starts. The repo has its own route below.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/edit$/)) && method === "POST") {
     const t = liveTodo(Number(m[1]));
-    if (t.status !== "not_started") return fail("this TODO has started; its first instruction and project are fixed now", 409);
+    if (t.status !== "not_started") return fail("this TODO has started; its first instruction is fixed now", 409);
     const first = db.query("SELECT id, body FROM messages WHERE todo_id = ? ORDER BY id LIMIT 1").get(t.id) as { id: number; body: string };
     const instruction = body.instruction === undefined ? null : String(body.instruction).trim();
     if (instruction === "") return fail("the first instruction is required");
-    const to = body.project_id === undefined ? null : projectRow(Number(body.project_id));
-    if (body.project_id !== undefined && !to) return fail("choose a project");
-    const from = projectRow(t.project_id)!;
     const agent = body.agent === undefined ? null : agentIn(body.agent);
     if (agent === undefined) return fail(`no agent ${body.agent}`);
     db.transaction(() => {
@@ -740,20 +778,21 @@ async function api(req: Request, path: string): Promise<Response> {
         setTodo(t.id, t.title === first.body ? { title: instruction } : {});
         addEvent(t.id, "edited", "user", "first instruction");
       }
-      if (to && to.id !== from.id) {
-        if (termsOf(t.id).some((x) => !x.exited)) throw httpError(409, "close this TODO's terminals first; they run in the old project's folders");
-        // Nothing else is stored per project before the start: the artifact folder holds only the attachments.
-        // HOME is a real path, so the stored paths start with these folders exactly.
-        const a = artifactDir(from.slug, t.id), b = artifactDir(to.slug, t.id);
-        if (existsSync(a)) { mkdirSync(join(b, ".."), { recursive: true }); renameSync(a, b); }
-        for (const tbl of ["attachments", "files"])
-          db.run(`UPDATE ${tbl} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`, [b + "/", a.length + 2, a.length + 1, a + "/"]);
-        setTodo(t.id, { project_id: to.id });
-        addEvent(t.id, "edited", "user", `project ${from.name} → ${to.name}\nMoved data/${from.slug}/${t.id}/ → data/${to.slug}/${t.id}/\nAttachment paths rewritten.`);
-        emit({ type: "projects" });
-      }
     })();
     emit({ type: "todos" });
+    return json((await summaries("t.id = ?", [t.id]))[0]);
+  }
+
+  // 801: Change repo, and a click on one of the operator's options while routing asks. project_id null is "no repo".
+  // Allowed while the TODO has no worktree and no terminal running, as a session's folder is fixed at its launch.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/repo$/)) && method === "POST") {
+    const t = liveTodo(Number(m[1]));
+    const to = body.project_id == null ? null : projectRow(Number(body.project_id));
+    if (body.project_id != null && !to) return fail("no such repo");
+    if (t.worktree_path) return fail("this TODO has a worktree; its repo is fixed now", 409);
+    if (isRunning(t.id)) return fail("the agent is running; change the repo once it stops", 409);
+    if (termsOf(t.id).some((x) => !x.exited)) return fail("close this TODO's terminals first; they run in the old repo's folder", 409);
+    changeRepo(t.id, to?.id ?? null);
     return json((await summaries("t.id = ?", [t.id]))[0]);
   }
 
@@ -850,7 +889,8 @@ async function api(req: Request, path: string): Promise<Response> {
       const key = `${id}:${kind}`, no = (termNos.get(key) ?? 0) + 1;
       termNos.set(key, no);
       const x: Term = {
-        id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)!.local_path, no,
+        // A TODO without a repo (not routed yet, or thinking only) opens its terminals in the artifact folder (801).
+        id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)?.local_path ?? artifactDir(id), no,
         message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null, secret: null,
         buf: [], bufLen: 0, sockets: new Set(), fresh: false,
         cols: Math.max(2, Math.min(500, Number(body.cols) || 100)), rows: Math.max(2, Math.min(300, Number(body.rows) || 30)),
@@ -891,7 +931,7 @@ async function api(req: Request, path: string): Promise<Response> {
       todo,
       // P5: each session's agent, and how to resume it outside the app where that agent has a command for it.
       sessions: sessionsOf(id).map((s) => ({ ...s, agent: s.agent || DEFAULT_AGENT, agent_name: agentName(s.agent), resume: resumeHint(s.agent, s.session_id) })),
-      artifact_dir: artifactDir(projectRow(todo.project_id)!.slug, id) + "/",
+      artifact_dir: artifactDir(id) + "/",
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
       events: (db.query("SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").all(id) as any[])
@@ -914,7 +954,7 @@ async function api(req: Request, path: string): Promise<Response> {
     const mode = modeIn(body.mode, t.agent);
     if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}, or empty for the project's`);
     setTodo(t.id, { mode }, false);
-    addEvent(t.id, "mode", "user", mode ?? `project's (${modeOf({ mode, agent: t.agent }, projectRow(t.project_id)!) ?? "the agent's own"})`);
+    addEvent(t.id, "mode", "user", mode ?? `repo's (${modeOf({ mode, agent: t.agent }, projectRow(t.project_id) ?? { defaults: null }) ?? "the agent's own"})`);
     return applyNow(t.id);
   }
 
@@ -952,7 +992,7 @@ async function api(req: Request, path: string): Promise<Response> {
     // Item 72: ends the live session and starts the next with the hand-over header, the queued messages and this one.
     if (action === "new-session") {
       const t = liveTodo(id);
-      if (t.status === "not_started") return fail("start the TODO first; its first session starts with Start", 409);
+      if (!t.session_id) return fail("start the TODO first; its first session starts with Start", 409);
       if (isRunning(id)) return fail("the agent is running; a new session can start once it stops", 409);
       const agent = agentIn(body.agent);
       if (agent === undefined) return fail(`no agent ${body.agent}`);
@@ -992,7 +1032,8 @@ async function api(req: Request, path: string): Promise<Response> {
     } else if (action === "clear-attention") {
       const t = todoOr404(id);
       if (t.attention) {
-        setTodo(id, { attention: 0, attention_by: null, status: t.status === "waiting" ? "idle" : t.status });
+        // A TODO whose routing asks (801) has no session to be idle in: it stays waiting for the pick.
+        setTodo(id, { attention: 0, attention_by: null, status: t.status === "waiting" && !t.routing ? "idle" : t.status });
         addEvent(id, "attention cleared", "user");
       }
     } else if (action === "remove") {
@@ -1000,21 +1041,23 @@ async function api(req: Request, path: string): Promise<Response> {
       setTodo(id, { removed_at: now(), removed_by: "user", suggestions: null });
       addEvent(id, "removed", "user");
       // Like Esc in Claude Code; queued messages stay queued. The agent process ends with the run, or now when idle.
+      // Routing that asks ends here; routing that runs ends with its run. Either way the TODO is not started again.
       if (isRunning(id)) interrupt(id);
-      else closeAgent(id);
+      else { closeAgent(id); cancelRouting(id); }
       closeTerms(id); // restoring does not bring them back (item 115)
       emit({ type: "todos" });
     } else if (action === "restore") {
       const t = todoOr404(id);
       if (!t.removed_at) return fail("this TODO is not removed", 409);
-      if (t.session_id) {
-        const folder = projectRow(t.project_id)!.local_path;
+      // A session ended by Change repo is not resumed: the next message starts a new one.
+      if (t.session_id && !sessionsOf(id).at(-1)?.ended_at) {
+        const folder = projectRow(t.project_id)?.local_path ?? artifactDir(id);
         const spec = specOf(t.agent || DEFAULT_AGENT);
         if (spec && existsSync(folder) && !(await sessionExists(spec, folder, t.session_id).catch(() => true)))
           return json({ warning: `The ${agentName(t.agent)} session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
         if (t.worktree_path && !existsSync(t.worktree_path))
           return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
-        if (!existsSync(folder)) return json({ warning: `The project folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+        if (!existsSync(folder)) return json({ warning: `The repo folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
       }
       setTodo(id, { removed_at: null, removed_by: null });
       addEvent(id, "restored", "user");
@@ -1031,7 +1074,9 @@ async function api(req: Request, path: string): Promise<Response> {
       }
     } else if (action === "stop") {
       // Like Esc in Claude Code. Messages queued during the turn are answered right after.
-      // Also ends the background tasks the agent waits for between turns (item 136).
+      // Also ends the background tasks the agent waits for between turns (item 136), and routing (801): a routing
+      // run ends with its interrupt, a question waiting for the user ends here. The TODO is not started again.
+      if (todoRow(id)?.routing && !isRunning(id)) { cancelRouting(id); return json({}); }
       if (!isRunning(liveTodo(id).id) && !backgroundCount(id)) return fail("the agent is not running", 409);
       interrupt(id, "user");
     } else if (action === "deliver") {
@@ -1190,8 +1235,16 @@ writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
 chmodSync(TOKEN_FILE, 0o600); // mode above applies only when the file is new
 console.log(`switchboard on http://${HOST}:${PORT}/#token=${TOKEN} (data in ${HOME})`);
 
+// After the bind, like the reset below: a second copy that exits on EADDRINUSE must not move a live app's folders.
+moveArtifactFolders();
+
 // A run cannot survive a restart. Queued messages stay queued until the user presses Deliver.
 // Only after Bun.serve has bound the port: a second copy that fails with EADDRINUSE must not touch the live app's TODOs.
+// Routing that ran or asked at the crash starts over at the next Start (801).
+for (const t of db.query("SELECT id FROM todos WHERE routing IS NOT NULL").all() as Todo[]) {
+  cancelRouting(t.id);
+  addEvent(t.id, "app restarted", "app");
+}
 for (const t of db.query("SELECT id, attention, attention_by, permission FROM todos WHERE status = 'running'").all() as Todo[]) {
   // A permission request open at the crash died with its agent; the flag it raised drops with it.
   const attention = t.permission && t.attention_by === "permission" ? 0 : t.attention;
