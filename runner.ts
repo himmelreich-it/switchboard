@@ -444,7 +444,10 @@ export function commitMessage(todoId: number, author: "user" | "user via operato
 // Start: routing first while the repo is not decided (801), then the first turn, where every message committed before
 // the start goes out as one prompt.
 export function start(todoId: number) {
-  if (!todoRow(todoId)!.routed_at) return runRouting(todoId);
+  if (!todoRow(todoId)!.routed_at) {
+    if (db.query("SELECT 1 FROM projects LIMIT 1").get()) return runRouting(todoId);
+    routeTo(todoId, null, null);   // no repos yet: nothing to pick, the TODO runs without one
+  }
   runWorker(todoId, () => take(todoId, "pending"), { no: 1 }, "start");
 }
 
