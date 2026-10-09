@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   agentActivity, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
-  prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
+  prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView,
 } from "./lib";
 
@@ -314,4 +314,22 @@ test("revealCommand", () => {
   expect(revealCommand("darwin", "/a/b c.md")).toEqual(["open", "-R", "/a/b c.md"]);
   expect(revealCommand("win32", "C:/code/a b/c.md")).toEqual(["explorer.exe", '/select,"C:\\code\\a b\\c.md"']);
   expect(revealCommand("linux", "/a/b/c.md")).toEqual(["xdg-open", "/a/b"]);
+});
+
+test("followUpError", () => {
+  expect(followUpError(["Approve the PR"])).toBeNull();
+  expect(followUpError(["Approve the PR", "Post the two nits as review comments"])).toBeNull();
+  expect(followUpError([])).toBe("Suggest one or two follow-ups.");
+  expect(followUpError(["a", "b", "c"])).toBe("Suggest one or two follow-ups.");
+  expect(followUpError(["  "])).toBe("A follow-up is empty.");
+  expect(followUpError(["one\ntwo"])).toBe("A follow-up is one line.");
+  expect(followUpError(["x".repeat(81)])).toBe("A follow-up is at most 80 characters.");
+  expect(followUpError(["x".repeat(80)])).toBeNull();
+});
+
+test("migrateDb adds todos.suggestions", () => {
+  const { Database } = require("bun:sqlite");
+  const db = new Database(":memory:");
+  migrateDb(db);
+  expect(db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'suggestions'").get()).toBeTruthy();
 });

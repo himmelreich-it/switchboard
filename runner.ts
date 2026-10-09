@@ -20,7 +20,7 @@ import {
 // GET /api/meta shows it with the placeholder; each run fills in the TODO's own folder.
 export const CONTRACT = `You are running inside switchboard, a local app where the user tracks this work as a TODO and steers it with short chat messages. A TODO can span several agent sessions, one after another; this session is one of them.
 
-- Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file, mcp__app__set_worktree and mcp__app__set_pr. On your first turn, call mcp__app__set_title with a short title for this TODO, unless the prompt starts with a hand-over header.
+- Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file, mcp__app__set_worktree, mcp__app__set_pr and mcp__app__suggest_follow_ups. On your first turn, call mcp__app__set_title with a short title for this TODO, unless the prompt starts with a hand-over header.
 - A prompt that starts with "This TODO continues earlier work" is a hand-over from earlier sessions. Keep the title it names, work in the worktree it names instead of creating a new one, and read the listed files you need before you start.
 - Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
 - The TODO text and the user's committed messages are your go-ahead for local edits within this TODO's scope. Outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user.
@@ -29,7 +29,8 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 - As soon as you know this TODO works on an existing GitHub pull request (a review, a merge check, a fix on someone's PR), call mcp__app__set_pr with its number, also without a worktree. The app then shows the PR's state, checks and reviews on the TODO's card. A PR opened from your worktree's branch is found without it.
 - When anything is unclear, ask rather than guess: post a message and raise attention with mcp__app__set_attention.
 - When auto mode blocks an action, or you are unsure how to proceed, post a message and raise attention instead of routing around the block.
-- Clear your attention flag (mcp__app__set_attention with raised false) once the user's reply resolves it.`;
+- Clear your attention flag (mcp__app__set_attention with raised false) once the user's reply resolves it.
+- When your turn ends with obvious next steps, call mcp__app__suggest_follow_ups with up to two of them, phrased as the instruction the user would send you (e.g. "Approve the PR"). When you asked the user a question, the suggestions can be its likely answers. The user sends one with a click.`;
 
 // P6: what a Claude terminal with the app tools is told. The user talks to it in the terminal; the tools write to the TODO.
 export const TERMINAL_CONTRACT = `You are running in a terminal the user opened from switchboard, a local app where the user tracks work as TODOs. This terminal belongs to one TODO; {artifact_dir}/terminal/context.md describes it. The user talks to you here, in the terminal: answer here as usual.
@@ -419,6 +420,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
 // A committed message: stored until start, queued while the agent runs, or sent now (R20). The attachments are saved
 // in the same transaction and before deliver(), whose take() reads them. A queued message goes out when the turn ends.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = []) {
+  setTodo(todoId, { suggestions: null }, false);   // a sent message answers the suggestions, picked or not
   const action = deliveryAction(todoRow(todoId)!.status, running.has(todoId));
   const id = db.transaction(() => {
     const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued");
@@ -486,7 +488,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
   const contract = contractFor(agentId, dir);
   const run: Run = { done: Promise.resolve(), live: null };
   running.set(todoId, run);
-  setTodo(todoId, { status: "running", last_tool: null });
+  setTodo(todoId, { status: "running", last_tool: null, suggestions: null });
   posted.delete(todoId);
 
   run.done = (async () => {
@@ -658,7 +660,7 @@ function unprompted(todoId: number, agent: Agent, u: Update) {
   const run: Run = { done: Promise.resolve(), live: agent.live };
   running.set(todoId, run);
   clearTimeout(agent.idle);
-  setTodo(todoId, { status: "running", last_tool: null });
+  setTodo(todoId, { status: "running", last_tool: null, suggestions: null });
   posted.delete(todoId);
   addEvent(todoId, "launch", "app", `background task · ${agentName(agent.agent)} · session ${agent.live.sessionId}`);
   const turn = workerTurn(todoId, agent);

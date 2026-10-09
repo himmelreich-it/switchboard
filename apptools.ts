@@ -7,14 +7,14 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
-import { deliveryAction, isInside, lineCount } from "./lib";
+import { deliveryAction, followUpError, isInside, lineCount } from "./lib";
 import { commitMessage, isRunning } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOST, PORT, addEvent, addMessage, createTodo, db, filesOf, liveSessionNo, refreshPrs, sessionsOf, setTodo, summaries, todoRow,
 } from "./server";
 
-export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr"].map((n) => `mcp__app__${n}`);
+export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups"].map((n) => `mcp__app__${n}`);
 export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message"].map((n) => `mcp__app__${n}`);
 
 // `onPost` tells the run that the agent posted a chat message this turn (so its final text is not posted as well).
@@ -113,6 +113,18 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     setTodo(todoId, { pr_number: number });
     addEvent(todoId, "set_pr", "agent", `#${number}`);
     refreshPrs(todoRow(todoId)!.project_id);
+    return ok();
+  });
+  // Suggested follow-ups (pills): the TODO's agent only, a terminal has no chat turn to follow up on.
+  if (!g.via) s.registerTool("suggest_follow_ups", {
+    description: "Suggest one or two follow-ups the user can send you with a click, each one line written as their instruction to you (e.g. \"Approve the PR\"). A later call replaces the earlier ones.",
+    inputSchema: { items: z.array(z.string()) },
+  }, async ({ items }) => {
+    const e = followUpError(items);
+    if (e) return err(e);
+    const clean = items.map((x) => x.trim());
+    setTodo(todoId, { suggestions: JSON.stringify(clean) }, false);
+    addEvent(todoId, "suggest", "agent", clean.join(" · "));
     return ok();
   });
 }
