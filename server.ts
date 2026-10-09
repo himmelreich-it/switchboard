@@ -31,7 +31,7 @@ export type Todo = {
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
-  agent: string | null;
+  agent: string | null; suggestions: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
 export type Project = {
