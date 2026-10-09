@@ -27,6 +27,17 @@ export function cutToTwoLines(text: string): string {
 
 export const lineCount = (text: string) => text.trim().split("\n").filter((l) => l.trim()).length;
 
+// The agent's suggested follow-ups (pills): one or two one-line instructions the user sends with a click.
+export function followUpError(items: string[]): string | null {
+  if (items.length < 1 || items.length > 2) return "Suggest one or two follow-ups.";
+  for (const s of items) {
+    if (!s.trim()) return "A follow-up is empty.";
+    if (s.trim().includes("\n")) return "A follow-up is one line.";
+    if (s.trim().length > 80) return "A follow-up is at most 80 characters.";
+  }
+  return null;
+}
+
 // The prompt for one turn: the worktree line (while one is registered), then every delivered message.
 // With no messages, as on a restore with nothing queued and no draft, the prompt is "continue".
 // The first turn of a later session starts with the hand-over header instead, which names the worktree itself.
@@ -479,6 +490,7 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("todos", "agent", "TEXT");           // the agent of the TODO's live session, or of its first one before the start (null: claude)
   addColumn("sessions", "agent", "TEXT");        // the agent each session ran on (null: claude)
   addColumn("messages", "via", "TEXT");          // the Claude terminal an agent message came from ("Claude 2"), P6; null: the TODO's agent
+  addColumn("todos", "suggestions", "TEXT");     // the agent's suggested follow-ups (JSON string[]), cleared at each run start
   db.exec(`CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)`);
   // P4 kept the defaults flat and the mode in projects.mode, both Claude's: they move under "claude".
