@@ -976,10 +976,13 @@ async function api(req: Request, path: string): Promise<Response> {
       const text = String(body.body ?? "").trim();
       const uploads = uploadsIn(body.attachments);
       if (!text && !uploads.length) return fail("empty message");
+      if (body.suggested === true) {
+        if (!(JSON.parse(todoRow(id)!.suggestions ?? "[]") as string[]).includes(text)) return fail("That suggestion is gone", 409);
+        addEvent(id, "suggestion picked", "user", text);   // before the run's launch events
+      }
       const mid = commitMessage(id, "user", text, uploads);
       // A pill click sends its text; the draft in the composer stays.
-      if (body.suggested === true) addEvent(id, "suggestion picked", "user", text);
-      else setDraft(`todo:${id}`, "");
+      if (body.suggested !== true) setDraft(`todo:${id}`, "");
       return json(messageOut(mid));
     } else if (action === "read") {
       // Only an actual change is announced, so a page that marks read on every refetch cannot loop.
@@ -994,7 +997,7 @@ async function api(req: Request, path: string): Promise<Response> {
       }
     } else if (action === "remove") {
       liveTodo(id);
-      setTodo(id, { removed_at: now(), removed_by: "user" });
+      setTodo(id, { removed_at: now(), removed_by: "user", suggestions: null });
       addEvent(id, "removed", "user");
       // Like Esc in Claude Code; queued messages stay queued. The agent process ends with the run, or now when idle.
       if (isRunning(id)) interrupt(id);
