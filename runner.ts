@@ -488,7 +488,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
   const contract = contractFor(agentId, dir);
   const run: Run = { done: Promise.resolve(), live: null };
   running.set(todoId, run);
-  setTodo(todoId, { status: "running", last_tool: null, suggestions: null });
+  setTodo(todoId, { status: "running", last_tool: null, suggestions: null, run_started_at: now() });
   posted.delete(todoId);
 
   run.done = (async () => {
@@ -660,7 +660,7 @@ function unprompted(todoId: number, agent: Agent, u: Update) {
   const run: Run = { done: Promise.resolve(), live: agent.live };
   running.set(todoId, run);
   clearTimeout(agent.idle);
-  setTodo(todoId, { status: "running", last_tool: null, suggestions: null });
+  setTodo(todoId, { status: "running", last_tool: null, suggestions: null, run_started_at: now() });
   posted.delete(todoId);
   addEvent(todoId, "launch", "app", `background task · ${agentName(agent.agent)} · session ${agent.live.sessionId}`);
   const turn = workerTurn(todoId, agent);

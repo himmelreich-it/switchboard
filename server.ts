@@ -31,7 +31,7 @@ export type Todo = {
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
-  agent: string | null; suggestions: string | null;
+  agent: string | null; suggestions: string | null; run_started_at: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
 export type Project = {
@@ -251,9 +251,7 @@ SELECT t.*, p.name AS project_name,
    WHERE m.todo_id = t.id ORDER BY m.id DESC LIMIT 1) AS last_message,
   (SELECT json_object('body', body, 'at', committed_at) FROM messages m
    WHERE m.todo_id = t.id AND m.author = 'agent' ORDER BY m.id DESC LIMIT 1) AS last_agent_message,
-  (SELECT json_group_array(path) FROM (SELECT path FROM files f WHERE f.todo_id = t.id ORDER BY f.id)) AS file_paths,
-  -- v6: the running card and the Focus header count up from the start of the turn
-  (SELECT MAX(e.at) FROM events e WHERE e.todo_id = t.id AND e.kind IN ('prompt', 'launch')) AS run_started_at
+  (SELECT json_group_array(path) FROM (SELECT path FROM files f WHERE f.todo_id = t.id ORDER BY f.id)) AS file_paths
 FROM todos t JOIN projects p ON p.id = t.project_id`;
 
 // ponytail: two git processes per TODO with a worktree on every list fetch; cache gitState() per path for a few seconds
