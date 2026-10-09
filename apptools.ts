@@ -8,18 +8,20 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
 import { deliveryAction, followUpError, isInside, lineCount } from "./lib";
-import { commitMessage, isRunning } from "./runner";
+import { commitMessage, isRunning, routeTo } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOST, PORT, addEvent, addMessage, createTodo, db, filesOf, liveSessionNo, refreshPrs, sessionsOf, setTodo, summaries, todoRow,
 } from "./server";
 
-export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups"].map((n) => `mcp__app__${n}`);
+export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "read_todo", "read_file"].map((n) => `mcp__app__${n}`);
 export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message"].map((n) => `mcp__app__${n}`);
+// The operator's routing run for one TODO (801): read other TODOs, then decide.
+export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_repo"].map((n) => `mcp__app__${n}`);
 
 // `onPost` tells the run that the agent posted a chat message this turn (so its final text is not posted as well).
 // `via` names the Claude terminal a grant belongs to (P6): its chat messages carry it.
-type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void; via?: string } | { kind: "operator" };
+type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void; via?: string } | { kind: "operator" } | { kind: "router"; todoId: number };
 const grants = new Map<string, Grant>();
 
 // A secret for one agent process, and the MCP server entry that names it. Revoke it when the agent process ends.
@@ -41,8 +43,9 @@ export async function handleMcp(req: Request): Promise<Response> {
   // Stateless: no server-initiated stream (GET) and no session to end (DELETE).
   if (req.method !== "POST") return new Response(null, { status: 405 });
   const server = new McpServer({ name: "app", version: "1.0.0" });
-  if (g.kind === "worker") workerTools(server, g);
-  else operatorTools(server);
+  if (g.kind === "worker") { workerTools(server, g); readTools(server, () => {}); }
+  else if (g.kind === "router") { readTools(server, (name, detail) => addEvent(g.todoId, name, "operator", detail)); routerTools(server, g.todoId); }
+  else { const used = (name: string, detail: string | null = null) => addEvent(null, name, "operator", detail); readTools(server, used); operatorTools(server, used); }
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   return transport.handleRequest(req);
@@ -112,7 +115,8 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
   }, async ({ number }) => {
     setTodo(todoId, { pr_number: number });
     addEvent(todoId, "set_pr", "agent", `#${number}`);
-    refreshPrs(todoRow(todoId)!.project_id);
+    const pid = todoRow(todoId)!.project_id;
+    if (pid) refreshPrs(pid);
     return ok();
   });
   // Suggested follow-ups (pills): the TODO's agent only, a terminal has no chat turn to follow up on.
@@ -132,34 +136,67 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
 const latest = (todoId: number, n: number) =>
   db.query("SELECT author, body, committed_at AS at FROM messages WHERE todo_id = ? ORDER BY id DESC LIMIT ?").all(todoId, n).reverse();
 
-function operatorTools(s: McpServer) {
-  const used = (name: string, detail: string | null = null) => addEvent(null, name, "operator", detail);
+type Used = (name: string, detail: string | null) => void;
+
+// A TODO's repo as the agents read it: its name, "none" for a no-repo TODO, null before routing (801).
+const repoOf = (s: { project_name: string | null; routed_at: string | null }) => s.project_name ?? (s.routed_at ? "none" : null);
+
+function operatorTools(s: McpServer, used: Used) {
   s.registerTool("list_todos", {
-    description: "List the TODOs: title, project, status (not_started = in the backlog), attention, branch, git state, pull request, session count, files and the latest messages. Removed TODOs only with include_removed.",
+    description: "List the TODOs: number (T-<id>), title, repo (null: not picked yet), status (not_started = in the backlog), attention, branch, git state, pull request, session count, files and the latest messages. Removed TODOs only with include_removed.",
     inputSchema: { include_removed: z.boolean().optional() },
   }, async ({ include_removed }) => {
-    used("list_todos");
+    used("list_todos", null);
     const list = await summaries(include_removed ? "1" : "t.removed_at IS NULL");
     return json(list.map((s) => ({
-      id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
+      id: s.id, ref: `T-${s.id}`, title: s.title, repo: repoOf(s), status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
       worktree_path: s.worktree_path, sessions: s.session_count, queued_messages: s.queued_count, pending_messages: s.pending_count, files: s.file_names,
       updated_at: s.updated_at, removed_at: s.removed_at, latest_messages: latest(s.id, 3),
     })));
   });
+  s.registerTool("create_todo", {
+    description: "Create a TODO with its first instruction. It stays in the backlog, not started and without a repo; when the user starts it, routing picks the repo.",
+    inputSchema: { instruction: z.string() },
+  }, async ({ instruction }) => {
+    if (!instruction.trim()) return err("instruction is empty");
+    const id = createTodo(instruction.trim(), "operator");
+    used("create_todo", `T-${id}`);
+    return ok(`Created T-${id}. It is in the backlog until the user starts it; routing picks its repo then.`);
+  });
+  s.registerTool("send_message", {
+    description: "Send a message to a TODO on the user's behalf. It is delivered like a message the user commits.",
+    inputSchema: { todo_id: z.number().int(), body: z.string() },
+  }, async ({ todo_id, body }) => {
+    const t = todoRow(todo_id);
+    if (!t || t.removed_at) return err(`no live TODO T-${todo_id}`);
+    if (!body.trim()) return err("body is empty");
+    const outcome = {
+      pending: "stored; it is delivered when the user starts the TODO",
+      queue: "queued; the agent gets it when its current turn ends",
+      send: "delivered now",
+    }[deliveryAction(t.routing ? "not_started" : t.status, isRunning(todo_id))];
+    commitMessage(todo_id, "user via operator", body.trim());
+    used("send_message", `T-${todo_id}`);
+    return ok(`Message ${outcome}.`);
+  });
+}
+
+// read_todo and read_file, the same for the operator, its routing runs and the workers (801). `used` logs a call.
+function readTools(s: McpServer, used: Used) {
   s.registerTool("read_todo", {
-    description: "Read one TODO (removed ones too): its details, its sessions with their chat messages, and its file list.",
+    description: "Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.",
     inputSchema: { todo_id: z.number().int() },
   }, async ({ todo_id }) => {
-    used("read_todo", `#${todo_id}`);
+    used("read_todo", `T-${todo_id}`);
     const [s] = await summaries("t.id = ?", [todo_id]);
-    if (!s) return err(`no TODO #${todo_id}`);
+    if (!s) return err(`no TODO T-${todo_id}`);
     const messages = db.query(`SELECT m.author, m.body, m.state, m.committed_at AS at, m.session_no, f.path AS file
       FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.todo_id = ? ORDER BY m.id`).all(todo_id) as any[];
     const sessions = sessionsOf(todo_id);
     const live = sessions.at(-1)?.no ?? null;
     const label = (no: number) => (messages.find((m) => m.session_no === no && m.author.startsWith("user"))?.body ?? "").split("\n")[0];
     return json({
-      id: s.id, title: s.title, project: s.project_name, status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
+      id: s.id, ref: `T-${s.id}`, title: s.title, repo: repoOf(s), status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
       pr_checked_at: s.pr_checked_at, gh_error: s.gh_error, worktree_path: s.worktree_path, live_session_id: s.session_id, created_at: s.created_at,
       removed_at: s.removed_at, removed_by: s.removed_by,
       files: filesOf(todo_id).map((f) => ({ name: basename(f.path), path: f.path, session: f.session_no })),
@@ -172,38 +209,45 @@ function operatorTools(s: McpServer) {
     description: "Read one of a TODO's attached markdown files by its name.",
     inputSchema: { todo_id: z.number().int(), name: z.string() },
   }, async ({ todo_id, name }) => {
-    used("read_file", `#${todo_id} ${name}`);
+    used("read_file", `T-${todo_id} ${name}`);
     const f = filesOf(todo_id).find((x) => basename(x.path) === name);
-    if (!f) return err(`TODO #${todo_id} has no file named ${name}`);
+    if (!f) return err(`T-${todo_id} has no file named ${name}`);
     if (!existsSync(f.path)) return err(`${f.path} no longer exists on disk`);
     return ok(readFileSync(f.path, "utf8"));
   });
-  s.registerTool("create_todo", {
-    description: "Create a TODO in the named project with its first instruction. It stays not started; the user starts it.",
-    inputSchema: { project: z.string(), instruction: z.string() },
-  }, async ({ project, instruction }) => {
-    const all = db.query("SELECT id, name FROM projects").all() as { id: number; name: string }[];
-    const p = all.find((x) => x.name === project) ?? all.find((x) => x.name.toLowerCase() === project.trim().toLowerCase());
-    if (!p) return err(`Unknown project "${project}". Projects: ${all.map((x) => x.name).join(", ") || "none"}`);
-    if (!instruction.trim()) return err("instruction is empty");
-    const id = createTodo(p.id, instruction.trim(), "operator");
-    used("create_todo", `#${id} in ${p.name}`);
-    return ok(`Created TODO #${id} in ${p.name}. It is in the backlog until the user starts it.`);
+}
+
+// The routing run's decision (801). The handlers only record it; runner.ts starts session 1 once the run ends.
+function routerTools(s: McpServer, todoId: number) {
+  const repos = () => db.query("SELECT id, name FROM projects ORDER BY name").all() as { id: number; name: string }[];
+  const find = (name: string) => repos().find((x) => x.name === name) ?? repos().find((x) => x.name.toLowerCase() === name.trim().toLowerCase());
+  const names = () => repos().map((x) => x.name).join(", ") || "none";
+  const decided = () => !!todoRow(todoId)!.routed_at || JSON.parse(todoRow(todoId)!.routing ?? "{}").state === "asking";
+  s.registerTool("route_todo", {
+    description: "Decide where this TODO runs: a repo's name, or \"none\" for a thinking-only TODO. The reason is one short sentence the user reads. Stop after this call.",
+    inputSchema: { repo: z.string(), reason: z.string() },
+  }, async ({ repo, reason }) => {
+    if (decided()) return err("This TODO's routing is decided already. Stop now.");
+    const none = repo.trim().toLowerCase() === "none";
+    const p = none ? null : find(repo);
+    if (!none && !p) return err(`Unknown repo "${repo}". Repos: ${names()}, or "none".`);
+    addEvent(todoId, "route_todo", "operator", `repo: "${p?.name ?? "none"}"`);
+    routeTo(todoId, p?.id ?? null, reason);
+    return ok(`Routed to ${p?.name ?? "no repo"}. The app starts session 1 there when you stop.`);
   });
-  s.registerTool("send_message", {
-    description: "Send a message to a TODO on the user's behalf. It is delivered like a message the user commits.",
-    inputSchema: { todo_id: z.number().int(), body: z.string() },
-  }, async ({ todo_id, body }) => {
-    const t = todoRow(todo_id);
-    if (!t || t.removed_at) return err(`no live TODO #${todo_id}`);
-    if (!body.trim()) return err("body is empty");
-    const outcome = {
-      pending: "stored; it is delivered when the user starts the TODO",
-      queue: "queued; the agent gets it when its current turn ends",
-      send: "delivered now",
-    }[deliveryAction(t.status, isRunning(todo_id))];
-    commitMessage(todo_id, "user via operator", body.trim());
-    used("send_message", `#${todo_id}`);
-    return ok(`Message ${outcome}.`);
+  s.registerTool("ask_repo", {
+    description: "Ask the user which repo this TODO runs in, when you cannot tell: a short question and the 2 or 3 likely repos by name. The user also gets a \"No repo\" choice. Stop after this call.",
+    inputSchema: { question: z.string(), options: z.array(z.string()) },
+  }, async ({ question, options }) => {
+    if (decided()) return err("This TODO's routing is decided already. Stop now.");
+    if (!question.trim()) return err("question is empty");
+    const picked = options.map(find);
+    if (picked.some((p) => !p)) return err(`Unknown repo in ${JSON.stringify(options)}. Repos: ${names()}.`);
+    const opts = [...new Map(picked.map((p) => [p!.id, { id: p!.id, name: p!.name }])).values()];
+    if (opts.length < 1 || opts.length > 3) return err("Give one to three repos.");
+    addEvent(todoId, "ask_repo", "operator", opts.map((o) => o.name).join(", "));
+    addMessage(todoId, "operator", question.trim());
+    setTodo(todoId, { routing: JSON.stringify({ state: "asking", question: question.trim(), options: opts }) });
+    return ok("Asked. The user's click or reply decides; stop now.");
   });
 }
