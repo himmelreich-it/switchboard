@@ -125,13 +125,10 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 ::selection { background: var(--tint-lime); color: var(--accent-lime); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.wrap { flex-wrap: wrap; }
-.push { margin-left: auto; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-muted); }
 .small { font-size: 12px; color: var(--text-muted); }
 .empty { font-size: 13px; color: var(--text-muted); }
-.microlabel { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
 .kbd { font-family: var(--font-mono); font-size: 11px; padding: 1px 5px; border: 1px solid var(--border-default); border-radius: 2px; color: var(--text-secondary); white-space: nowrap; }
 
 /* ---------- design-system components (plain HTML versions of the Mobbins React primitives) ---------- */
@@ -165,7 +162,6 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .mb-iconbtn:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
 .mb-iconbtn--outline { background: var(--surface-1); border-color: var(--border-default); }
 .mb-iconbtn--outline:hover:not(:disabled) { border-color: var(--border-strong); }
-.mb-iconbtn--md { width: var(--control-md); height: var(--control-md); }
 .mb-iconbtn:disabled { opacity: .45; cursor: not-allowed; }
 /* switch with a square knob (design: Events toggle) */
 .mb-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
@@ -204,7 +200,6 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   border-radius: var(--radius-1); border: 1px solid var(--line-neutral); background: var(--tint-neutral); color: var(--text-secondary);
 }
 .mb-badge__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.mb-badge--lime { background: var(--tint-lime); border-color: var(--line-lime); color: var(--accent-lime); }
 .mb-badge--cyan { background: var(--tint-cyan); border-color: var(--line-cyan); color: var(--accent-cyan); }
 .mb-badge--violet { background: var(--tint-violet); border-color: var(--line-violet); color: var(--accent-violet); }
 .mb-badge--amber { background: var(--tint-amber); border-color: var(--line-amber); color: var(--accent-amber); }
@@ -434,7 +429,6 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .op-link:hover { border-color: var(--accent-lime); color: var(--text-primary); }
 .op-in { flex: none; padding: 10px 14px 14px; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 6px; }
 .tools-line { font-family: var(--font-mono); font-size: 11px; color: var(--accent-violet); overflow-wrap: anywhere; }
-.tool-chip { font-family: var(--font-mono); font-size: 11px; padding: 0 6px; line-height: 20px; color: var(--accent-violet); background: var(--tint-violet); border: 1px solid var(--line-violet); border-radius: var(--radius-1); }
 
 /* ---------- New TODO dialog (design v6) ---------- */
 .new-ov { position: fixed; inset: 0; z-index: 500; display: flex; align-items: flex-start; justify-content: center; padding: 96px 24px 24px; background: var(--overlay-scrim); backdrop-filter: blur(4px); }
@@ -507,7 +501,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .chatwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #chatLog { flex: 1; min-height: 0; overflow: auto; padding: 8px 20px 24px; }
 .tl { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; }
-.empty { font-size: 13px; color: var(--text-muted); }
+.flist .empty { padding: 4px 8px; }
 .tl > .empty { padding: 16px 0; }
 .ses-div { display: flex; align-items: center; gap: 10px; padding: 16px 0 4px; }
 .ses-div > i { flex: 1; height: 1px; background: var(--border-subtle); }
@@ -530,7 +524,6 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .said { max-width: 72ch; font-size: 15px; line-height: 1.55; color: var(--text-primary); text-wrap: pretty; white-space: pre-wrap; overflow-wrap: anywhere; }
 .said.md { white-space: normal; }
 .flags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.flags:empty { display: none; }
 .file-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; cursor: pointer; background: var(--surface-inset); border: 1px solid var(--line-cyan); border-radius: var(--radius-1); color: var(--accent-cyan); font-family: var(--font-mono); font-size: 12px; }
 .file-chip:hover { background: var(--tint-cyan); }
 .file-chip.sm { height: 24px; font-size: 11px; }
@@ -668,7 +661,6 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .deliver-bar > .mb-btn { margin-left: auto; }
 /* slash commands above the composer */
 .cmd-list { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 350; max-height: 340px; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-2); box-shadow: var(--shadow-3); overflow: hidden; }
-.cmd-list[hidden] { display: none; }
 .cmd-list > .hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
 .cmd-list > .hd > :last-child { margin-left: auto; }
 .cmd-list > .bd { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
@@ -842,8 +834,6 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .scard > .tt > .t { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .scard > .tt > span { font-size: 13px; color: var(--text-muted); }
 .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: start; }
-.infobox { display: flex; gap: 10px; padding: 10px 12px; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
-.infobox > svg { flex: none; margin-top: 2px; }
 .ag-list { background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); overflow: hidden; }
 .ag-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; padding: 14px 16px; }
 .ag-list > * + * { border-top: 1px solid var(--border-subtle); }
@@ -853,10 +843,9 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .ag-row .cmd { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
 .ag-row .note { font-size: 13px; color: var(--text-muted); }
 .ag-row > .r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 
 @media (max-width: 720px) {
-  .settings, .proj-grid, .grid2, .split { grid-template-columns: minmax(0, 1fr); }
+  .settings, .proj-grid, .split { grid-template-columns: minmax(0, 1fr); }
   .split:not(.write):not(.preview-only) { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .preview { border-left: 0; border-top: 1px solid var(--border-subtle); }
 }
@@ -1517,6 +1506,7 @@ function appendPill(key, text) {   // a pill's text on a new line after the draf
   if (draftKey() === key) composer.value = next;
 }
 function saveDraftSoon(key, body) {
+  if (draftPending && draftPending.key !== key) flushDraft();   // the operator input and the composer are on screen together
   drafts[key] = body;
   draftPending = { key, body };
   clearTimeout(draftTimer);
@@ -1872,6 +1862,9 @@ function renderToasts() {
 }
 
 // ---------- render ----------
+// The running timers. They stay out of the rendered markup, so a ticking second does not make setHtml() rebuild
+// the board, the Focus header and the chat (which would close an open select and drop a text selection).
+function tick() { for (const el of document.querySelectorAll("[data-since]")) el.textContent = mmss(Date.now() - new Date(el.dataset.since)); }
 function render() {
   const fk = document.activeElement?.dataset?.fk;
   renderHeader();
@@ -1884,6 +1877,7 @@ function render() {
   if (!$("vSettings").hidden) renderSettings();
   renderOperator();
   renderNew();
+  tick();
   // a live update rebuilt the button you were on: put keyboard focus back on its replacement
   if (fk && document.activeElement === document.body) document.querySelector(`[data-fk="${CSS.escape(fk)}"]`)?.focus();
 }
@@ -2043,10 +2037,9 @@ function planSegs(t) {
 }
 function runCard(t) {
   const [kind, text] = activityOf(t);
-  const since = t.run_started_at ? Date.now() - new Date(t.run_started_at) : null;
   return `<div class="card run" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
     <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(t.project_name)}</span>${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Sends when the turn ends">${t.queued_count} queued</span>` : ""}
-      <span class="right"><span class="ticker"><span class="live-dot"></span>${since != null ? `<span class="timer" data-since="${esc(t.run_started_at)}">${mmss(since)}</span>` : ""}</span>
+      <span class="right"><span class="ticker"><span class="live-dot"></span>${t.run_started_at ? `<span class="timer" data-since="${esc(t.run_started_at)}"></span>` : ""}</span>
         <span class="stop" title="Stop · interrupts the agent, like Esc in Claude Code">${btn("Stop", "stop", { id: t.id })}</span></span></div>
     <div class="card-title clamp2">${esc(t.title)}</div>
     <div class="activity" title="${esc(text)}">${ico(kind, 13, "var(--accent-cyan)")}<span class="ellipsis">${esc(text)}</span></div>
@@ -2107,7 +2100,7 @@ function renderOperator() {
   let html = msgs.map((m) => {
     const [who, color] = m.author === "operator" ? ["Operator", "var(--accent-violet)"] : ["You", "var(--text-secondary)"];
     // T-27 or #27 in a reply links to that TODO
-    const links = m.author === "operator" ? [...new Set([...m.body.matchAll(/\b(?:T-|#)(\d+)\b/g)].map((x) => Number(x[1])).filter((n) => ids.has(n)))] : [];
+    const links = m.author === "operator" ? [...new Set([...m.body.matchAll(/(?:\bT-|(?<!\w)#)(\d+)\b/g)].map((x) => Number(x[1])).filter((n) => ids.has(n)))] : [];
     return `<div class="op-msg"><span class="who" style="color:${color}">${who}<span> · ${esc(hm(m.at))}</span></span>
       ${m.tools?.length ? `<span class="tools-line">→ ${m.tools.map(esc).join(" · ")}</span>` : ""}
       ${m.author === "operator" ? `<div class="b md">${md(m.body)}</div>` : `<div class="b">${esc(m.body)}</div>`}
@@ -2235,7 +2228,7 @@ function renderFocusHead(t, d) {
   else if (t.status === "idle" || t.status === "waiting") status += badge("Idle", "neutral", true);
   if (t.status === "not_started") status += badge("Not started", "violet", true) + btn("Start", "start", { v: "primary", id: t.id });
   if (running) {
-    const since = t.run_started_at ? `<span data-since="${esc(t.run_started_at)}">${mmss(Date.now() - new Date(t.run_started_at))}</span>` : "";
+    const since = t.run_started_at ? `<span data-since="${esc(t.run_started_at)}"></span>` : "";
     const tip = t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : keys("Stop · interrupts the agent, like Esc in Claude Code. Queued messages wait for the next turn. ⌘.");
     status += `<span class="runseg"><span class="l"><span class="live-dot"></span>${t.background_wait ? "Background" : "Running"} ${since}</span><button type="button" data-act="stop" data-id="${t.id}" data-fk="stop:${t.id}" title="${esc(tip)}"><i></i>Stop</button></span>`;
   }
@@ -2391,7 +2384,8 @@ function timelineItems(msgs, evs) {
   items.sort((a, b) => waiting(a) - waiting(b) || a.at.localeCompare(b.at) || (a.e ? 1 : 0) - (b.e ? 1 : 0));   // a message before the prompt it caused
   const out = [];
   let open = null, deferred = [];
-  const close = () => { if (open) { out.push(open); out.push(...deferred); } open = null; deferred = []; };
+  // The turn's own replies first, then what you wrote meanwhile (it went out after the turn ended).
+  const close = () => { if (open) { const you = (x) => (x.msg.author.startsWith("user") ? 1 : 0); out.push(open); out.push(...deferred.sort((a, b) => you(a) - you(b))); } open = null; deferred = []; };
   for (const x of items) {
     if (x.e) {
       const k = x.e.kind;
@@ -2401,11 +2395,11 @@ function timelineItems(msgs, evs) {
         if (k === "prompt") open.prompted = true;
         if (k === "run ended") { open.end = x.e; close(); }
       } else out.push({ ev: x.e });
-    } else if (open && (waiting(x) || !x.m.author.startsWith("user"))) deferred.push({ msg: x.m });   // queued messages wait below the turn
-    else if (open && !waiting(x)) { close(); out.push({ msg: x.m }); }   // you wrote while no turn ran: the turn is over
+    // A message written while a turn ran shows below it: a queued one is stamped when written, not when it went out.
+    } else if (open) deferred.push({ msg: x.m });
     else out.push({ msg: x.m });
   }
-  if (open) { out.push(open); out.push(...deferred); }
+  close();
   return out;
 }
 function workHtml(g, t, live, key) {
@@ -2417,7 +2411,7 @@ function workHtml(g, t, live, key) {
   const result = evs.find((e) => e.kind === "result");
   const asking = live && !!t.permission, stopped = evs.some((e) => e.kind === "interrupted");
   const dur = result?.meta?.duration_ms != null ? fmtDurW(result.meta.duration_ms) : g.end ? fmtDurW(new Date(g.end.at) - new Date(g.start.at)) : "";
-  const label = asking ? ["Waiting for approval", "var(--accent-amber)"] : live ? [`Working <span data-since="${esc(g.start.at)}">${mmss(Date.now() - new Date(g.start.at))}</span>`, "var(--accent-cyan)"]
+  const label = asking ? ["Waiting for approval", "var(--accent-amber)"] : live ? [`Working <span data-since="${esc(g.start.at)}"></span>`, "var(--accent-cyan)"]
     : [`Worked ${stopped ? "· stopped" : esc(dur)}`, "var(--text-secondary)"];
   const stats = [plural(tools.length, "tool call"), edits && plural(edits, "edit"), cmds && plural(cmds, "command"), pd && "plan " + pd].filter(Boolean).join(" · ");
   const isOpen = S.openWork.get(key) ?? (tr || live);
@@ -2464,8 +2458,7 @@ function chatHtml(t, d) {
   const sessions = d.sessions, last = sessions.length, path = S.projects.find((p) => p.id === t.project_id)?.local_path ?? "the project folder";
   if (!last) return streamHtml(t, d.messages, d.events, true);
   const evsOf = (no) => d.events.filter((e) => (e.session_no ?? (no === 1 ? 1 : -1)) === no);
-  const before = S.events ? d.events.filter((e) => e.session_no == null && e.at < sessions[0].started_at).map((e) => evRow(e, true)).join("") : "";
-  return before + sessions.map((s) => {
+  return sessions.map((s) => {
     const isLive = s.no === last, key = `${t.id}:${s.no}`;
     const msgs = d.messages.filter((m) => (m.session_no ?? (isLive ? last : -1)) === s.no);
     const agent = esc(s.agent_name || agentLabel(s.agent));
@@ -2571,14 +2564,14 @@ function renderFileList(t, d) {
   const markHtml = (m) => (m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : '<span class="mk"></span>');
   if (root === "todo") {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
-    const own = !d ? '<span class="empty" style="padding:4px 8px">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
+    const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
       : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.lines == null ? " disabled" : ""}>
           ${markHtml(null)}<span class="nm">${esc(f.name)}</span><span class="mt">${f.lines == null ? "missing" : plural(f.lines, "line")}</span></button>`).join("");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
         ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span><span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
-    return setHtml($("fileList"), seg + `<span class="ml grp">TODO files</span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty" style="padding:4px 8px">No changes on this branch.</span>'}` : ""}
+    return setHtml($("fileList"), seg + `<span class="ml grp">TODO files</span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
       <span class="root-note">terminal/ and uploads/ are not listed</span>`);
   }
   // Items 102, 103: folders first; folders on the way to a change start open; Changed lists the changed files flat.
@@ -2586,8 +2579,8 @@ function renderFileList(t, d) {
   const note = root === "worktree" ? `${t.worktree_path} · git ls-files · refreshed every 5 s` : `${p?.local_path ?? ""} · main checkout`;
   const nChanged = tr?.marks ? Object.keys(tr.marks).length : 0;
   const head = seg + `<span class="ml grp">${root === "worktree" ? esc(t.branch ?? "Worktree") : esc(p?.name ?? "Project")}<button type="button" class="chg" aria-pressed="${S.changedOnly}" data-act="changed" data-fk="changed" title="Uncommitted changes plus commits since the merge base with origin/HEAD">Changed <span style="color:${nChanged ? "var(--accent-amber)" : "var(--text-muted)"}">${nChanged}</span></button></span>`;
-  if (!tr) { need("tree"); return setHtml($("fileList"), head + '<span class="empty" style="padding:4px 8px">Loading…</span>'); }
-  if (tr.error) return setHtml($("fileList"), head + `<span class="empty" style="padding:4px 8px">Can't list files: ${esc(tr.error)}</span>`);
+  if (!tr) { need("tree"); return setHtml($("fileList"), head + '<span class="empty">Loading…</span>'); }
+  if (tr.error) return setHtml($("fileList"), head + `<span class="empty">Can't list files: ${esc(tr.error)}</span>`);
   const marks = tr.marks, links = new Set(tr.links), open = S.treeOpen[key] ?? new Set();
   const fileRow = (path, depth, showDir) => {
     const m = marks[path], name = showDir ? basename(path) : path.split("/").pop();
@@ -2616,7 +2609,7 @@ function renderFileList(t, d) {
     walk(top, 0);
   }
   const empty = S.changedOnly ? (root === "worktree" ? "No changes on this branch." : "No uncommitted changes in the main folder.") : "No files git knows about.";
-  setHtml($("fileList"), head + (rows.length ? `<div class="tree" role="tree">${rows.join("")}</div>` : `<span class="empty" style="padding:4px 8px">${empty}</span>`) + `<span class="root-note" title="${esc(note)}">${esc(note)}</span>`);
+  setHtml($("fileList"), head + (rows.length ? `<div class="tree" role="tree">${rows.join("")}</div>` : `<span class="empty">${empty}</span>`) + `<span class="root-note" title="${esc(note)}">${esc(note)}</span>`);
 }
 
 const TOOL_ICONS = {
@@ -3001,7 +2994,7 @@ const ACTIONS = {
     const prev = t.suggestions, copies = [S.todos.find((x) => x.id === tid), S.detail?.todo.id === tid ? S.detail.todo : null].filter(Boolean);
     for (const c of copies) c.suggestions = null;   // gone at once; the server clears them too
     render();
-    try { await call("POST", `/api/todos/${tid}/messages`, { body: text, suggested: true }); if (S.sel !== tid || S.mode !== "focus") toast("cyan", `Sent to T-${tid}`, "· " + short(text, 48)); }
+    try { await call("POST", `/api/todos/${tid}/messages`, { body: text, suggested: true }); if (S.sel !== tid || S.mode !== "focus") toast("info", `Sent to T-${tid}`, "· " + short(text, 48)); }
     catch (err) { for (const c of copies) c.suggestions = prev; toast("danger", "Not sent", err.message); render(); }
   },
   // Backlog and Board: from Settings, the tab Focus sits under returns to Focus; otherwise to that side's overview.
@@ -3067,7 +3060,6 @@ const ACTIONS = {
   commit: () => commit(draftKey(), composer),
   add: () => addTodo(false),
   "add-start": () => addTodo(true),
-  board: (id) => setBoard(id),
   "start-backlog": (id) => startFromBacklog(Number(id)),
   "edit-first": (id) => { const m = S.detail?.messages.find((x) => x.id === Number(id)); if (!m) return; S.editing = { todoId: S.sel, msgId: m.id, start: m.body, text: m.body, err: "" }; render(); const ta = $("editFirst"); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); },
   "edit-cancel": () => { S.editing = null; render(); },
@@ -3090,13 +3082,11 @@ const ACTIONS = {
   "md-view": (id) => { S.mdView = id; render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
-  "close-file": closeFile,
   "save-file": () => saveFile(),
   "file-mode": (id) => setFileMode(id),
   "pick-project": (id) => { S.projSel = Number(id); fillProjForm(); render(); },
   "new-project": () => { S.projSel = "new"; fillProjForm(); render(); pName.focus(); },
   "open-settings": () => (S.view === "settings" ? closeSettings() : openSettings()),
-  "close-settings": (id, el) => { closeSettings(); },
   "set-sec": (id) => { S.setSec = id; render(); },
   "agent-login": (id) => agentLogin(id),
   "agent-delete": (id) => act(call("DELETE", `/api/agents/${id}`).then(() => need("meta", "projects")), "Agent not removed"),
@@ -3129,7 +3119,7 @@ document.addEventListener("keydown", (e) => {
   if (e.target.id === "cfMsg" && e.key === "Enter" && mod) { e.preventDefault(); return ACTIONS["cform-start"](); }
   if (mod && e.key === ",") { e.preventDefault(); return openSettings(); }
   if (mod && k === "j") { e.preventDefault(); return nextWaiting(); }
-  if (mod && k === "k") { e.preventDefault(); return toggleOperator(); }
+  if ((MAC ? e.metaKey : mod) && k === "k") { e.preventDefault(); return toggleOperator(); }
   if (mod && e.key === "." && S.view === "todos" && S.mode === "focus" && cur()?.status === "running") { e.preventDefault(); return ACTIONS.stop(S.sel); }
   const fileShown = !!S.file && !$("vFocus").hidden && !$("fileView").hidden;
   if (mod && k === "e" && fileShown) { e.preventDefault(); return setFileMode(S.file.mode === "edit" ? "read" : "edit"); }
@@ -3137,6 +3127,7 @@ document.addEventListener("keydown", (e) => {
   if (mod && k === "s" && fileShown) { e.preventDefault(); return saveFile(); }
   // Esc closes the innermost thing first (design v4): … Settings, then an open file, then Focus.
   if (e.key === "Escape") {
+    if (S.opOpen && e.target.closest?.("#opPanel")) { e.preventDefault(); return toggleOperator(false); }
     if (S.pop) { e.preventDefault(); S.pop = null; return render(); }
     if (S.cform) { e.preventDefault(); S.cform = null; return render(); }
     if (S.editing && S.mode === "focus") { e.preventDefault(); S.editing = null; return render(); }
@@ -3312,7 +3303,7 @@ function onEvent(ev) {
 let renderTimer = 0;
 function renderSoon() { if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = 0; render(); }, 250); }
 // Running timers (m:ss) tick in place, without a render.
-setInterval(() => { for (const el of document.querySelectorAll("[data-since]")) el.textContent = mmss(Date.now() - new Date(el.dataset.since)); }, 1000);
+setInterval(tick, 1000);
 const es = new EventSource(withToken("/api/events"));
 es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.warn(err); } };
 es.onopen = refreshVisible;   // on every (re)connect, catch up on what was missed

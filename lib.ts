@@ -491,6 +491,7 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("sessions", "agent", "TEXT");        // the agent each session ran on (null: claude)
   addColumn("messages", "via", "TEXT");          // the Claude terminal an agent message came from ("Claude 2"), P6; null: the TODO's agent
   addColumn("todos", "suggestions", "TEXT");     // the agent's suggested follow-ups (JSON string[]), cleared at each run start
+  addColumn("todos", "run_started_at", "TEXT");  // when the current or last run started, for the running timers (v6)
   db.exec(`CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)`);
   // P4 kept the defaults flat and the mode in projects.mode, both Claude's: they move under "claude".
