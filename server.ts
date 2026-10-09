@@ -2,7 +2,7 @@ import type { ServerWebSocket, Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   MODES, configIn, contextFile, defaultsOf, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Status,
@@ -92,7 +92,7 @@ function moveArtifactFolders() {
     if (existsSync(b)) { console.error(`artifact folders: ${b} exists already, so ${a} stays where it is`); continue; }
     renameSync(a, b);
     for (const tbl of ["attachments", "files"])
-      db.run(`UPDATE ${tbl} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`, [b + "/", a.length + 2, a.length + 1, a + "/"]);
+      db.run(`UPDATE ${tbl} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`, [b + sep, a.length + 2, a.length + 1, a + sep]);
     db.run("INSERT INTO events (todo_id, kind, actor, detail, at) VALUES (?, 'moved', 'app', ?, ?)", [r.id, `data/${r.slug}/${r.id}/ → data/${r.id}/`, now()]);
     console.log(`artifact folders: moved data/${r.slug}/${r.id}/ to data/${r.id}/`);
   }
@@ -1032,7 +1032,8 @@ async function api(req: Request, path: string): Promise<Response> {
     } else if (action === "clear-attention") {
       const t = todoOr404(id);
       if (t.attention) {
-        setTodo(id, { attention: 0, attention_by: null, status: t.status === "waiting" ? "idle" : t.status });
+        // A TODO whose routing asks (801) has no session to be idle in: it stays waiting for the pick.
+        setTodo(id, { attention: 0, attention_by: null, status: t.status === "waiting" && !t.routing ? "idle" : t.status });
         addEvent(id, "attention cleared", "user");
       }
     } else if (action === "remove") {

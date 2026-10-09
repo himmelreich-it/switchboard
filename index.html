@@ -1038,7 +1038,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
   <div id="opLog" aria-live="polite"></div>
   <div class="op-in">
     <label class="sr-only" for="operatorIn">Message the operator</label>
-    <input id="operatorIn" class="mb-input" autocomplete="off" placeholder="Ask what needs you, or: create a todo in infra: …">
+    <input id="operatorIn" class="mb-input" autocomplete="off" placeholder="Ask what needs you, or: create a todo: …">
   </div>
  </aside>
 </div>
@@ -1285,7 +1285,7 @@ const modeChoices = (agent, t) => (agent || "claude") === "claude" ? Object.entr
 const modeOptions = (value, projectDefault, agent, t) => {
   const claude = (agent || "claude") === "claude", choices = modeChoices(agent, t);
   const name = (v) => choices.find(([x]) => x === v)?.[1] ?? v;
-  const first = projectDefault !== undefined ? [["", `Project's (${projectDefault ? name(projectDefault) : claude ? MODES.auto : "agent's own"})`]] : claude ? [] : [["", "Agent's own"]];
+  const first = projectDefault !== undefined ? [["", `Repo's (${projectDefault ? name(projectDefault) : claude ? MODES.auto : "agent's own"})`]] : claude ? [] : [["", "Agent's own"]];
   return first.concat(choices).map(([v, l]) => `<option value="${esc(v)}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
 };
 // P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
@@ -1604,7 +1604,10 @@ async function setRepo(id, pid) {
   const name = pid == null ? "No repo" : S.projects.find((x) => x.id === pid)?.name ?? "repo";
   try {
     const t = await call("POST", `/api/todos/${id}/repo`, { project_id: pid });
-    toast("success", pid == null ? "No repo" : "Runs in " + name, t.status === "not_started" ? "Session 1 starts there when you start the TODO." : t.status === "running" ? "Session 1 is starting there." : "Your next message starts a new session there.");
+    const where = pid == null ? "without a repo" : "in " + name;
+    if (t.status === "not_started") toast("success", "Repo set", `Session 1 starts ${where} when you start the TODO.`);
+    else if (t.session_count) toast("success", "Repo changed", `Your next message starts session ${t.session_count + 1} ${where}.`);
+    else toast("success", pid == null ? "No repo" : "Runs in " + name, "Session 1 is starting there.");
   } catch (e) { toast("danger", "Repo not changed", e.message); }
   need("detail", "todos");
 }
@@ -2176,7 +2179,7 @@ function sessionRows(t) {
     const inh = pd.mode ?? (agent === "claude" ? "auto" : (t.config ?? []).find((o) => o.category === "mode")?.value ?? null);
     const eff = t.mode ?? inh;
     rows.push({ kind: "mode", id: "mode", label: "Permission mode", own: t.mode ?? null, from: pd.mode ? "Project" : "Agent",
-      first: pd.mode ? `Project's (${name(pd.mode)})` : inh ? `Agent's default (${name(inh)})` : "Agent's default",
+      first: pd.mode ? `Repo's (${name(pd.mode)})` : inh ? `Agent's default (${name(inh)})` : "Agent's default",
       options: modes, value: eff, short: eff ? (agent === "claude" ? MODE_SHORT[eff] ?? name(eff) : name(eff)) : null, desc: agent === "claude" ? MODE_DESC[eff] : null });
   }
   for (const o of configList(t)) {
@@ -2184,7 +2187,7 @@ function sessionRows(t) {
     const eff = own ?? inh ?? live;
     const isFast = o.category === "model_config";
     rows.push({ kind: "cfg", id: o.id, label: o.name, own, from: inh ? "Project" : "Agent",
-      first: inh ? `Project's (${optName(o, inh)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
+      first: inh ? `Repo's (${optName(o, inh)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
       options: o.options.map((x) => [x.value, x.name]), value: eff,
       short: isFast ? (eff === "on" ? "Fast" : null) : eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null });
   }
