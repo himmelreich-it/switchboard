@@ -420,7 +420,7 @@ export function contextFile(c: {
 }): string {
   const out: string[] = [
     `# Switchboard TODO: ${c.title}`, "",
-    `- Project: ${c.project}`, `- Status: ${c.status === "not_started" ? "not started (in the backlog)" : c.status}`,
+    `- Repo: ${c.project}`, `- Status: ${c.status === "not_started" ? "not started (in the backlog)" : c.status}`,
     ...[c.worktree && `- Worktree: ${c.worktree}`, c.branch && `- Branch: ${c.branch}`, c.git && `- Git: ${c.git}`, c.pr && `- Pull request: ${c.pr}`].filter((l): l is string => !!l),
     "", "## First instruction", "", c.first, "",
     "## Note", "",
@@ -440,14 +440,15 @@ export function contextFile(c: {
 
 // ---------- schema ----------
 
-// The whole schema plus its migrations. Every migration only adds, so an older build still reads the database.
+// The whole schema plus its migrations. Migrations add, except one: repo routing (801) made todos.project_id
+// nullable, and a build from before it fails on a TODO without a repo.
 export function migrateDb(db: Database) {
   db.exec(`
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL,
   agent_prompt TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS todos (
-  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), title TEXT NOT NULL,
+  id INTEGER PRIMARY KEY, project_id INTEGER REFERENCES projects(id), title TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('not_started','running','waiting','idle')), attention INTEGER NOT NULL DEFAULT 0,
   session_id TEXT, worktree_path TEXT, pr_number INTEGER, last_tool TEXT, last_read_at TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT);
@@ -470,7 +471,9 @@ CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
 CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
 `);
   const addColumn = (table: string, col: string, type: string) => {
-    if (!db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+    if (db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(col)) return false;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+    return true;
   };
   addColumn("todos", "pr_number", "INTEGER");   // databases made before set_pr existed
   addColumn("todos", "ctx", "TEXT");            // context meter of the live session (JSON, see ctxStep)
@@ -492,6 +495,21 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("messages", "via", "TEXT");          // the Claude terminal an agent message came from ("Claude 2"), P6; null: the TODO's agent
   addColumn("todos", "suggestions", "TEXT");     // the agent's suggested follow-ups (JSON string[]), cleared at each run start
   addColumn("todos", "run_started_at", "TEXT");  // when the current or last run started, for the running timers (v6)
+  addColumn("todos", "routing", "TEXT");         // the routing step while it runs or asks the user (JSON Routing), 801
+  // When the TODO's repo (or "no repo") was decided. A TODO made before routing got its project from the user.
+  if (addColumn("todos", "routed_at", "TEXT")) db.run("UPDATE todos SET routed_at = created_at");
+  addColumn("projects", "profile", "TEXT");      // what lives in the repo, written by a scan or the user, for routing
+  addColumn("projects", "profile_at", "TEXT");   // when the last scan wrote the profile
+  addColumn("projects", "profile_edited", "INTEGER"); // 1 once the user edited the profile; a Rescan asks first
+  // A TODO has no repo before routing, or none at all: project_id becomes nullable. SQLite cannot drop NOT NULL, so the
+  // table is rebuilt from its own CREATE statement (it has no indexes or triggers).
+  if ((db.query("SELECT \"notnull\" AS n FROM pragma_table_info('todos') WHERE name = 'project_id'").get() as any)?.n) {
+    const sql = (db.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'todos'").get() as { sql: string }).sql;
+    db.transaction(() => {
+      db.exec(sql.replace(/^CREATE TABLE "?todos"?/i, "CREATE TABLE todos_new").replace(/\bproject_id(\s+)INTEGER\s+NOT\s+NULL/i, "project_id$1INTEGER"));
+      db.exec("INSERT INTO todos_new SELECT * FROM todos; DROP TABLE todos; ALTER TABLE todos_new RENAME TO todos;");
+    })();
+  }
   db.exec(`CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)`);
   // P4 kept the defaults flat and the mode in projects.mode, both Claude's: they move under "claude".

@@ -1,11 +1,11 @@
 // Agent runs over ACP (acp.ts): each TODO's worker and the operator keep one agent process for their live session, and
 // every turn is one session/prompt. The app's tools reach the agent over HTTP MCP (apptools.ts).
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
-import { OPERATOR_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
+import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
   agentActivity, attentionAfterAnswer, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
   type Ctx, type Permission, type ToolMeta,
@@ -24,7 +24,8 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 - A prompt that starts with "This TODO continues earlier work" is a hand-over from earlier sessions. Keep the title it names, work in the worktree it names instead of creating a new one, and read the listed files you need before you start.
 - Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
 - The TODO text and the user's committed messages are your go-ahead for local edits within this TODO's scope. Outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user.
-- Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Follow the project prompt for how to create one.
+- Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Follow the repo prompt for how to create one.
+- T-<n> in text (T-38) is switchboard TODO number n. Read that TODO with mcp__app__read_todo and its files with mcp__app__read_file.
 - After creating a worktree, call mcp__app__set_worktree with its absolute path and work only there. Ignore any skill instruction not to switch context.
 - As soon as you know this TODO works on an existing GitHub pull request (a review, a merge check, a fix on someone's PR), call mcp__app__set_pr with its number, also without a worktree. The app then shows the PR's state, checks and reviews on the TODO's card. A PR opened from your worktree's branch is found without it.
 - When anything is unclear, ask rather than guess: post a message and raise attention with mcp__app__set_attention.
@@ -53,12 +54,16 @@ const instructionsText = (contract: string, prompt: string) =>
 
 const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
 
-- Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, and never start TODOs: the user starts them.
+- Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, and never start a TODO on your own: the user starts them. When the user presses Start, a separate routing run of yours decides which repo the TODO runs in.
 - Get the state of the TODOs from your tools every time (mcp__app__list_todos, mcp__app__read_todo, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh operator session at any time.
 - A TODO with status not_started is in the user's backlog; the others are on the board. A TODO can span several sessions; only the latest is live.
-- mcp__app__create_todo creates a TODO in the backlog (not started). mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". Use them only when the user asks.
-- TODO artifact files live under ${home}/data/<project-slug>/<todo-id>/. You can also read them with Read, Grep and Glob.
+- TODOs are numbered: T-42 is TODO 42. Use that form when you name one. Jira keys such as AI-1234 are something else.
+- mcp__app__create_todo creates a TODO in the backlog (not started, no repo yet). mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". Use them only when the user asks.
+- TODO artifact files live under ${home}/data/<todo-id>/. You can also read them with Read, Grep and Glob.
 - Your replies are shown in full and rendered as markdown. Brainstorming with the user here is fine.`;
+
+// What a no-repo TODO's agent gets in place of a repo prompt (801).
+const NO_REPO_PROMPT = "This TODO has no repo: it is thinking only, with no code changes. Your working folder is its artifact folder. Do not create a worktree.";
 
 const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
 // An idle agent process is closed after this; the next turn starts a new one with session/resume.
@@ -196,7 +201,7 @@ async function applyMode(a: Agent, mode: string | null) {
 // offers one (Claude's model and effort), since an unset option would otherwise keep its last value.
 // The TODO's own values belong to its agent: a session that opens on another agent (New session) takes the project's.
 export async function applyConfig(todoId: number, a: Agent, reset?: string) {
-  const t = todoRow(todoId)!, p = projectRow(t.project_id)!;
+  const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a no-repo TODO has no defaults
   const own = (t.agent || DEFAULT_AGENT) === a.agent;
   const d = defaultsFor(p.defaults, a.agent);
   const wanted = { ...d.config, ...(own ? configIn(t.overrides ? JSON.parse(t.overrides) : null) : {}) };
@@ -343,7 +348,8 @@ function parkAgent(key: Key) {
 // transcript (item 130). Rows are written as items complete: the agent's text and thinking when the next tool call or
 // the other kind starts, each tool call at once and again on every change. The text being written streams over SSE.
 // The text after the last tool call is not written as a row: it is the turn's `result`, as with the SDK.
-function turnState(todo: number | null, onDenied: (name: string, input: any, reason: string) => void) {
+// `actor` is who the rows are from: the TODO's agent, or the operator while it routes the TODO (801).
+function turnState(todo: number | null, onDenied: (name: string, input: any, reason: string) => void, actor: "agent" | "operator" = "agent") {
   const calls = new Map<string, { meta: ToolMeta; eventId: number | null }>();
   const t = { text: "", tools: 0, ctx: null as Ctx | null };
   let buf: { kind: "say" | "thought"; text: string } | null = null;
@@ -358,7 +364,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
   };
   const flush = (sayToo: boolean) => {
     if (!buf || (buf.kind === "say" && !sayToo)) return;
-    if (todo !== null && buf.text.trim()) addEvent(todo, buf.kind, "agent", buf.text.trim());
+    if (todo !== null && buf.text.trim()) addEvent(todo, buf.kind, actor, buf.text.trim());
     if (buf.kind === "say") t.text = "";
     buf = null;
     stream();
@@ -389,7 +395,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
       t.text = "";
       t.tools++;
       const meta = toolMeta(null, u);
-      c = { meta, eventId: todo === null ? null : addEvent(todo, "tool", "agent", toolLine(meta.name, meta.input), meta) };
+      c = { meta, eventId: todo === null ? null : addEvent(todo, "tool", actor, toolLine(meta.name, meta.input), meta) };
       calls.set(u.toolCallId, c);
       if (todo !== null) setTodo(todo, { last_tool: meta.name }, false);
     } else {
@@ -419,20 +425,26 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
 
 // A committed message: stored until start, queued while the agent runs, or sent now (R20). The attachments are saved
 // in the same transaction and before deliver(), whose take() reads them. A queued message goes out when the turn ends.
+// While routing runs or asks (801) a message waits for session 1 like one before the start; a reply to the operator's
+// question also runs one more routing turn.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = []) {
   setTodo(todoId, { suggestions: null }, false);   // a sent message answers the suggestions, picked or not
-  const action = deliveryAction(todoRow(todoId)!.status, running.has(todoId));
+  const t = todoRow(todoId)!, routing = t.routing ? (JSON.parse(t.routing) as Routing) : null;
+  const action = deliveryAction(routing ? "not_started" : t.status, running.has(todoId));
   const id = db.transaction(() => {
     const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued");
     saveAttachments(todoId, id, uploads);
     return id;
   })();
   if (action === "send") deliver(todoId);
+  if (routing?.state === "asking" && !running.has(todoId)) runRouting(todoId);
   return id;
 }
 
-// The first turn: every message committed before the start goes out as one prompt.
+// Start: routing first while the repo is not decided (801), then the first turn, where every message committed before
+// the start goes out as one prompt.
 export function start(todoId: number) {
+  if (!todoRow(todoId)!.routed_at) return runRouting(todoId);
   runWorker(todoId, () => take(todoId, "pending"), { no: 1 }, "start");
 }
 
@@ -460,11 +472,14 @@ export function newSession(todoId: number, agent?: string) {
 
 // Resumes the session with every queued message as one prompt. Does nothing while the TODO runs (the run's end calls
 // this again), when it is removed or not started, or when nothing is queued.
+// A session that Change repo ended (801) is not resumed: the queued messages start the next session in the new repo.
 export function deliver(todoId: number, reason = "deliver") {
   const t = todoRow(todoId);
   if (running.has(todoId) || !t?.session_id || t.removed_at || t.status === "not_started") return;
   const queued = (db.query("SELECT COUNT(*) AS n FROM messages WHERE todo_id = ? AND state = 'queued'").get(todoId) as { n: number }).n;
-  if (queued) runWorker(todoId, () => take(todoId, "queued"), null, reason);
+  if (!queued) return;
+  if (sessionsOf(todoId).at(-1)?.ended_at) newSession(todoId);
+  else runWorker(todoId, () => take(todoId, "queued"), null, reason);
 }
 
 // `git config worktree.root`, else <local_path>/../worktrees. Created if missing, so the agent always gets a real folder.
@@ -482,10 +497,12 @@ export function worktreeRoot(localPath: string) {
 // pending or queued, and the user sees an app message instead of messages that look sent but never reached the agent.
 function runWorker(todoId: number, takeBodies: () => string[], open: { no: number; header?: string; agent?: string } | null, reason: string) {
   const t = todoRow(todoId)!;
-  const p = projectRow(t.project_id)!;
+  const p = projectRow(t.project_id);   // null: a no-repo TODO, which runs in its artifact folder (801)
   const agentId = open?.agent || t.agent || DEFAULT_AGENT;
-  const dir = artifactDir(p.slug, todoId);
+  const dir = artifactDir(todoId);
   const contract = contractFor(agentId, dir);
+  const prompt = p ? p.agent_prompt.trim() : NO_REPO_PROMPT;
+  const cwd = p?.local_path ?? dir;
   const run: Run = { done: Promise.resolve(), live: null };
   running.set(todoId, run);
   setTodo(todoId, { status: "running", last_tool: null, suggestions: null, run_started_at: now() });
@@ -497,11 +514,11 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       mkdirSync(dir, { recursive: true });
       agent = await agentFor(todoId, open ? null : t.session_id, {
         agent: agentId,
-        cwd: p.local_path,
+        cwd,
         // The worktree root lets a `cd` into the worktree persist; the artifact folder is outside cwd and must be writable.
-        dirs: [worktreeRoot(p.local_path), dir],
+        dirs: p ? [worktreeRoot(p.local_path), dir] : [],
         meta: isClaude(agentId) ? {
-          systemPrompt: { append: [contract, p.agent_prompt.trim()].filter(Boolean).join("\n\n") },
+          systemPrompt: { append: [contract, prompt].filter(Boolean).join("\n\n") },
           // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).
           claudeCode: { options: { allowedTools: WORKER_TOOLS, extraArgs: { "system-prompt-snapshot": "off" } } },
         } : {},
@@ -560,17 +577,17 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       agent.configError = "";
     }
     const cur = todoRow(todoId)!;
-    addEvent(todoId, "launch", "app", `${reason} · ${agentName(agentId)} · cwd ${p.local_path} · session ${live.sessionId}`);
+    addEvent(todoId, "launch", "app", `${reason} · ${agentName(agentId)} · cwd ${cwd} · session ${live.sessionId}`);
 
     const turn = workerTurn(todoId, agent);
 
     let error = "", stop = "";
     const started = performance.now();
-    const prompt = (open && !isClaude(agentId) ? instructionsText(contract, p.agent_prompt) : "")
+    const text = (open && !isClaude(agentId) ? instructionsText(contract, prompt) : "")
       + deliveryPrompt(cur.worktree_path, takeBodies(), open?.header ?? "");
     addEvent(todoId, "prompt", "app");
     try {
-      stop = await live.prompt(prompt);
+      stop = await live.prompt(text);
     } catch (e: any) {
       error = e?.message ?? String(e);
       if (!live.alive) addEvent(todoId, "agent log", "app", live.stderr().slice(-4000) || null);
@@ -646,7 +663,8 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   addEvent(todoId, "run ended", "app", waits ? `running · waiting for ${bgTasks(agent.bg.length)}` : status);
   if (todoRow(todoId)!.removed_at || shuttingDown) closeAgent(todoId);
   else parkAgent(todoId);
-  refreshPrs(todoRow(todoId)!.project_id); // the agent may have pushed or opened a PR
+  const pid = todoRow(todoId)!.project_id;
+  if (pid) refreshPrs(pid); // the agent may have pushed or opened a PR
   // Queued messages, including ones committed during the turn, and after a Stop (item 129), go out now.
   if (!shuttingDown) deliver(todoId, "queued messages");
 }
@@ -695,6 +713,187 @@ function backToStart(todoId: number, open: { no: number } | null) {
     db.run("UPDATE messages SET state = 'pending' WHERE todo_id = ? AND state = 'queued'", [todoId]);
     setTodo(todoId, { status: "not_started" });
   } else setTodo(todoId, { status: statusAfterRun(todoRow(todoId)!.attention) });
+}
+
+// ---------- routing (801) ----------
+
+// The step between Start and session 1: the operator picks the TODO's repo, picks no repo, or asks the user. Stored in
+// todos.routing while it runs or asks; todos.routed_at is set once the repo is decided.
+export type Routing = { state: "running" } | { state: "asking"; question: string; options: { id: number; name: string }[] };
+
+const ROUTING_PROMPT = `You are the operator of switchboard, a local app where each TODO is an agent session the user starts and steers. The user pressed Start on one TODO. You decide which repo its agent runs in. You do not do the task.
+
+- The prompt lists the repos with their profiles, then the TODO's messages so far. Read the repo folders with Read, Grep and Glob when the profiles do not settle it.
+- T-<n> in text (T-38) is switchboard TODO number n. Read it with mcp__app__read_todo and its files with mcp__app__read_file. A follow-up of a TODO most likely belongs in that TODO's repo. Jira keys such as AI-1234 are something else.
+- End with exactly one call, then stop:
+  - mcp__app__route_todo with the repo's name when one repo clearly fits, or with repo "none" when the TODO is thinking only with no code changes (its agent then runs in the TODO's own folder). The reason is one short sentence the user reads, such as "the MCP server lives there".
+  - mcp__app__ask_repo with a short question and the 2 or 3 likely repos when you cannot tell. The user also gets a "No repo" choice.
+- A repo without a profile can still be picked on its name and folder; say so when you ask.`;
+const ROUTING_BUILTINS = ["Read", "Grep", "Glob"];
+
+const refuse = (r: PermissionRequest) => {
+  const no = r.options.find((o) => o.kind === "reject_once") ?? r.options.find((o) => o.kind.startsWith("reject"));
+  return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
+};
+
+// One routing turn in a fresh Claude session: Start, or the user's typed reply to the operator's question. The TODO
+// shows running meanwhile, and Stop interrupts it like any run. The tools only write the decision; the run's end acts
+// on it, because starting session 1 from inside a tool call would close this agent process mid-turn.
+function runRouting(todoId: number) {
+  const run: Run = { done: Promise.resolve(), live: null };
+  running.set(todoId, run);
+  const was = todoRow(todoId)!;
+  const asked = was.routing ? (JSON.parse(was.routing) as Routing) : null;
+  setTodo(todoId, { status: "running", routing: JSON.stringify({ state: "running" }), last_tool: null, suggestions: null, run_started_at: now(),
+    ...(was.attention_by === "operator" ? { attention: 0, attention_by: null } : {}) });
+  addEvent(todoId, "routing", "operator", asked ? "the user replied" : "picking a repo");
+
+  run.done = (async () => {
+    const turn = turnState(todoId, () => {}, "operator");
+    let error = "";
+    try {
+      const repos = db.query("SELECT local_path FROM projects ORDER BY name").all() as { local_path: string }[];
+      const a = await agentFor(todoId, null, {
+        agent: "claude", // like the operator (design §8)
+        cwd: HOME,
+        dirs: repos.map((r) => r.local_path).filter((d) => existsSync(d)),
+        meta: {
+          systemPrompt: { append: ROUTING_PROMPT },
+          claudeCode: { options: { tools: ROUTING_BUILTINS, allowedTools: [...ROUTING_BUILTINS, ...ROUTER_TOOLS], strictMcpConfig: true, extraArgs: { "system-prompt-snapshot": "off" } } },
+        },
+        grant: { kind: "router", todoId },
+      });
+      run.live = a.live;
+      a.sink.s = { onUpdate: turn.onUpdate, onPermission: refuse };
+      if (!run.cancel) await a.live.prompt(routingPrompt(todoId, asked));
+    } catch (e: any) {
+      error = e?.message ?? String(e);
+    }
+    turn.finish();
+    clearTimeout(run.kill);
+    running.delete(todoId);
+    const stopped = interrupting.delete(todoId) || run.cancel;
+    closeAgent(todoId);
+    const t = todoRow(todoId)!;
+    if (stopped || t.removed_at || shuttingDown) return cancelRouting(todoId);
+    if (t.routed_at) return startRouted(todoId);
+    const r = JSON.parse(t.routing!) as Routing;
+    if (r.state !== "asking") {
+      // Neither tool was called (or the run failed): the user picks from every repo.
+      if (error) addEvent(todoId, "error", "app", error);
+      const options = db.query("SELECT id, name FROM projects ORDER BY name").all() as { id: number; name: string }[];
+      const question = error ? `Routing failed (${cutToTwoLines(error)}). Which repo should this TODO run in?` : "I could not tell where this TODO belongs. Which repo should it run in?";
+      addMessage(todoId, "operator", question);
+      setTodo(todoId, { routing: JSON.stringify({ state: "asking", question, options }) });
+    }
+    if (!todoRow(todoId)!.attention) addEvent(todoId, "attention raised", "operator", "which repo?");
+    setTodo(todoId, { status: "waiting", attention: 1, attention_by: todoRow(todoId)!.attention ? todoRow(todoId)!.attention_by : "operator" });
+  })();
+}
+
+// The routing turn's prompt: the repos with their profiles, the TODO's messages waiting for session 1 (the first
+// instruction, notes, and a reply to the question), and the question asked before, if any.
+function routingPrompt(todoId: number, asked: Routing | null) {
+  const repos = db.query("SELECT name, local_path, profile FROM projects ORDER BY name").all() as { name: string; local_path: string; profile: string | null }[];
+  const msgs = db.query("SELECT id, body FROM messages WHERE todo_id = ? AND state = 'pending' ORDER BY id").all(todoId) as { id: number; body: string }[];
+  return [
+    "# Repos",
+    ...repos.map((r) => `## ${r.name}\nFolder: ${r.local_path}\n\n${r.profile?.trim() || "No profile yet."}`),
+    `# The TODO: T-${todoId}`,
+    ...msgs.map((m) => {
+      const files = attachmentsOf(m.id).map((a) => a.name);
+      return m.body + (files.length ? `\n(Attached: ${files.join(", ")})` : "");
+    }),
+    asked?.state === "asking" && `# Your question\n\nYou asked: ${asked.question}\nOptions: ${[...asked.options.map((o) => o.name), "No repo"].join(", ")}.\nThe user's reply is the last message above. If it is not a clear choice, ask again.`,
+  ].filter(Boolean).join("\n\n");
+}
+
+// The repo is decided: by route_todo, a click on an option, or Change repo. The repo's default agent becomes the TODO's
+// when the user picked none. `reason` is the operator's sentence; a user's pick has none.
+export function routeTo(todoId: number, projectId: number | null, reason: string | null) {
+  const t = todoRow(todoId)!, p = projectRow(projectId);
+  setTodo(todoId, { project_id: projectId, routed_at: now(), routing: null, ...(!t.agent && p?.default_agent ? { agent: p.default_agent } : {}) });
+  const where = p ? `Runs in **${p.name}**` : "No repo: runs in the TODO's own folder";
+  if (reason !== null) addMessage(todoId, "operator", `${where}${reason.trim() ? `: ${reason.trim().replace(/\.?$/, ".")}` : "."}`);
+  else addEvent(todoId, "repo", "user", p ? p.name : "no repo");
+  emit({ type: "todos" });
+}
+
+// Session 1 starts in the decided repo; the attention the question raised drops.
+function startRouted(todoId: number) {
+  const t = todoRow(todoId)!;
+  if (t.attention_by === "operator") setTodo(todoId, { attention: 0, attention_by: null });
+  runWorker(todoId, () => take(todoId, "pending"), { no: 1 }, "start");
+}
+
+// Routing ends without a decision (Stop, remove, a restart): the TODO is not started, and Start runs routing again.
+export function cancelRouting(todoId: number) {
+  const t = todoRow(todoId)!;
+  if (!t.routing) return;
+  const drop = t.attention_by === "operator";
+  setTodo(todoId, { status: "not_started", routing: null, ...(drop ? { attention: 0, attention_by: null } : {}) });
+  addEvent(todoId, "routing cancelled", "app");
+}
+
+// POST /api/todos/:id/repo (server.ts checked: no worktree, not running, no live terminal). While the operator asks, a
+// click routes and starts session 1. Before the start it only records the repo. After it, the live session ends, since
+// its folder is fixed at launch: the next message starts the next session in the new repo, with the hand-over header.
+export function changeRepo(todoId: number, projectId: number | null) {
+  const t = todoRow(todoId)!;
+  if (t.routing) {
+    routeTo(todoId, projectId, null);
+    addMessage(todoId, "app", projectId ? `Runs in ${projectRow(projectId)!.name}.` : "No repo: runs in the TODO's own folder.");
+    return startRouted(todoId);
+  }
+  if (t.routed_at && t.project_id === projectId) return;
+  const from = projectRow(t.project_id)?.name ?? "no repo";
+  routeTo(todoId, projectId, null);
+  if (!t.session_id) return;
+  closeAgent(todoId);
+  db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND ended_at IS NULL", [now(), todoId]);
+  addMessage(todoId, "app", `Repo changed from ${from} to ${projectRow(projectId)?.name ?? "no repo"}. Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
+}
+
+// ---------- repo profiles (801) ----------
+
+// A short text per repo saying what lives there, for routing. A read-only Claude run in the repo folder writes it when
+// the repo is added and on Rescan. In memory: which scans run, and the last failure per repo.
+const SCAN_PROMPT = `You write a repo profile for switchboard, an app that routes each new task (a TODO) to the repo it belongs in. Look around this repository with Read, Grep and Glob, then reply with the profile only, as markdown under 300 words:
+- what this repo is, in one or two sentences;
+- its main parts and the folders they live in;
+- its languages and stack;
+- which kinds of tasks belong here, and which belong elsewhere.`;
+const scanning = new Set<number>();
+const scanErrors = new Map<number, string>();
+export const isScanning = (projectId: number) => scanning.has(projectId);
+export const scanError = (projectId: number) => scanErrors.get(projectId) ?? null;
+
+export async function scanRepo(projectId: number) {
+  const p = projectRow(projectId);
+  if (!p || scanning.has(projectId)) return;
+  scanning.add(projectId);
+  scanErrors.delete(projectId);
+  emit({ type: "projects" });
+  let live: Live | null = null;
+  try {
+    const spec = specOf("claude");
+    if (!spec) throw new Error("Claude is not installed");
+    const turn = turnState(null, () => {});
+    live = await acpOpen(spec, {
+      cwd: p.local_path, mcpServers: [],
+      meta: { systemPrompt: { append: SCAN_PROMPT }, claudeCode: { options: { tools: ROUTING_BUILTINS, allowedTools: ROUTING_BUILTINS, strictMcpConfig: true } } },
+    }, { onUpdate: turn.onUpdate, onPermission: refuse } as any);
+    await live.prompt("Write the profile of this repository.");
+    const text = turn.t.text.trim();
+    if (!text) throw new Error("the scan ended without a profile");
+    db.run("UPDATE projects SET profile = ?, profile_at = ?, profile_edited = NULL WHERE id = ?", [text, now(), projectId]);
+  } catch (e: any) {
+    scanErrors.set(projectId, String(e?.message ?? e));
+  } finally {
+    live?.close();
+    scanning.delete(projectId);
+    emit({ type: "projects" });
+  }
 }
 
 // ---------- operator ----------
@@ -754,10 +953,7 @@ function runOperator() {
     agent.sink.s = {
       onUpdate: turn.onUpdate,
       // Anything not allowed above is refused instead of asked about, as dontAsk did.
-      onPermission: (r) => {
-        const no = r.options.find((o) => o.kind === "reject_once") ?? r.options.find((o) => o.kind.startsWith("reject"));
-        return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
-      },
+      onPermission: refuse,
     };
     let error = "";
     if (!run.cancel) {

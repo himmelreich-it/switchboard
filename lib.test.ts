@@ -204,6 +204,11 @@ test("migrateDb makes earlier TODOs session 1 and runs twice without harm", () =
   expect(db.query("SELECT kind, session_no FROM events ORDER BY id").all().map((e: any) => e.session_no)).toEqual([null, 1, 1]);
   expect((db.query("SELECT session_no FROM files").get() as any).session_no).toBe(1);
   expect(db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'ctx'").get()).toBeTruthy();
+  // 801: project_id is nullable now, the rows stay, and TODOs from before routing count as routed
+  expect((db.query("SELECT \"notnull\" AS n FROM pragma_table_info('todos') WHERE name = 'project_id'").get() as any).n).toBe(0);
+  expect(db.query("SELECT id, project_id, title, session_id, routed_at FROM todos ORDER BY id").all()).toEqual([
+    { id: 1, project_id: 1, title: "started", session_id: "sid-1", routed_at: "t0" }, { id: 2, project_id: 1, title: "idea", session_id: null, routed_at: "t0" }]);
+  db.run("INSERT INTO todos (title, status, created_at, updated_at) VALUES ('no repo', 'not_started', 't', 't')");
 });
 
 test("parseMarks", () => {
