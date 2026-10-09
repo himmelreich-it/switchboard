@@ -445,8 +445,8 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .res-md :is(h1, h2, h3, h4, h5, h6) { margin: 6px 0 0; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); }
 .res-md > :first-child { margin-top: 0; }
 .res-md ul { list-style: none; padding: 0; }
-.res-md ul > li { display: flex; gap: 8px; }
-.res-md ul > li::before { content: "–"; flex: none; color: var(--text-muted); }
+.res-md ul > li { position: relative; padding-left: 16px; }
+.res-md ul > li::before { content: "–"; position: absolute; left: 0; color: var(--text-muted); }
 .res-md ol { padding-left: 20px; }
 .res-md code { padding: 0 4px; font-family: var(--font-mono); font-size: 12px; background: var(--surface-3); border-radius: 2px; }
 .res-md pre { padding: 8px; background: var(--surface-2); overflow: auto; }
