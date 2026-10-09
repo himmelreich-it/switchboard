@@ -2014,7 +2014,7 @@ function waitCard(t) {
             `<button type="button" role="menuitem" class="opt" data-act="perm" data-id="${t.id}|${esc(o.optionId)}"><span class="sq" style="background:${o.kind === "allow_once" ? "var(--accent-lime)" : o.kind.startsWith("allow") ? "var(--accent-cyan)" : "var(--text-muted)"}"></span><span>${esc(o.name)}</span></button>`).join("")}</div>` : ""}</span>` : "");
   } else {
     const who = !last ? "" : last.author === "app" ? "App" : last.author === "operator" ? "Operator" : agentLabel(t.agent);
-    const color = last?.author === "app" ? "var(--text-muted)" : "var(--accent-cyan)";
+    const color = last?.author === "app" ? "var(--text-muted)" : last?.author === "operator" ? "var(--accent-violet)" : "var(--accent-cyan)";
     if (last) box = `<div class="askbox"><span class="ml b" style="color:${color}">${esc(who)}</span><span class="t clamp3">${esc(last.body || last.files)}</span></div>`;
     acts = pillsHtml(t, "card") || `<span class="reply">Reply →</span>`;
   }
@@ -2391,7 +2391,9 @@ function planHtml(entries) {
 // into work groups. A message the agent posted during a turn shows after its group. Pending and queued messages come last.
 function timelineItems(msgs, evs) {
   const items = msgs.map((m) => ({ at: m.at, m })).concat(evs.map((e) => ({ at: e.at, e })));
-  const waiting = (x) => (x.m && x.m.session_no == null && x.m.state !== "delivered" ? 1 : 0);
+  // Queued messages wait at the end. Messages stored before the start keep their time, so the operator's routing
+  // question (801) shows after the instruction it asks about.
+  const waiting = (x) => (x.m && x.m.session_no == null && x.m.state === "queued" ? 1 : 0);
   items.sort((a, b) => waiting(a) - waiting(b) || a.at.localeCompare(b.at) || (a.e ? 1 : 0) - (b.e ? 1 : 0));   // a message before the prompt it caused
   const out = [];
   let open = null, deferred = [];
@@ -2546,7 +2548,9 @@ function renderHint() {
   const ns = S.nsMode[t.id], n = S.detail?.todo.id === t.id ? S.detail.sessions.length : t.session_count ?? 0;
   // R20 delivery hint, worded as in the design
   const running = t.status === "running" && !t.background_wait;
-  const hint = running && t.permission ? "Queued until you answer the request above."
+  const hint = t.routing?.state === "asking" && !running ? "Goes to the operator, which picks the repo. Session 1 then starts with it."
+    : t.routing ? "Stored. Delivered with the first instruction when session 1 starts."
+    : running && t.permission ? "Queued until you answer the request above."
     : running ? "Queued. Sends when the turn ends."
     : ns ? `Starts session ${n + 1}. The hand-over carries this TODO's history.`
     : t.background_wait ? `Agent waits for ${plural(t.background, "background task")}. Resumes session ${n}.`
