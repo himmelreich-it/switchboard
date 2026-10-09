@@ -351,6 +351,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .card-meta > .right { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; }
 .card-meta .timer { color: var(--accent-cyan); }
 .card .stop { display: none; }
+.card .ticker { display: flex; align-items: center; gap: 6px; }
 .card.run:hover .stop, .card.run:focus-within .stop { display: inline-flex; }
 .card.run:hover .ticker, .card.run:focus-within .ticker { display: none; }
 .queued { flex: none; padding: 0 6px; line-height: 20px; font-size: 11px; color: var(--accent-blue); background: var(--tint-blue); border: 1px solid var(--line-blue); border-radius: var(--radius-1); }
@@ -496,7 +497,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .sesspop .resume { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
 .sesspop .resume > code { flex: 1; min-width: 0; font-size: 12px; color: var(--text-secondary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .gh-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
-.fh3 { display: flex; align-items: flex-end; gap: 12px; margin-bottom: -1px; }
+.fh3 { display: flex; align-items: flex-end; gap: 12px; margin-bottom: -1px; min-height: 30px; }   /* the Transcript switch height, so the tabs stay put on Files and Terminal */
 .fh3 > .mb-tabs { flex: 1; min-width: 0; border-bottom: none; }
 .fh3 > .mb-switch { flex: none; padding-bottom: 9px; font-size: 14px; }
 .notstarted { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
@@ -2045,7 +2046,7 @@ function runCard(t) {
   const since = t.run_started_at ? Date.now() - new Date(t.run_started_at) : null;
   return `<div class="card run" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
     <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(t.project_name)}</span>${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Sends when the turn ends">${t.queued_count} queued</span>` : ""}
-      <span class="right"><span class="ticker" style="display:flex; align-items:center; gap:6px"><span class="live-dot"></span>${since != null ? `<span class="timer" data-since="${esc(t.run_started_at)}">${mmss(since)}</span>` : ""}</span>
+      <span class="right"><span class="ticker"><span class="live-dot"></span>${since != null ? `<span class="timer" data-since="${esc(t.run_started_at)}">${mmss(since)}</span>` : ""}</span>
         <span class="stop" title="Stop · interrupts the agent, like Esc in Claude Code">${btn("Stop", "stop", { id: t.id })}</span></span></div>
     <div class="card-title clamp2">${esc(t.title)}</div>
     <div class="activity" title="${esc(text)}">${ico(kind, 13, "var(--accent-cyan)")}<span class="ellipsis">${esc(text)}</span></div>
@@ -2175,7 +2176,8 @@ function sessionRows(t) {
   const modes = modeChoices(agent, t);
   if (modes.length) {
     const name = (v) => modes.find(([x]) => x === v)?.[1] ?? v;
-    const inh = pd.mode ?? (agent === "claude" ? "auto" : null);
+    // Another agent's own default is the mode its session reports.
+    const inh = pd.mode ?? (agent === "claude" ? "auto" : (t.config ?? []).find((o) => o.category === "mode")?.value ?? null);
     const eff = t.mode ?? inh;
     rows.push({ kind: "mode", id: "mode", label: "Permission mode", own: t.mode ?? null, from: pd.mode ? "Project" : "Agent",
       first: pd.mode ? `Project's (${name(pd.mode)})` : inh ? `Agent's default (${name(inh)})` : "Agent's default",
@@ -2488,7 +2490,7 @@ function approvalHtml(t) {
   return `<div class="appr" data-act="noop">
     <div class="hd">${SVG(I.shield, 14, "var(--accent-amber)")}<span class="ml b" style="color:var(--accent-amber)">Needs approval</span><span class="mut" style="color:var(--text-muted)">·</span>
       <span class="verb">${cmd ? "Run command" : path ? "Edit file" : esc(p.name)}</span>${path ? `<span class="path">${esc(path)}</span>${statHtml(stat)}` : !cmd && p.title && p.title !== p.name ? `<span class="path">${esc(p.title)}</span>` : ""}
-      <span class="right"><span class="mono muted" style="font-size:11px">${esc(hm(p.at))}</span>${mode ? `<button type="button" class="mode-btn" data-act="pop" data-id="session" title="Change the permission mode">Mode · ${esc(mode.short ?? "")}</button>` : ""}</span></div>
+      <span class="right"><span class="mono muted" style="font-size:11px">${esc(hm(p.at))}</span>${mode?.short ? `<button type="button" class="mode-btn" data-act="pop" data-id="session" title="Change the permission mode">Mode · ${esc(mode.short ?? "")}</button>` : ""}</span></div>
     ${body}
     <div class="opts">${p.options.slice(0, 9).map((o, i) => `<button type="button" class="aopt${o.kind === "allow_once" ? " yes" : ""}" data-act="perm" data-id="${t.id}|${esc(o.optionId)}" data-fk="perm:${i}" title="${esc(o.kind.replace("_", " "))} · press ${i + 1}"><span class="k">${i + 1}</span><span class="l">${esc(o.name)}</span></button>`).join("")}</div>
   </div>`;
