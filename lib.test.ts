@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  contextFile, cutToTwoLines, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView,
 } from "./lib";
@@ -41,10 +41,11 @@ test("withAttachments and safeFileName", () => {
 });
 
 test("deliveryAction and statusAfterRun", () => {
-  expect(deliveryAction("not_started")).toBe("pending");
-  expect(deliveryAction("running")).toBe("queue");
-  expect(deliveryAction("idle")).toBe("send");
-  expect(deliveryAction("waiting")).toBe("send");
+  expect(deliveryAction("not_started", false)).toBe("pending");
+  expect(deliveryAction("running", true)).toBe("queue");
+  expect(deliveryAction("running", false)).toBe("send"); // only waiting for background tasks
+  expect(deliveryAction("idle", false)).toBe("send");
+  expect(deliveryAction("waiting", false)).toBe("send");
   expect(statusAfterRun(1)).toBe("waiting");
   expect(statusAfterRun(false)).toBe("idle");
 });
@@ -150,6 +151,36 @@ test("ctxStep reads the context from usage_update", () => {
   expect(c).toEqual({ used: 25010, window: 1000000, turns: 0, model: "claude-opus-5-5" });
   expect(ctxStep(null, { sessionUpdate: "plan" })).toBe(null);
   expect(ctxStep(c, { sessionUpdate: "usage_update", used: 900000, size: 1000000, _meta: { "_claude/origin": { kind: "task-notification" } } })).toBe(c);
+});
+
+test("backgroundStep keeps the running background tasks", () => {
+  const bash = (id: string) => ({ sessionUpdate: "tool_call_update", toolCallId: "t" + id, _meta: { claudeCode: { toolName: "Bash", toolResponse: { stdout: "", backgroundTaskId: id } } } });
+  const done = { sessionUpdate: "usage_update", used: 1, _meta: { "_claude/origin": { kind: "task-notification", producer: "session-task" } } };
+  const stop = (id: string) => ({ sessionUpdate: "tool_call_update", _meta: { claudeCode: { toolName: "TaskStop", toolResponse: { message: "Successfully stopped task", task_id: id } } } });
+  let ids = [bash("a"), bash("b"), bash("a"), bash("c")].reduce(backgroundStep, [] as string[]);
+  expect(ids).toEqual(["a", "b", "c"]);
+  ids = backgroundStep(ids, stop("b"));
+  expect(ids).toEqual(["a", "c"]);
+  ids = backgroundStep(ids, done);
+  expect(ids).toEqual(["c"]);
+  expect(backgroundStep(ids, stop("x"))).toBe(ids);
+  expect(backgroundStep(ids, { sessionUpdate: "usage_update", _meta: { "_claude/origin": { kind: "human" } } })).toBe(ids);
+  expect(backgroundStep([], done)).toEqual([]);
+});
+
+test("agentActivity and cycleEnd tell a cycle the agent runs on its own", () => {
+  const usage = (kind?: string) => ({ sessionUpdate: "usage_update", used: 1, ...(kind ? { _meta: { "_claude/origin": { kind } } } : {}) });
+  expect(agentActivity({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "x" } })).toBe(true);
+  expect(agentActivity(usage())).toBe(true);
+  expect(agentActivity(usage("task-notification"))).toBe(true);
+  expect(agentActivity(usage("human"))).toBe(false);
+  expect(agentActivity({ sessionUpdate: "session_info_update", title: "t" })).toBe(false);
+  expect(agentActivity({ sessionUpdate: "available_commands_update", availableCommands: [] })).toBe(false);
+  expect(cycleEnd(usage("task-notification"))).toBe(true);
+  expect(cycleEnd(usage("peer"))).toBe(true);
+  expect(cycleEnd(usage("human"))).toBe(false);
+  expect(cycleEnd(usage("channel"))).toBe(false);
+  expect(cycleEnd(usage())).toBe(false);
 });
 
 test("migrateDb makes earlier TODOs session 1 and runs twice without harm", () => {
