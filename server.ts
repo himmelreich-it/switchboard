@@ -31,7 +31,7 @@ export type Todo = {
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
-  agent: string | null;
+  agent: string | null; suggestions: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
 export type Project = {
@@ -258,7 +258,7 @@ FROM todos t JOIN projects p ON p.id = t.project_id`;
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, suggestions, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -271,6 +271,7 @@ export async function summaries(where = "1", args: any[] = []) {
       file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null, plan: r.plan ? JSON.parse(r.plan) : null,
       permission: permission ? JSON.parse(permission) : null,
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {},
+      suggestions: suggestions ? JSON.parse(suggestions) : null,
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
       // Item 136: the agent's background tasks still running, and whether the TODO shows running only for them.
@@ -537,7 +538,7 @@ async function spawnTerm(x: Term) {
     writeFileSync(contract, TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir));
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
     // `--add-dir` and the other list flags take every argument after them, so `--` ends them before the first message.
-    cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.join(","),
+    cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.filter((n) => !n.endsWith("__suggest_follow_ups")).join(","),
       ...(x.message ? ["--", x.message] : [])];
   } else cmd = LOGIN_SHELL ? [SHELL, "-l"] : [SHELL];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
@@ -975,8 +976,13 @@ async function api(req: Request, path: string): Promise<Response> {
       const text = String(body.body ?? "").trim();
       const uploads = uploadsIn(body.attachments);
       if (!text && !uploads.length) return fail("empty message");
+      if (body.suggested === true) {
+        if (!(JSON.parse(todoRow(id)!.suggestions ?? "[]") as string[]).includes(text)) return fail("That suggestion is gone", 409);
+        addEvent(id, "suggestion picked", "user", text);   // before the run's launch events
+      }
       const mid = commitMessage(id, "user", text, uploads);
-      setDraft(`todo:${id}`, "");
+      // A pill click sends its text; the draft in the composer stays.
+      if (body.suggested !== true) setDraft(`todo:${id}`, "");
       return json(messageOut(mid));
     } else if (action === "read") {
       // Only an actual change is announced, so a page that marks read on every refetch cannot loop.
@@ -991,7 +997,7 @@ async function api(req: Request, path: string): Promise<Response> {
       }
     } else if (action === "remove") {
       liveTodo(id);
-      setTodo(id, { removed_at: now(), removed_by: "user" });
+      setTodo(id, { removed_at: now(), removed_by: "user", suggestions: null });
       addEvent(id, "removed", "user");
       // Like Esc in Claude Code; queued messages stay queued. The agent process ends with the run, or now when idle.
       if (isRunning(id)) interrupt(id);
