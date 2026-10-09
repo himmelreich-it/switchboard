@@ -258,7 +258,7 @@ FROM todos t JOIN projects p ON p.id = t.project_id`;
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, suggestions, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -271,6 +271,7 @@ export async function summaries(where = "1", args: any[] = []) {
       file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null, plan: r.plan ? JSON.parse(r.plan) : null,
       permission: permission ? JSON.parse(permission) : null,
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {},
+      suggestions: suggestions ? JSON.parse(suggestions) : null,
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
       // Item 136: the agent's background tasks still running, and whether the TODO shows running only for them.
@@ -537,7 +538,7 @@ async function spawnTerm(x: Term) {
     writeFileSync(contract, TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir));
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
     // `--add-dir` and the other list flags take every argument after them, so `--` ends them before the first message.
-    cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.join(","),
+    cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.filter((n) => !n.endsWith("__suggest_follow_ups")).join(","),
       ...(x.message ? ["--", x.message] : [])];
   } else cmd = LOGIN_SHELL ? [SHELL, "-l"] : [SHELL];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
@@ -976,7 +977,9 @@ async function api(req: Request, path: string): Promise<Response> {
       const uploads = uploadsIn(body.attachments);
       if (!text && !uploads.length) return fail("empty message");
       const mid = commitMessage(id, "user", text, uploads);
-      setDraft(`todo:${id}`, "");
+      // A pill click sends its text; the draft in the composer stays.
+      if (body.suggested === true) addEvent(id, "suggestion picked", "user", text);
+      else setDraft(`todo:${id}`, "");
       return json(messageOut(mid));
     } else if (action === "read") {
       // Only an actual change is announced, so a page that marks read on every refetch cannot loop.
