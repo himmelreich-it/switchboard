@@ -10,7 +10,7 @@ This document describes Switchboard's functionality and how it is built, and is 
 
 The UI follows the design `designs/Switchboard v6.html` (a bundled page with 12 scenes, picked in its Review panel). `designs/Switchboard-v1.html` to `designs/Switchboard-v4.html` are earlier versions, kept for reference. `designs/v6-implementation-report.md` says what the v6 rewrite of `index.html` changed.
 
-Repos, routing at Start, Change repo, profiles and TODO numbers (items 1–4, 22, 138–141 and the items that cite them) follow the decided design "The operator picks the repo at start" (2026-10-09). The v6 design already draws part of it: the New TODO dialog without a repo select, Change repo in the repo popover, and the operator's intro. The design is silent on the routing question's buttons, "Picking a repo", the profile field and Scan all; the app reuses the follow-up pills, the run segment and the settings form for them.
+The v6 design draws part of repo routing (items 138–141): the New TODO dialog without a repo select, Change repo in the repo popover, and the operator's intro. The design is silent on the routing question's buttons, "Picking a repo", the profile field and Scan all; the app reuses the follow-up pills, the run segment and the settings form for them.
 
 The design decides layout, labels and placement. This spec decides behaviour, and its items already follow the design wherever the two used to differ. Where the design is silent, or where an accepted default overrules it (closing Settings returns to the view it came from, terminal numbers are never reused, Diff stays available while a file is locked), the items here decide. Where the UI and the design differ, the UI is changed to match the design, with these exceptions:
 
