@@ -566,6 +566,8 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     if (open) {
       // The agent made the session id. From here on take() and the events belong to the new session.
       db.run("INSERT INTO sessions (todo_id, no, session_id, started_at, agent) VALUES (?, ?, ?, ?, ?)", [todoId, open.no, live.sessionId, now(), agentId]);
+      // The operator's routing messages (801) and app messages before the start belong to session 1.
+      if (open.no === 1) db.run("UPDATE messages SET session_no = 1 WHERE todo_id = ? AND state = 'delivered' AND session_no IS NULL", [todoId]);
       // The TODO's own mode and options were its last agent's: on another agent they would not mean the same.
       const switched = (t.agent || DEFAULT_AGENT) !== agentId;
       setTodo(todoId, { session_id: live.sessionId, ctx: null, plan: null, agent: agentId, ...(switched ? { mode: null, overrides: null } : {}) });
@@ -813,7 +815,7 @@ function routingPrompt(todoId: number, asked: Routing | null) {
 export function routeTo(todoId: number, projectId: number | null, reason: string | null) {
   const t = todoRow(todoId)!, p = projectRow(projectId);
   setTodo(todoId, { project_id: projectId, routed_at: now(), routing: null, ...(!t.agent && p?.default_agent ? { agent: p.default_agent } : {}) });
-  const where = p ? `Runs in **${p.name}**` : "No repo: runs in the TODO's own folder";
+  const where = p ? `Runs in **${p.name}**` : "Runs without a repo, in the TODO's own folder";
   if (reason !== null) addMessage(todoId, "operator", `${where}${reason.trim() ? `: ${reason.trim().replace(/\.?$/, ".")}` : "."}`);
   else addEvent(todoId, "repo", "user", p ? p.name : "no repo");
   emit({ type: "todos" });
@@ -842,7 +844,7 @@ export function changeRepo(todoId: number, projectId: number | null) {
   const t = todoRow(todoId)!;
   if (t.routing) {
     routeTo(todoId, projectId, null);
-    addMessage(todoId, "app", projectId ? `Runs in ${projectRow(projectId)!.name}.` : "No repo: runs in the TODO's own folder.");
+    addMessage(todoId, "app", projectId ? `Runs in ${projectRow(projectId)!.name}.` : "Runs without a repo, in the TODO's own folder.");
     return startRouted(todoId);
   }
   if (t.routed_at && t.project_id === projectId) return;
