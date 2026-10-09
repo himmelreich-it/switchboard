@@ -1262,7 +1262,11 @@ const loaders = {
     if (S.sel !== id) return;   // you moved on while it loaded
     if (d.todo.removed_at) return goOverview();
     const key = `todo:${id}`;
-    if (drafts[key] === undefined) { drafts[key] = d.draft; composer.value = d.draft; }
+    if (drafts[key] === undefined) {
+      drafts[key] = d.draft; composer.value = d.draft;
+      if (S.pendingPill?.key === key) { appendPill(key, S.pendingPill.text); composer.focus(); }
+    }
+    if (S.pendingPill?.key === key) S.pendingPill = null;
     S.detail = d;
     if (d.todo.unread) call("POST", `/api/todos/${id}/read`).catch(() => {});   // only emits an event when something was unread
     const f = S.file;
@@ -1367,6 +1371,12 @@ function setFilter(id) {
 
 // ---------- drafts (R19): saved to the server 400 ms after the last keystroke ----------
 let draftTimer = 0, draftPending = null;
+function appendPill(key, text) {   // a pill's text on a new line after the draft
+  const d = drafts[key] ?? "";
+  const next = d.trim() ? d.replace(/\s*$/, "\n") + text : text;
+  saveDraftSoon(key, next);
+  if (draftKey() === key) composer.value = next;
+}
 function saveDraftSoon(key, body) {
   drafts[key] = body;
   draftPending = { key, body };
@@ -2615,21 +2625,21 @@ const ACTIONS = {
   // A pill: a click sends its text as the user's message; ⇧-click puts it in the composer to edit first.
   suggestion: async (id, el, e) => {
     const [tid, i] = id.split(":").map(Number);
-    const t = (S.detail?.todo.id === tid && S.detail.todo) || S.todos.find((x) => x.id === tid);
+    const t = el.closest(".card") ? S.todos.find((x) => x.id === tid) : cur();
     const text = t?.suggestions?.[i];
     if (!text) return;
     if (e?.shiftKey) {
-      if (S.sel !== tid) select(tid);
-      const key = `todo:${tid}`, d = drafts[key] ?? "";
-      const next = d.trim() ? d.replace(/\s*$/, "\n") + text : text;
-      saveDraftSoon(key, next);
-      if (draftKey() === key) { composer.value = next; composer.focus(); }
+      select(tid);
+      const key = `todo:${tid}`;
+      if (drafts[key] === undefined) S.pendingPill = { key, text };   // the saved draft is not loaded yet; the detail loader appends it
+      else { appendPill(key, text); composer.focus(); }
       return render();
     }
-    t.suggestions = null;   // gone at once; the server clears them too
+    const prev = t.suggestions, copies = [S.todos.find((x) => x.id === tid), S.detail?.todo.id === tid ? S.detail.todo : null].filter(Boolean);
+    for (const c of copies) c.suggestions = null;   // gone at once; the server clears them too
     render();
     try { await call("POST", `/api/todos/${tid}/messages`, { body: text, suggested: true }); }
-    catch (err) { toast("danger", "Not sent", err.message); }
+    catch (err) { for (const c of copies) c.suggestions = prev; toast("danger", "Not sent", err.message); render(); }
   },
   // Backlog and Board: from Settings or Removed, the tab Focus sits under returns to Focus; otherwise to that side's overview.
   nav: (id) => (id !== "board" && id !== "backlog" ? setView(id)
