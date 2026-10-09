@@ -1117,11 +1117,9 @@ function shortAge(iso) {
 }
 const SVG = (d, size = 16, color = "currentColor") => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const FILE = '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>';
-const FILE_LINES = FILE + '<path d="M16 13H8"/><path d="M16 17H8"/>';
 const BRANCH = '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>';
 const TRASH = '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>';
 const CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
-const ARROW = '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>';
 const CLIP = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>';
 // design v6 icons (24×24, stroke 1.5)
 const I = {
@@ -1149,26 +1147,6 @@ const mmss = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${M
 const tNum = (t) => `T-${t.id}`;
 const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "");
 
-const STATUS = {
-  waiting: { label: "Waiting on you", badge: "amber", edge: "var(--accent-amber)" },
-  running: { label: "Running", badge: "cyan", edge: "var(--accent-cyan)" },
-  not_started: { label: "Not started yet", badge: "violet", edge: "var(--accent-violet)" },
-  idle: { label: "Idle", badge: "neutral", edge: "var(--border-default)" },
-};
-const LANES = [
-  { st: "waiting", label: "Waiting on you", color: "var(--accent-amber)", hint: keys("Handle one, then ⌘J for the next."), empty: "Nothing needs you right now." },
-  { st: "running", label: "Running", color: "var(--accent-cyan)", hint: "Messages you commit reach the agent when its turn ends.", empty: "No agent is running." },
-  { st: "idle", label: "Idle", color: "var(--text-secondary)", hint: "Resting state. Remove a TODO when it is done.", empty: "No idle TODOs." },
-];
-const AUTHOR = {
-  user: ["You", "var(--text-secondary)"],
-  "user via operator": ["You", "var(--accent-violet)"],
-  agent: ["Agent", "var(--accent-cyan)"],
-  operator: ["Operator", "var(--accent-violet)"],
-  app: ["App", "var(--accent-amber)"],
-};
-const ACTOR = { user: "var(--text-secondary)", "user via operator": "var(--accent-violet)", agent: "var(--accent-cyan)", operator: "var(--accent-violet)", app: "var(--text-muted)" };
-const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message"];
 const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>';
 const CHEV_R = '<path d="m9 18 6-6-6-6"/>', CHEV_D = '<path d="m6 9 6 6 6-6"/>';
 const RUNNING_LOCK = ["Read-only", "The agent is running. Edit unlocks when it stops."];
@@ -1177,8 +1155,6 @@ const RUNNING_LOCK = ["Read-only", "The agent is running. Edit unlocks when it s
 const GC = { muted: "var(--text-muted)", sec: "var(--text-secondary)", amber: "var(--accent-amber)", red: "var(--accent-red)", lime: "var(--accent-lime)", cyan: "var(--accent-cyan)", violet: "var(--accent-violet)" };
 const GH_LABEL = { "no network": "PR status · offline", "gh access failed": "PR status · gh access failed", unclear: "PR status · unclear" };
 const factList = (list) => list.filter(Boolean).map((f, i) => ({ text: f[0], color: f[1], sep: i ? " · " : "" }));
-const factsHtml = (list, grey) => list.map((f) => `<span>${f.sep}</span><span style="color:${grey ? GC.muted : f.color}">${esc(f.text)}</span>`).join("");
-const factsText = (list) => list.map((f) => f.sep + f.text).join("");
 function gitFactsOf(g, full) {
   return factList([
     g.commits != null && [g.commits ? plural(g.commits, "commit") : "no commits", GC.muted],
@@ -1212,12 +1188,6 @@ const kTok = (n) => (n >= 1e6 ? +(n / 1e6).toFixed(1) + "M" : n >= 1000 ? Math.r
 async function copyText(text, title, message) {
   try { await navigator.clipboard.writeText(text); toast("success", title, message); }
   catch (e) { toast("danger", "Not copied", e.message); }
-}
-const copyBtn = (text, title, label = "Copy session id") => `<button type="button" class="copy" data-act="copy" data-id="${esc(text)}" data-title="${esc(label)}" aria-label="${esc(label)}" title="${esc(title)}">${SVG(COPY_ICON, 12)}</button>`;
-// "2 min 10 s · 9 tool calls" under a result (item 128)
-function fmtDur(ms) {
-  const s = Math.round(ms / 1000);
-  return s < 60 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
 const badge = (text, color = "neutral", dot = false) =>
@@ -1283,7 +1253,7 @@ S.editing = null;   // first instruction being edited (items 94-97): {todoId, ms
 S.fileRoot = {};      // TODO id -> "todo" | "worktree" | "project" (item 101), until reload
 S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
 S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
-S.terms = {}; S.termSel = {}; S.termMenu = false; S.cform = null; S.termsUnsupported = null;   // terminals per TODO (item 111)
+S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // terminals per TODO (item 111)
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
@@ -1495,7 +1465,7 @@ function goOverview() { flushDraft(); if (S.mode === "focus" && S.focusFrom) S.b
 function select(id) {
   flushDraft();
   if (!(S.view === "todos" && S.mode === "focus")) S.focusFrom = S.board;   // ⌘J inside Focus keeps where you came from
-  if (S.sel !== id) { S.detail = null; dropFile(); S.tab = "chat"; S.termMenu = false; S.cform = null; }
+  if (S.sel !== id) { S.detail = null; dropFile(); S.tab = "chat"; S.cform = null; }
   S.sel = id; S.view = "todos"; S.mode = "focus"; S.pop = null;
   composer.value = drafts[draftKey()] ?? "";
   chatLog.dataset.sig = "";   // scroll the chat to the newest message
@@ -2753,9 +2723,6 @@ function termTheme() {
 }
 addEventListener("sb-theme", () => { const th = termTheme(); for (const v of xterms.values()) if (v.term) v.term.options.theme = th; });
 const termLabel = (x, t) => (x.title || `${x.kind === "claude" ? "Claude" : "Shell"} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · project" : "");
-const ROBOT = '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>';
-const PROMPT = '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>';
-const termIcon = (kind) => (kind === "claude" ? SVG(ROBOT, 14, "var(--accent-violet)") : SVG(PROMPT, 14));
 const claudeDefault = (t) => {
   const p = S.projects.find((x) => x.id === t.project_id);
   return `I'm working on the Switchboard TODO "${t.title}". What its agent is doing, its branch and PR, the recent chat and its files are in ${artifactPath(t)}terminal/context.md. Read it, then wait for my instructions.`;
@@ -2768,7 +2735,7 @@ function termDirs(t) {
 }
 async function newTerm(kind, root, message = "") {
   const t = cur();
-  S.termMenu = false; S.cform = null;
+  S.cform = null;
   const box = $("termHosts");
   try {
     const x = await call("POST", `/api/todos/${t.id}/terminals`, { kind, root, message, cols: 100, rows: 30 });
@@ -2781,7 +2748,6 @@ async function newTerm(kind, root, message = "") {
 }
 function openClaudeForm(root) {
   const t = cur(), dir = termDirs(t).find((d) => d[0] === root) ?? termDirs(t)[0];
-  S.termMenu = false;
   S.cform = { todoId: t.id, root: dir[0], cwd: dir[2], message: claudeDefault(t) };
   render();
 }
@@ -2964,7 +2930,7 @@ function renderAgents() {
       ? info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex">${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { v: "primary", id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("") : "";
     return `<div class="ag-row"><div class="l">
         <div class="line"><span class="nm">${esc(a.name)}</span><span class="ml">${a.builtin ? "Built-in" : "Custom"}</span>${state}</div>
-        <span class="cmd">${esc(a.command)}<span style="color:var(--text-muted)">${a.builtin ? " · bundled" : " · custom"}${info?.version ? ` · ${esc(info.name ?? "")} ${esc(info.version)}` : ""}</span></span>
+        <span class="cmd">${esc(a.command)}<span style="color:var(--text-muted)">${/bundled/.test(a.command) ? "" : a.builtin ? " · bundled" : " · custom"}${info?.version ? ` · ${esc(info.name ?? "")} ${esc(info.version)}` : ""}</span></span>
         ${note ? `<span class="note" style="${info?.error ? "color:var(--accent-amber)" : ""}">${esc(note)}</span>` : ""}</div>
       <div class="r">${login}${!a.found ? btn("Check again", "agent-check") : ""}${a.builtin ? "" : `<button type="button" class="mb-iconbtn" data-act="agent-delete" data-id="${esc(a.id)}" aria-label="Remove agent" title="Remove ${esc(a.name)}">${SVG(TRASH, 15)}</button>`}</div></div>`;
   }).join(""));
@@ -3113,7 +3079,6 @@ const ACTIONS = {
   "open-folder": () => { const f = S.file; f?.abs && act(call("POST", f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}/reveal` : fsUrl(f, "fs/reveal")), "Can't open folder"); },
   "add-path": addPathToMessage,
   "md-tool": (id) => S.cm?.handle?.format(id),
-  "term-menu": () => { S.termMenu = !S.termMenu; render(); },
   "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
   "term-sel": (id) => { const t = cur(); S.termSel[t.id] = Number(id); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
   "term-close": (id) => askCloseTerm(Number(id)),
@@ -3238,10 +3203,10 @@ async function commandsFor(id) {
   return list;
 }
 async function renderCmds() {
-  const id = S.sel, m = composer.value.match(/^/([^s]*)$/);
+  const id = S.sel, m = composer.value.match(/^\/([^\s]*)$/);
   if (typeof id !== "number" || !m || composer.selectionStart !== composer.value.length) return closeCmds();
   const list = await commandsFor(id);
-  if (S.sel !== id || composer.value.match(/^/([^s]*)$/)?.[1] !== m[1]) return;   // typed on meanwhile
+  if (S.sel !== id || composer.value.match(/^\/([^\s]*)$/)?.[1] !== m[1]) return;   // typed on meanwhile
   const q = m[1].toLowerCase();
   const hits = [...list.filter((c) => c.name.toLowerCase().startsWith(q)), ...list.filter((c) => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q))].slice(0, 50);
   // design v6: grouped; plugin commands carry their plugin's name before a colon
