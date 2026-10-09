@@ -823,6 +823,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
       <span class="microlabel" style="padding:0 10px 8px">Settings</span>
       <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Projects</span><span id="cProjects" class="n">0</span></button>
       <button type="button" id="agentsNav" class="set-sec" data-act="set-sec" data-id="agents" hidden><span>Agents</span><span id="cAgents" class="n">0</span></button>
+      <button type="button" class="set-sec" data-act="set-sec" data-id="runs"><span>Runs</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
     </nav>
     <div id="secProjects" class="proj-grid">
@@ -872,6 +873,14 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
         <span id="agentErr" class="mb-field__error" role="alert"></span>
         <div class="row" style="justify-content:flex-end;"><button type="submit" class="mb-btn mb-btn--secondary mb-btn--md">Add agent</button></div>
       </form>
+    </div>
+    <!-- Item 136: how long an agent waits for its background tasks between turns -->
+    <div id="secRuns" class="set-main" hidden>
+      <h1 class="page-title">Runs</h1>
+      <div class="panel" style="flex-direction:row; flex-wrap:wrap; align-items:center; padding:20px; gap:16px 24px">
+        <div style="flex:1 1 260px; display:flex; flex-direction:column; gap:6px"><span class="microlabel">Background tasks</span><span style="font-size:14px; color:var(--text-secondary)">When the agent ends a turn with background tasks still running (a long test run), the TODO stays Running and the agent waits for them. When one finishes, the agent follows up and the TODO asks for your attention. After this long the agent process is closed and the tasks end with it.</span></div>
+        <div class="row" style="gap:8px"><input id="bgHours" class="mb-input" type="number" min="0.25" max="48" step="0.25" style="width:96px" aria-label="Hours to wait for background tasks"><span class="small">hours</span></div>
+      </div>
     </div>
     <div id="secAppearance" class="set-main" hidden>
       <h1 class="page-title">Appearance</h1>
@@ -1849,7 +1858,8 @@ function cardHtml(t) {
   // an app message (denial, failed run) is usually why the TODO needs you, so it wins over the last agent line
   const last = lm && lm.author === "app" ? lm : la ? { ...la, author: "agent" } : lm;
   const who = !last ? "" : last.author.startsWith("user") ? (t.message_count === 1 ? "You · first instruction" : "You") : AUTHOR[last.author]?.[0] ?? last.author;
-  const foot = t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t)
+  const foot = t.background_wait ? `● waiting for ${plural(t.background, "background task")}`
+    : t.status === "running" ? "● " + (t.last_tool ? "tool · " + t.last_tool : "working") + planLine(t)
     : t.file_count ? `${plural(t.file_count, "file")} · ${t.file_names.join(", ")}` : "No files";
   return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}" style="${lane === "waiting" ? "border-color:var(--line-amber);" : ""}border-top-color:${lane === "waiting" ? STATUS.waiting.edge : st.edge}">
     <div class="card-badges">${badge(st.label, st.badge, true)}${permBadge(t)}${t.agent && t.agent !== "claude" ? badge(agentLabel(t.agent)) : ""}${t.queued_count && t.status !== "not_started" ? badge("Queued " + t.queued_count, "blue") : ""}${t.has_draft ? badge("Draft") : ""}${t.unread ? badge("Unread", "lime") : ""}<span class="card-time">${fmtTime(last?.at)}</span></div>
@@ -1907,7 +1917,7 @@ function renderFocusHead(operator, t, d, fileOpen) {
     status = badge(st.label, st.badge, true) + permBadge(t);
     if (t.status === "not_started") actions += btn("Start", "start", { v: "primary", id: t.id });
     if (t.attention && !running) actions += btn("Clear attention", "clear", { id: t.id });
-    if (running) actions += `<span title="Interrupt the agent, like Esc in Claude Code. A message it has not read yet is answered next." style="display:flex">${btn("Stop", "stop", { id: t.id })}</span>`;
+    if (running) actions += `<span title="${t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : "Interrupt the agent, like Esc in Claude Code. A message it has not read yet is answered next."}" style="display:flex">${btn("Stop", "stop", { id: t.id })}</span>`;
     if (t.session_id) actions += `<span title="${running ? "Available once the agent stops" : `End session ${n} and start session ${n + 1} with a hand-over`}" style="display:flex">${btn("New session", "open-ns", { id: t.id, dis: running })}</span>`;
     actions += `<button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO" title="Remove TODO">${SVG(TRASH, 15)}</button>`;
     left = t.status === "not_started" && S.projects.length > 1
@@ -2128,6 +2138,7 @@ function renderHint() {
   const handed = ns && [t.worktree_path && "worktree", t.pr_number || t.pr ? `PR #${t.pr?.number ?? t.pr_number}` : "", ...(S.detail?.files ?? []).map((f) => f.name)].filter(Boolean);
   const hint = operator ? "Delivers now. The operator acts only on what you ask."
     : !t ? "" : ns ? (handed.length ? "Handed over: " + handed.join(", ") : "Nothing to hand over yet.")
+    : t.background_wait ? `Agent waits for ${plural(t.background, "background task")}. Delivers now by resuming session ${t.session_id}.`
     : t.status === "running" ? "Agent is running. Your message goes out when its turn ends."
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."
     : `Delivers now by resuming session ${t.session_id}.`;
@@ -2508,6 +2519,8 @@ function renderSettings() {
   document.querySelectorAll(".set-sec").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.setSec));
   $("secProjects").hidden = S.setSec !== "projects";
   $("secAppearance").hidden = S.setSec !== "appearance";
+  $("secRuns").hidden = S.setSec !== "runs";
+  if (document.activeElement !== $("bgHours")) $("bgHours").value = S.meta?.background_wait_hours ?? 2;
   $("secAgents").hidden = S.setSec !== "agents";
   $("cAgents").textContent = agentsAll().length;
   // Hidden while Claude is the only agent (P5 is limited to Claude for now); the page and its API stay for later.
@@ -2550,6 +2563,10 @@ async function agentLogin(key) {
   S.loggingIn = null;
   render();
 }
+$("bgHours").addEventListener("change", async (e) => {
+  try { S.meta.background_wait_hours = (await call("PUT", "/api/settings", { background_wait_hours: Number(e.target.value) })).background_wait_hours; }
+  catch (err) { toast("danger", "Not saved", err.message); e.target.value = S.meta?.background_wait_hours ?? 2; }
+});
 $("agentForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
