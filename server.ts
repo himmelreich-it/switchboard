@@ -86,18 +86,20 @@ export function setDraft(key: string, body: string) {
 function moveArtifactFolders() {
   if (getMeta("artifact_layout") === "todo-id") return;
   const rows = db.query("SELECT t.id, p.slug FROM todos t JOIN projects p ON p.id = t.project_id ORDER BY t.id").all() as { id: number; slug: string }[];
+  let blocked = false;
   for (const r of rows) {
     const a = join(HOME, "data", r.slug, String(r.id)), b = artifactDir(r.id);
     if (!existsSync(a)) continue;
     if (existsSync(b)) { console.error(`artifact folders: ${b} exists already, so ${a} stays where it is`); continue; }
-    renameSync(a, b);
+    // Windows refuses to rename a folder while a process holds a file in it open; the next start tries again.
+    try { renameSync(a, b); } catch (e) { blocked = true; console.error(`artifact folders: could not move ${a} (${(e as any).code}), it stays until the next start`); continue; }
     for (const tbl of ["attachments", "files"])
       db.run(`UPDATE ${tbl} SET path = ? || substr(path, ?) WHERE substr(path, 1, ?) = ?`, [b + sep, a.length + 2, a.length + 1, a + sep]);
     db.run("INSERT INTO events (todo_id, kind, actor, detail, at) VALUES (?, 'moved', 'app', ?, ?)", [r.id, `data/${r.slug}/${r.id}/ → data/${r.id}/`, now()]);
     console.log(`artifact folders: moved data/${r.slug}/${r.id}/ to data/${r.id}/`);
   }
   for (const slug of new Set(rows.map((r) => r.slug))) try { rmdirSync(join(HOME, "data", slug)); } catch {} // only when empty
-  setMeta("artifact_layout", "todo-id");
+  if (!blocked) setMeta("artifact_layout", "todo-id");
 }
 
 // ---------- live updates (one SSE stream; the browser refetches what it shows) ----------
