@@ -711,38 +711,44 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fpane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .fpane > .empty { padding: 16px 20px; }
 .root-note { padding: 8px 8px 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
-.fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px 16px; gap: 10px; }
-.file-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
-.file-head .p { min-width: 0; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
-.file-head .sz { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.file-head .mkl { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
-.file-head .right { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.fileview .tabs-line { display: flex; align-items: flex-end; gap: 12px; }
-.fileview .tabs-line .mb-tabs { flex: 1; min-width: 0; }
-.fileview .tabs-line .keys { display: flex; align-items: center; gap: 6px; padding-bottom: 10px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+/* the open file fills the pane: a header strip with the mode, path and actions, the body flush below it (design v7) */
+.fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fstrip { flex: none; height: 36px; padding: 0 8px 0 12px; display: flex; align-items: center; gap: 8px; min-width: 0; background: var(--surface-1); border-bottom: 1px solid var(--border-subtle); }
+.fstrip.sub { padding-left: 16px; }
+.fstrip .ml { flex: none; }
+.fstrip .hint { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.fstrip .seg { padding: 2px; }
+.fstrip .seg > button { height: 24px; padding: 0 8px; font-size: 11px; }
+.fstrip .p { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.fstrip .mkl { flex: none; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.fstrip .dirty, .fitem > .dirty, .tr > .dirty { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
+.fstrip .right { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; }
+.fstrip .meta { padding: 0 4px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.fstrip .mb-badge { flex: none; }
+.flock { flex: none; padding: 6px 16px; font-size: 12px; color: var(--accent-cyan); background: var(--tint-cyan); border-bottom: 1px solid var(--line-cyan); }
+.ffoot { flex: none; padding: 6px 16px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); }
 .file-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.md-host { flex: 1; min-height: 0; display: flex; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); overflow: hidden; }
-.md-read { flex: 1; min-width: 0; overflow: auto; padding: 14px 16px; }
-.code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.md-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.md-read { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; }
+.code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); }
 .code-host .cm-editor { flex: 1; min-height: 0; }
-.md-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); overflow: hidden; }
-.md-tools { flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border-subtle); }
+.md-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.md-tools { flex: none; height: 36px; display: flex; align-items: center; gap: 2px; padding: 0 6px; background: var(--surface-1); border-bottom: 1px solid var(--border-subtle); overflow: hidden; }
 .md-tools button { width: 28px; height: 26px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); cursor: pointer; }
 .md-tools button:hover { background: var(--surface-3); color: var(--text-primary); }
-.md-tools button[aria-pressed="true"] { color: var(--accent-lime); }
-.md-tools .gap { flex: 1; }
-.md-tools .v { width: auto; padding: 0 8px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, var(--pane-split-a, 1fr)) 1px minmax(0, var(--pane-split-b, 1fr)); grid-template-rows: minmax(0, 1fr); }
 .split.write { grid-template-columns: minmax(0, 1fr); }
 .split.write > .preview, .split.write > .pane-sep, .split.preview-only > .pane-sep { display: none; }
 .split.preview-only { grid-template-columns: minmax(0, 1fr); }
 .split.preview-only > .ed { display: none; }
-.split > .ed { min-width: 0; min-height: 0; display: flex; overflow: hidden; }
-.split > .ed .cm-editor { flex: 1; }
-.preview { min-width: 0; overflow: auto; padding: 16px 20px; background: var(--surface-1); }
-.md-status { flex: none; display: flex; gap: 16px; padding: 4px 12px; background: var(--surface-2); border-top: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.fileview .dv { flex: 1; min-height: 0; }
-.file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
+.split > .ed { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ed-host { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--surface-inset); }
+.ed-host .cm-editor { flex: 1; }
+.preview { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.preview-in { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 40px; }
+.fileview .dv { flex: 1; min-height: 0; border: 0; border-radius: 0; }
+.fileview .dv > div { padding: 4px 0; }
+.file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 .file-msg img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
 /* ---------- terminals (items 111-117, design v6 layout) ---------- */
@@ -852,6 +858,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
   .split:not(.write):not(.preview-only) { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .split > .pane-sep { display: none; }
   .preview { border-top: 1px solid var(--border-subtle); }
+  .fstrip .meta, .fstrip .kbd { display: none; }
 }
 </style>
 </head>
@@ -909,24 +916,22 @@ pre.cmd > .dollar { color: var(--accent-lime); }
         <div class="fpane">
           <div id="filesEmpty" class="empty" hidden></div>
           <div id="fileView" class="fileview" hidden>
-            <div id="fileHead" class="file-head"></div>
-            <div id="fileTabsLine" class="tabs-line">
-              <div id="fileTabs" class="mb-tabs" role="tablist" aria-label="File mode"></div>
-              <span class="keys"><span class="kbd">⌘E</span>edit<span class="kbd" style="margin-left:6px">⌘S</span>save<span class="kbd" style="margin-left:6px">⌘F</span>find</span>
-            </div>
-            <span id="fileLocked" class="small" style="color:var(--accent-cyan)" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
+            <div id="fileHead" class="fstrip"></div>
+            <span id="fileLocked" class="flock" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
             <div class="file-body">
               <div id="fileRead" class="md-host" hidden><div class="md-read"><div class="md"></div></div></div>
               <div id="fileMd" class="md-edit" hidden>
-                <div id="mdTools" class="md-tools" role="toolbar" aria-label="Markdown"></div>
-                <div id="mdSplit" class="split"><div id="mdEd" class="ed"></div><div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize editor and preview" title="Drag to resize · double-click to reset" tabindex="0" data-pane="split"></div><div class="preview"><div id="filePreview" class="md"></div></div></div>
-                <div id="mdStatus" class="md-status"></div>
+                <div id="mdSplit" class="split">
+                  <div class="ed"><div id="mdTools" class="md-tools" role="toolbar" aria-label="Markdown"></div><div id="mdEd" class="ed-host"></div></div>
+                  <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize editor and preview" title="Drag to resize · double-click to reset" tabindex="0" data-pane="split"></div>
+                  <div class="preview"><div class="fstrip sub"><span class="ml">Preview</span><span class="hint">· updates as you type</span></div><div class="preview-in"><div id="filePreview" class="md"></div></div></div>
+                </div>
               </div>
               <div id="fileCode" class="code-host" hidden></div>
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
             </div>
-            <span id="fileFoot" class="small"></span>
+            <span id="fileFoot" class="ffoot"></span>
           </div>
         </div>
       </div>
@@ -2579,6 +2584,8 @@ const FOLDER = '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.6
 const treeUsable = (t) => !!(t.worktree_path && t.git);   // registered and on disk (gitState reads it)
 // Item 101, design v6: the left column holds the root switch (TODO files, Worktree, Project) and its list; the file
 // opens on the right. On TODO files the worktree's changes are listed below the TODO's own files.
+// An amber square on a file with edits not saved yet (design v7); the open file's edits are in `edits` too (syncEdit).
+const unsaved = (f) => (edits[fileKey(f)] ? '<span class="dirty" title="Unsaved changes"></span>' : "");
 function renderFileList(t, d) {
   let root = S.fileRoot[t.id] ?? "todo";
   if (root === "worktree" && !treeUsable(t)) root = S.fileRoot[t.id] = "todo";
@@ -2592,11 +2599,11 @@ function renderFileList(t, d) {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
     const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
       : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.lines == null ? " disabled" : ""}>
-          ${markHtml(null)}<span class="nm">${esc(f.name)}</span><span class="mt">${f.lines == null ? "missing" : plural(f.lines, "line")}</span></button>`).join("");
+          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}<span class="mt">${f.lines == null ? "missing" : plural(f.lines, "line")}</span></button>`).join("");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
-        ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span><span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
+        ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span>${unsaved({ todoId: t.id, root: "worktree", rel })}<span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
     return setHtml($("fileList"), seg + `<span class="ml grp">TODO files</span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
       <span class="root-note">terminal/ and uploads/ are not listed</span>`);
   }
@@ -2611,7 +2618,7 @@ function renderFileList(t, d) {
   const fileRow = (path, depth, showDir) => {
     const m = marks[path], name = showDir ? basename(path) : path.split("/").pop();
     const dir = showDir && path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" aria-selected="${f0?.root === root && f0.rel === path}" data-act="open-tree" data-id="${esc(path)}" data-fk="tree:${esc(path)}" style="padding-left:${6 + depth * 14}px"><span class="cv"></span>${SVG(FILE, 14, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main</span>' : ""}${m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : ""}</div>`;
+    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" aria-selected="${f0?.root === root && f0.rel === path}" data-act="open-tree" data-id="${esc(path)}" data-fk="tree:${esc(path)}" style="padding-left:${6 + depth * 14}px"><span class="cv"></span>${SVG(FILE, 14, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${unsaved({ todoId: t.id, root, rel: path })}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main</span>' : ""}${m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : ""}</div>`;
   };
   let rows = [];
   if (S.changedOnly) rows = Object.keys(marks).sort().map((p) => fileRow(p, 0, true));
@@ -2660,12 +2667,7 @@ function renderFile(t) {
   const mode = f.mode, shown = f.root === "todo" ? f.abs : f.rel, m = f.mark && MARK[f.mark];
   const lines = f.text != null ? f.text.split("\n").length - (f.text.endsWith("\n") ? 1 : 0) : 0;
   const sizeText = f.deleted ? "" : f.binary || f.image || f.large ? fmtBytes(f.size) : `${fmtBytes(new Blob([f.text ?? ""]).size)} · ${plural(lines, "line")}`;
-  setHtml($("fileHead"), `<span class="p">${esc(shown)}</span>${sizeText ? `<span class="sz">${sizeText}</span>` : ""}
-    ${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}${dirty ? badge("Unsaved", "amber") : ""}
-    <span class="right">${btn("Copy path", "copy-path", { v: "ghost", dis: !f.abs })}${btn("Open folder", "open-folder", { v: "ghost", dis: !f.abs })}${btn("Add to message", "add-path", { dis: !f.abs })}${btn("Save", "save-file", { v: "primary", dis: locked || !dirty || f.deleted })}</span>`);
   const modes = f.binary || f.image || f.large ? [] : f.deleted ? [["diff", "Diff"]] : [["read", "Read"], ["edit", locked ? "Edit · locked" : "Edit"], ...(canDiff ? [["diff", "Diff"]] : [])];
-  $("fileTabsLine").hidden = !modes.length;
-  setHtml($("fileTabs"), tabs(modes, mode, "file-mode"));
   $("fileLocked").hidden = !locked || mode === "diff";
   const show = { read: false, md: false, code: false, diff: false, msg: false };
   if (!text0 && !f.deleted) show.msg = true;
@@ -2673,6 +2675,20 @@ function renderFile(t) {
   else if (md0 && mode === "read") show.read = true;
   else if (md0) show.md = true;
   else show.code = true;
+  // Diff rows first: the strip shows their +N −M.
+  const dd = show.diff ? f.diff : null, drows = dd && !dd.error && window.SBEditor ? SBEditor.lineDiff(dd.base, f.deleted ? "" : f.text) : null;
+  const dstat = drows && { a: drows.filter((r) => r.sign === "+").length, d: drows.filter((r) => r.sign === "-").length };
+  const seg = modes.length > 1 ? `<div class="seg" role="radiogroup" aria-label="File mode">${modes.map(([id, label]) =>
+    `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
+    : modes.length ? `<span class="ml">${modes[0][1]}</span>` : "";
+  const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${["write", "split", "preview"].map((v) =>
+    `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${v}</button>`).join("")}</div>` : "";
+  const words = show.md ? ` · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}` : "";
+  const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
+  const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
+  setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}">${esc(shown)}</span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}
+    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}
+      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
     destroyEditor();
@@ -2682,18 +2698,15 @@ function renderFile(t) {
   if (show.read) { destroyEditor(); setMd($("fileRead").querySelector(".md"), f.text); }
   if (show.md || show.code) mountEditor(f, show.md ? $("mdEd") : $("fileCode"), show.md ? "rw" : mode === "edit" ? "rw" : "ro", locked);
   if (show.md) {
-    setHtml($("mdTools"), Object.keys(TOOL_ICONS).map((k) => `<button type="button" data-act="md-tool" data-id="${k}" title="${TOOL_TITLES[k]}" aria-label="${TOOL_TITLES[k]}">${SVG(TOOL_ICONS[k], 15)}</button>`).join("")
-      + `<span class="gap"></span>${["write", "split", "preview"].map((v) => `<button type="button" class="v" data-act="md-view" data-id="${v}" aria-pressed="${S.mdView === v}">${v}</button>`).join("")}`);
+    setHtml($("mdTools"), Object.keys(TOOL_ICONS).map((k) => `<button type="button" data-act="md-tool" data-id="${k}" title="${TOOL_TITLES[k]}" aria-label="${TOOL_TITLES[k]}">${SVG(TOOL_ICONS[k], 15)}</button>`).join(""));
     $("mdSplit").className = "split" + (S.mdView === "write" ? " write" : S.mdView === "preview" ? " preview-only" : "");
     setMd($("filePreview"), f.text);
-    $("mdStatus").textContent = `${plural(lines, "line")} · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}`;
   }
   if (show.diff) {
     destroyEditor();
-    const dd = f.diff;
     if (!dd) setHtml($("fileDiff"), '<div style="padding:8px 16px" class="muted">Loading…</div>');
     else if (dd.error) setHtml($("fileDiff"), `<div style="padding:8px 16px">Can't open: ${esc(dd.error)}</div>`);
-    else if (window.SBEditor) setHtml($("fileDiff"), "<div>" + SBEditor.lineDiff(dd.base, f.deleted ? "" : f.text).map((r) =>
+    else if (drows) setHtml($("fileDiff"), "<div>" + drows.map((r) =>
       `<div class="dr${r.sign === "+" ? " add" : r.sign === "-" ? " del" : ""}"><span class="n">${r.a ?? ""}</span><span class="n">${r.b ?? ""}</span><span class="s">${r.sign === "-" ? "−" : r.sign === "+" ? "+" : ""}</span><span class="x">${esc(r.text)}</span></div>`).join("") + "</div>");
     else loadEditor().then(() => render());
   }
@@ -2713,8 +2726,10 @@ function mountEditor(f, host, rw, locked) {
   destroyEditor();
   host.innerHTML = "";
   const handle = SBEditor.create(host, { doc: f.text ?? "", name: f.name, readOnly: locked || rw === "ro", onChange: (text) => {
+    const was = isDirty(f);
     f.text = text; syncEdit(f);
-    renderFile(cur());   // header badges, preview and status bar; the editor itself is kept
+    if (was !== isDirty(f)) render();   // the file list's unsaved square too
+    else renderFile(cur());   // header strip and preview; the editor itself is kept
   } });
   S.cm = { key, handle, f };
 }
@@ -3120,6 +3135,7 @@ const ACTIONS = {
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
   "save-file": () => saveFile(),
+  "revert-file": () => S.file && discardFile(S.file),
   "file-mode": (id) => setFileMode(id),
   "pick-project": (id) => { S.projSel = Number(id); fillProjForm(); render(); },
   // 801: Rescan asks before it overwrites a profile the user edited.
