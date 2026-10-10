@@ -317,7 +317,11 @@ function messageOut(id: number) {
 
 function fileOut(f: { id: number; path: string; session_no: number | null }) {
   try {
-    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines: readFileSync(f.path, "utf8").trimEnd().split("\n").length, mtime: statSync(f.path).mtimeMs };
+    // Images, binaries and files over MAX_TEXT have no line count; the list shows their size instead (the same test as fileFacts).
+    const st = statSync(f.path), image = IMAGE_EXT.test(f.path) && !/\.svg$/i.test(f.path);
+    const buf = image || st.size > MAX_TEXT ? null : readFileSync(f.path);
+    const lines = buf && !buf.subarray(0, 8192).includes(0) ? buf.toString("utf8").trimEnd().split("\n").length : null;
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines, size: st.size, mtime: st.mtimeMs };
   } catch {
     return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines: null, mtime: null }; // deleted on disk
   }

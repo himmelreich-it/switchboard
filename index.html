@@ -312,8 +312,8 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .hovtip { display: none; }
 .hov:hover > .hovtip, .hov:focus-within > .hovtip { display: flex; }
 
-/* ---------- board (design v6) ---------- */
-.ov { max-width: 1440px; margin: 0 auto; padding: 16px 24px 56px; display: flex; flex-direction: column; gap: 28px; }
+/* ---------- board (design v7: full width; the backlog keeps a fixed width) ---------- */
+.ov { margin: 0 auto; padding: 16px 24px 56px; display: flex; flex-direction: column; gap: 28px; }
 .ov.backlog { max-width: 1100px; padding-top: 20px; gap: 16px; }
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .toolbar .filter { width: 220px; }
@@ -380,25 +380,24 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .pill > span:last-child { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pills.chat { flex-wrap: wrap; }
 .pills.chat .pill { height: 30px; flex: none; }
-.rows .pill { height: 26px; font-size: 12px; }
-/* idle rows and backlog rows: one card, rows separated by a line */
+/* idle cards (design v7): the run card's shape with a neutral top edge; the time turns into Remove on hover */
+.card.idle { gap: 8px; padding: 12px 14px; border-top-color: var(--border-strong); }
+.card.idle .card-meta { min-height: 28px; }
+.card.idle .card-meta > .sub { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.card.idle .card-meta > .right .mb-iconbtn { display: none; }
+.card.idle:hover .card-meta > .right .mb-iconbtn, .card.idle:focus-within .card-meta > .right .mb-iconbtn { display: inline-flex; }
+.card.idle:hover .card-meta > .right > .when, .card.idle:focus-within .card-meta > .right > .when { display: none; }
+.card.idle .tline { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.card.idle .tline > .sq { align-self: center; background: var(--accent-lime); }
+.card.idle .card-title { font-size: 14px; }
+.card.idle .last { font-size: 13px; line-height: 1.45; color: var(--text-secondary); text-wrap: pretty; }
+.card.idle .foot { margin-top: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.card.idle .foot > .chip { margin-left: auto; flex: none; display: flex; }
+.card.idle .pill { height: 26px; font-size: 12px; }
+/* backlog rows: one card, rows separated by a line */
 .rows { display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); overflow: hidden; }
-/* one grid for all rows, so the columns line up (the rows are subgrids; their padding comes out of the edge columns) */
-.rows.idle { display: grid; grid-template-columns: 68px minmax(0, 1fr) minmax(0, 1.3fr) auto 80px; }
-.rows.idle > .row-i { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; gap: 16px; align-items: center; min-height: 52px; padding: 8px 12px 8px 16px; cursor: pointer; transition: background var(--fast); }
 .rows > * + * { border-top: 1px solid var(--border-subtle); }
-.row-i:hover { background: var(--surface-2); }
 .num { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
-.row-i .tcol { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.row-i .tline { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; font-weight: 500; }
-.row-i .tline > .sq { background: var(--accent-lime); }
-.row-i .sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.row-i .lcol { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.row-i .last { font-size: 13px; color: var(--text-secondary); }
-.row-i .end { display: flex; justify-content: flex-end; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.row-i .end .mb-iconbtn { display: none; }
-.row-i:hover .end .mb-iconbtn, .row-i:focus-within .end .mb-iconbtn { display: inline-flex; }
-.row-i:hover .end > .when, .row-i:focus-within .end > .when { display: none; }
 .bl-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 16px; align-items: center; min-height: 52px; padding: 8px 12px 8px 16px; cursor: pointer; transition: background var(--fast); }
 .bl-row:hover { background: var(--surface-2); }
 .bl-row .t { font-size: 14px; line-height: 1.4; text-wrap: pretty; overflow-wrap: anywhere; }
@@ -413,7 +412,8 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .board-empty { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 20px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); font-size: 14px; color: var(--text-secondary); }
 
 /* ---------- operator panel (design v6) ---------- */
-#opPanel { width: 360px; flex: none; min-height: 0; display: flex; flex-direction: column; background: var(--surface-1); border-left: 1px solid var(--border-default); box-shadow: var(--shadow-2); }
+#opPanel { width: var(--pane-op, 360px); max-width: 60%; flex: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface-1); box-shadow: var(--shadow-2); }
+.pane-sep:has(+ #opPanel[hidden]) { display: none; }
 .op-head { flex: none; height: 48px; padding: 0 8px 0 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border-subtle); }
 .op-head > .t { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .op-head > .right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
@@ -440,8 +440,8 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .new-dlg .foot > .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
 /* ---------- focus view (design v6) ---------- */
-.focus-view { flex: 1; min-width: 0; min-height: 0; display: flex; justify-content: center; background: var(--bg-aurora); }
-.focus-sec { flex: 1; max-width: 1120px; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle); }
+.focus-view { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--bg-base); }
+.focus-sec { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-base); }
 .focus-head { flex: none; padding: 10px 20px 0; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border-subtle); }
 .fh1 { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .fh1 > .num { flex: none; font-size: 12px; color: var(--text-muted); }
@@ -500,7 +500,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 /* ---------- chat timeline (design v6) ---------- */
 .chatwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #chatLog { flex: 1; min-height: 0; overflow: auto; padding: 8px 20px 24px; }
-.tl { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; }
+.tl { display: flex; flex-direction: column; }
 .flist .empty { padding: 4px 8px; }
 .tl > .empty { padding: 16px 0; }
 .ses-div { display: flex; align-items: center; gap: 10px; padding: 16px 0 4px; }
@@ -626,7 +626,7 @@ pre.io.out { max-height: 240px; overflow: auto; color: var(--text-secondary); }
 
 /* ---------- approval panel and composer (design v6) ---------- */
 #approval { flex: none; padding: 12px 20px 0; border-top: 1px solid var(--border-subtle); }
-.appr { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: var(--surface-1); border: 1px solid var(--line-amber); border-top: 2px solid var(--accent-amber); border-radius: var(--radius-2); box-shadow: var(--shadow-2); }
+.appr { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; background: var(--surface-1); border: 1px solid var(--line-amber); border-top: 2px solid var(--accent-amber); border-radius: var(--radius-2); box-shadow: var(--shadow-2); }
 .appr > .hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; }
 .appr > .hd > .verb { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .appr > .hd > .path { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
@@ -644,7 +644,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .aopt.yes > .k { border-color: var(--text-on-primary); }
 .aopt.yes:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--text-on-primary); }
 .composer { flex: none; padding: 12px 20px 16px; }
-.composer > .in { position: relative; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.composer > .in { position: relative; display: flex; flex-direction: column; gap: 8px; }
 .cbox { display: flex; flex-direction: column; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-2); }
 .cbox:focus-within { border-color: var(--accent-lime); }
 .cbox > textarea { min-height: 48px; max-height: 200px; padding: 10px 12px; resize: vertical; background: transparent; border: none; outline: none; color: var(--text-primary); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
@@ -677,8 +677,12 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .cmd-list > .ft .kbd { padding: 0 5px; }
 
 /* ---------- files tab (items 101-110, design v6 layout) ---------- */
-.fileswrap { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
-.flist { min-height: 0; overflow: auto; padding: 12px 8px; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 2px; }
+/* a draggable vertical bar between two panes; double-click resets, arrow keys move it (design v7) */
+.pane-sep { position: relative; z-index: 5; flex: none; width: 1px; align-self: stretch; background: var(--border-subtle); cursor: col-resize; touch-action: none; transition: background var(--fast); }
+.pane-sep::before { content: ""; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px; }
+.pane-sep:hover, .pane-sep:focus-visible, .pane-sep.drag { outline: none; background: var(--accent-lime); }
+.fileswrap { flex: 1; min-height: 0; display: grid; grid-template-columns: min(var(--pane-tree, 260px), 50%) 1px minmax(0, 1fr); }
+.flist { min-width: 0; min-height: 0; overflow: auto; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
 .flist > .seg { margin: 0 0 8px; align-self: stretch; }
 .flist > .seg > button { flex: 1; justify-content: center; height: 24px; padding: 0 6px; font-size: 11px; }
 .flist .grp { padding: 10px 8px 4px; display: flex; align-items: center; gap: 8px; }
@@ -707,39 +711,44 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fpane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .fpane > .empty { padding: 16px 20px; }
 .root-note { padding: 8px 8px 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
-.fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px 16px; gap: 10px; }
-.file-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
-.file-head .p { min-width: 0; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
-.file-head .sz { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.file-head .mkl { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
-.file-head .right { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.fileview .tabs-line { display: flex; align-items: flex-end; gap: 12px; }
-.fileview .tabs-line .mb-tabs { flex: 1; min-width: 0; }
-.fileview .tabs-line .keys { display: flex; align-items: center; gap: 6px; padding-bottom: 10px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+/* the open file fills the pane: a header strip with the mode, path and actions, the body flush below it (design v7) */
+.fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fstrip { flex: none; height: 36px; padding: 0 8px 0 12px; display: flex; align-items: center; gap: 8px; min-width: 0; background: var(--surface-1); border-bottom: 1px solid var(--border-subtle); }
+.fstrip.sub { padding-left: 16px; }
+.fstrip .ml { flex: none; }
+.fstrip .hint { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.fstrip .seg { padding: 2px; }
+.fstrip .seg > button { height: 24px; padding: 0 8px; font-size: 11px; }
+.fstrip .p { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.fstrip .mkl { flex: none; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.fstrip .dirty, .fitem > .dirty, .tr > .dirty { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
+.fstrip .right { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; }
+.fstrip .meta { padding: 0 4px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.fstrip .mb-badge { flex: none; }
+.flock { flex: none; padding: 6px 16px; font-size: 12px; color: var(--accent-cyan); background: var(--tint-cyan); border-bottom: 1px solid var(--line-cyan); }
+.ffoot { flex: none; padding: 6px 16px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); }
 .file-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.md-host { flex: 1; min-height: 0; display: flex; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); overflow: hidden; }
-.md-read { flex: 1; min-width: 0; overflow: auto; padding: 14px 16px; }
-.code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.md-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.md-read { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; }
+.code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); }
 .code-host .cm-editor { flex: 1; min-height: 0; }
-.md-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); overflow: hidden; }
-.md-tools { flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border-subtle); }
+.md-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.md-tools { flex: none; height: 36px; display: flex; align-items: center; gap: 2px; padding: 0 6px; background: var(--surface-1); border-bottom: 1px solid var(--border-subtle); overflow: hidden; }
 .md-tools button { width: 28px; height: 26px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); cursor: pointer; }
 .md-tools button:hover { background: var(--surface-3); color: var(--text-primary); }
-.md-tools button[aria-pressed="true"] { color: var(--accent-lime); }
-.md-tools .gap { flex: 1; }
-.md-tools .v { width: auto; padding: 0 8px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
-.split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, var(--pane-split-a, 1fr)) 1px minmax(0, var(--pane-split-b, 1fr)); grid-template-rows: minmax(0, 1fr); }
 .split.write { grid-template-columns: minmax(0, 1fr); }
-.split.write > .preview { display: none; }
+.split.write > .preview, .split.write > .pane-sep, .split.preview-only > .pane-sep { display: none; }
 .split.preview-only { grid-template-columns: minmax(0, 1fr); }
 .split.preview-only > .ed { display: none; }
-.split > .ed { min-width: 0; min-height: 0; display: flex; overflow: hidden; }
-.split > .ed .cm-editor { flex: 1; }
-.preview { min-width: 0; overflow: auto; padding: 16px 20px; border-left: 1px solid var(--border-subtle); background: var(--surface-1); }
-.split.preview-only > .preview { border-left: 0; }
-.md-status { flex: none; display: flex; gap: 16px; padding: 4px 12px; background: var(--surface-2); border-top: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.fileview .dv { flex: 1; min-height: 0; }
-.file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
+.split > .ed { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ed-host { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--surface-inset); }
+.ed-host .cm-editor { flex: 1; }
+.preview { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.preview-in { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 40px; }
+.fileview .dv { flex: 1; min-height: 0; border: 0; border-radius: 0; }
+.fileview .dv > div { padding: 4px 0; }
+.file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 .file-msg img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
 /* ---------- terminals (items 111-117, design v6 layout) ---------- */
@@ -747,8 +756,8 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .term-info { flex: none; display: flex; align-items: flex-start; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border-subtle); font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
 .term-info > svg { flex: none; margin-top: 2px; }
 .term-info strong { font-weight: 600; color: var(--accent-violet); }
-.term-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
-.term-list { min-height: 0; overflow: auto; padding: 10px 8px; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 2px; }
+.term-body { flex: 1; min-height: 0; display: grid; grid-template-columns: min(var(--pane-term, 220px), 50%) 1px minmax(0, 1fr); }
+.term-list { min-width: 0; min-height: 0; overflow: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
 .titem { position: relative; min-height: 44px; padding: 6px 30px 6px 8px; display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-primary); }
 .titem:hover { background: var(--surface-2); }
 .titem[aria-selected="true"] { background: var(--surface-3); border-color: var(--border-default); }
@@ -802,7 +811,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .op-msg .md :is(p, ul, ol, pre, blockquote, table) { margin: 0 0 .5em; }
 
 /* ---------- settings (design v6) ---------- */
-.settings { max-width: 1120px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 24px; align-items: start; }
+.settings { padding: 24px; display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 24px; align-items: start; }
 .set-nav { display: flex; flex-direction: column; gap: 2px; }
 .set-sec { height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-secondary); font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .set-sec > span:first-child { flex: 1; }
@@ -847,7 +856,9 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 @media (max-width: 720px) {
   .settings, .proj-grid, .split { grid-template-columns: minmax(0, 1fr); }
   .split:not(.write):not(.preview-only) { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-  .preview { border-left: 0; border-top: 1px solid var(--border-subtle); }
+  .split > .pane-sep { display: none; }
+  .preview { border-top: 1px solid var(--border-subtle); }
+  .fstrip .meta, .fstrip .kbd { display: none; }
 }
 </style>
 </head>
@@ -901,27 +912,26 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 
       <div id="filesWrap" class="fileswrap" hidden>
         <div id="fileList" class="flist"></div>
+        <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize file list" title="Drag to resize · double-click to reset" tabindex="0" data-pane="tree"></div>
         <div class="fpane">
           <div id="filesEmpty" class="empty" hidden></div>
           <div id="fileView" class="fileview" hidden>
-            <div id="fileHead" class="file-head"></div>
-            <div id="fileTabsLine" class="tabs-line">
-              <div id="fileTabs" class="mb-tabs" role="tablist" aria-label="File mode"></div>
-              <span class="keys"><span class="kbd">⌘E</span>edit<span class="kbd" style="margin-left:6px">⌘S</span>save<span class="kbd" style="margin-left:6px">⌘F</span>find</span>
-            </div>
-            <span id="fileLocked" class="small" style="color:var(--accent-cyan)" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
+            <div id="fileHead" class="fstrip"></div>
+            <span id="fileLocked" class="flock" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
             <div class="file-body">
               <div id="fileRead" class="md-host" hidden><div class="md-read"><div class="md"></div></div></div>
               <div id="fileMd" class="md-edit" hidden>
-                <div id="mdTools" class="md-tools" role="toolbar" aria-label="Markdown"></div>
-                <div id="mdSplit" class="split"><div id="mdEd" class="ed"></div><div class="preview"><div id="filePreview" class="md"></div></div></div>
-                <div id="mdStatus" class="md-status"></div>
+                <div id="mdSplit" class="split">
+                  <div class="ed"><div id="mdTools" class="md-tools" role="toolbar" aria-label="Markdown"></div><div id="mdEd" class="ed-host"></div></div>
+                  <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize editor and preview" title="Drag to resize · double-click to reset" tabindex="0" data-pane="split"></div>
+                  <div class="preview"><div class="fstrip sub"><span class="ml">Preview</span><span class="hint">· updates as you type</span></div><div class="preview-in"><div id="filePreview" class="md"></div></div></div>
+                </div>
               </div>
               <div id="fileCode" class="code-host" hidden></div>
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
             </div>
-            <span id="fileFoot" class="small"></span>
+            <span id="fileFoot" class="ffoot"></span>
           </div>
         </div>
       </div>
@@ -931,6 +941,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
           <span>Shells run in the worktree and stay private. A <strong>Claude terminal</strong> is its own session with your settings. It can post to this chat, attach files and raise attention.</span></div>
         <div class="term-body">
           <div id="termStrip" class="term-list"></div>
+          <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize terminal list" title="Drag to resize · double-click to reset" tabindex="0" data-pane="term"></div>
           <div class="term-pane"><div id="termPanel"></div><div id="termHosts" class="term-hosts" hidden></div><div id="termExit" hidden></div><div id="termFoot" class="term-foot" hidden></div></div>
         </div>
       </div>
@@ -1027,6 +1038,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
  </main>
 
  <!-- The operator (items 54, 127): a side panel next to every view, ⌘K -->
+ <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize operator panel" title="Drag to resize · double-click to reset" tabindex="0" data-pane="op"></div>
  <aside id="opPanel" data-screen-label="Operator" aria-label="Operator" hidden>
   <div class="op-head">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/><circle cx="12" cy="12" r="2"/></svg>
@@ -1964,10 +1976,10 @@ function renderOverview() {
         <div class="sec-head"><span class="sq8" style="background:var(--accent-cyan)"></span><h2>Running</h2><span class="cnt" style="color:var(--accent-cyan)">${run.length}</span></div>
         ${run.length ? `<div class="grid-run">${run.map(runCard).join("")}</div>` : '<span class="empty">Nothing running.</span>'}
       </section>
-      ${idle.length ? `<section class="sec" aria-label="Idle">
-        <div class="sec-head"><span class="sq8" style="background:var(--text-muted)"></span><h2>Idle</h2><span class="cnt" style="color:var(--text-secondary)">${idle.length}</span></div>
-        <div class="rows idle">${idle.map(idleRow).join("")}</div>
-      </section>` : ""}`;
+      <section class="sec" aria-label="Idle">
+        <div class="sec-head"><span class="sq8" style="background:var(--text-muted)"></span><h2>Idle</h2><span class="cnt" style="color:var(--text-secondary)">${idle.length}</span><span class="sub">Turn ended. Pick it up again or remove it when it's done.</span></div>
+        ${idle.length ? `<div class="grid-run">${idle.map(idleCard).join("")}</div>` : '<span class="empty">Nothing idle.</span>'}
+      </section>`;
   }
   setHtml($("ov"), `<div class="toolbar">${filter}${hiddenNote}${newBtn}</div>${body}`);
 }
@@ -2061,16 +2073,16 @@ function runCard(t) {
     ${planSegs(t)}
   </div>`;
 }
-function idleRow(t) {
-  const last = lastWord(t), pr = prChip(t);
+function idleCard(t) {
+  const last = lastWord(t), pr = prChip(t), chip = pr ? pr.html : t.has_draft ? badge("Draft") : "", pills = pillsHtml(t, "card");
   const sub = [repoName(t), t.branch, agentsFound().length > 1 ? agentLabel(t.agent) : ""].filter(Boolean).join(" · ");
   const when = fmtTime(last?.at ?? t.updated_at);
-  return `<div class="row-i" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <span class="num">${tNum(t)}</span>
-    <div class="tcol"><span class="tline">${t.unread ? '<span class="sq" title="Unread"></span>' : ""}<span class="ellipsis">${esc(t.title)}</span></span><span class="sub ellipsis">${esc(sub)}</span></div>
-    <div class="lcol">${last ? `<span class="last ellipsis" title="${esc(last.body)}">${esc(last.body || last.files)}</span>` : ""}${pillsHtml(t, "row")}</div>
-    <span style="display:flex">${pr ? pr.html : t.has_draft ? badge("Draft") : ""}</span>
-    <span class="end"><span class="when">${esc(when)}</span><span title="Remove · restore it from the backlog" style="display:contents"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO">${SVG(TRASH, 15)}</button></span></span>
+  return `<div class="card idle" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="sub" title="${esc(sub)}">${esc(sub)}</span>
+      <span class="right"><span class="when">${esc(when)}</span><span title="Remove · restore it from the backlog" style="display:contents"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO">${SVG(TRASH, 15)}</button></span></span></div>
+    <div class="tline">${t.unread ? '<span class="sq" title="Unread"></span>' : ""}<span class="card-title clamp2">${esc(t.title)}</span></div>
+    ${last ? `<div class="last clamp2" title="${esc(last.body)}">${esc(last.body || last.files)}</div>` : ""}
+    ${pills || chip ? `<div class="foot">${pills}${chip ? `<span class="chip">${chip}</span>` : ""}</div>` : ""}
   </div>`;
 }
 
@@ -2572,6 +2584,8 @@ const FOLDER = '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.6
 const treeUsable = (t) => !!(t.worktree_path && t.git);   // registered and on disk (gitState reads it)
 // Item 101, design v6: the left column holds the root switch (TODO files, Worktree, Project) and its list; the file
 // opens on the right. On TODO files the worktree's changes are listed below the TODO's own files.
+// An amber square on a file with edits not saved yet (design v7); the open file's edits are in `edits` too (syncEdit).
+const unsaved = (f) => (edits[fileKey(f)] ? '<span class="dirty" title="Unsaved changes"></span>' : "");
 function renderFileList(t, d) {
   let root = S.fileRoot[t.id] ?? "todo";
   if (root === "worktree" && !treeUsable(t)) root = S.fileRoot[t.id] = "todo";
@@ -2584,12 +2598,12 @@ function renderFileList(t, d) {
   if (root === "todo") {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
     const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
-      : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.lines == null ? " disabled" : ""}>
-          ${markHtml(null)}<span class="nm">${esc(f.name)}</span><span class="mt">${f.lines == null ? "missing" : plural(f.lines, "line")}</span></button>`).join("");
+      : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
+          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
-        ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span><span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
+        ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span>${unsaved({ todoId: t.id, root: "worktree", rel })}<span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
     return setHtml($("fileList"), seg + `<span class="ml grp">TODO files</span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
       <span class="root-note">terminal/ and uploads/ are not listed</span>`);
   }
@@ -2604,7 +2618,7 @@ function renderFileList(t, d) {
   const fileRow = (path, depth, showDir) => {
     const m = marks[path], name = showDir ? basename(path) : path.split("/").pop();
     const dir = showDir && path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" aria-selected="${f0?.root === root && f0.rel === path}" data-act="open-tree" data-id="${esc(path)}" data-fk="tree:${esc(path)}" style="padding-left:${6 + depth * 14}px"><span class="cv"></span>${SVG(FILE, 14, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main</span>' : ""}${m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : ""}</div>`;
+    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" aria-selected="${f0?.root === root && f0.rel === path}" data-act="open-tree" data-id="${esc(path)}" data-fk="tree:${esc(path)}" style="padding-left:${6 + depth * 14}px"><span class="cv"></span>${SVG(FILE, 14, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${unsaved({ todoId: t.id, root, rel: path })}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main</span>' : ""}${m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : ""}</div>`;
   };
   let rows = [];
   if (S.changedOnly) rows = Object.keys(marks).sort().map((p) => fileRow(p, 0, true));
@@ -2653,12 +2667,7 @@ function renderFile(t) {
   const mode = f.mode, shown = f.root === "todo" ? f.abs : f.rel, m = f.mark && MARK[f.mark];
   const lines = f.text != null ? f.text.split("\n").length - (f.text.endsWith("\n") ? 1 : 0) : 0;
   const sizeText = f.deleted ? "" : f.binary || f.image || f.large ? fmtBytes(f.size) : `${fmtBytes(new Blob([f.text ?? ""]).size)} · ${plural(lines, "line")}`;
-  setHtml($("fileHead"), `<span class="p">${esc(shown)}</span>${sizeText ? `<span class="sz">${sizeText}</span>` : ""}
-    ${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}${dirty ? badge("Unsaved", "amber") : ""}
-    <span class="right">${btn("Copy path", "copy-path", { v: "ghost", dis: !f.abs })}${btn("Open folder", "open-folder", { v: "ghost", dis: !f.abs })}${btn("Add to message", "add-path", { dis: !f.abs })}${btn("Save", "save-file", { v: "primary", dis: locked || !dirty || f.deleted })}</span>`);
   const modes = f.binary || f.image || f.large ? [] : f.deleted ? [["diff", "Diff"]] : [["read", "Read"], ["edit", locked ? "Edit · locked" : "Edit"], ...(canDiff ? [["diff", "Diff"]] : [])];
-  $("fileTabsLine").hidden = !modes.length;
-  setHtml($("fileTabs"), tabs(modes, mode, "file-mode"));
   $("fileLocked").hidden = !locked || mode === "diff";
   const show = { read: false, md: false, code: false, diff: false, msg: false };
   if (!text0 && !f.deleted) show.msg = true;
@@ -2666,6 +2675,20 @@ function renderFile(t) {
   else if (md0 && mode === "read") show.read = true;
   else if (md0) show.md = true;
   else show.code = true;
+  // Diff rows first: the strip shows their +N −M.
+  const dd = show.diff ? f.diff : null, drows = dd && !dd.error && window.SBEditor ? SBEditor.lineDiff(dd.base, f.deleted ? "" : f.text) : null;
+  const dstat = drows && { a: drows.filter((r) => r.sign === "+").length, d: drows.filter((r) => r.sign === "-").length };
+  const seg = modes.length > 1 ? `<div class="seg" role="radiogroup" aria-label="File mode">${modes.map(([id, label]) =>
+    `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
+    : modes.length ? `<span class="ml">${modes[0][1]}</span>` : `<span class="ml">${f.image ? "Image" : f.large ? "Large file" : "Binary"}</span>`;
+  const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${["write", "split", "preview"].map((v) =>
+    `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${v}</button>`).join("")}</div>` : "";
+  const words = show.md ? ` · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}` : "";
+  const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
+  const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
+  setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}
+    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}
+      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
     destroyEditor();
@@ -2675,25 +2698,23 @@ function renderFile(t) {
   if (show.read) { destroyEditor(); setMd($("fileRead").querySelector(".md"), f.text); }
   if (show.md || show.code) mountEditor(f, show.md ? $("mdEd") : $("fileCode"), show.md ? "rw" : mode === "edit" ? "rw" : "ro", locked);
   if (show.md) {
-    setHtml($("mdTools"), Object.keys(TOOL_ICONS).map((k) => `<button type="button" data-act="md-tool" data-id="${k}" title="${TOOL_TITLES[k]}" aria-label="${TOOL_TITLES[k]}">${SVG(TOOL_ICONS[k], 15)}</button>`).join("")
-      + `<span class="gap"></span>${["write", "split", "preview"].map((v) => `<button type="button" class="v" data-act="md-view" data-id="${v}" aria-pressed="${S.mdView === v}">${v}</button>`).join("")}`);
+    setHtml($("mdTools"), Object.keys(TOOL_ICONS).map((k) => `<button type="button" data-act="md-tool" data-id="${k}" title="${TOOL_TITLES[k]}" aria-label="${TOOL_TITLES[k]}">${SVG(TOOL_ICONS[k], 15)}</button>`).join(""));
     $("mdSplit").className = "split" + (S.mdView === "write" ? " write" : S.mdView === "preview" ? " preview-only" : "");
     setMd($("filePreview"), f.text);
-    $("mdStatus").textContent = `${plural(lines, "line")} · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}`;
   }
   if (show.diff) {
     destroyEditor();
-    const dd = f.diff;
     if (!dd) setHtml($("fileDiff"), '<div style="padding:8px 16px" class="muted">Loading…</div>');
     else if (dd.error) setHtml($("fileDiff"), `<div style="padding:8px 16px">Can't open: ${esc(dd.error)}</div>`);
-    else if (window.SBEditor) setHtml($("fileDiff"), "<div>" + SBEditor.lineDiff(dd.base, f.deleted ? "" : f.text).map((r) =>
+    else if (drows) setHtml($("fileDiff"), "<div>" + drows.map((r) =>
       `<div class="dr${r.sign === "+" ? " add" : r.sign === "-" ? " del" : ""}"><span class="n">${r.a ?? ""}</span><span class="n">${r.b ?? ""}</span><span class="s">${r.sign === "-" ? "−" : r.sign === "+" ? "+" : ""}</span><span class="x">${esc(r.text)}</span></div>`).join("") + "</div>");
     else loadEditor().then(() => render());
   }
   const base = f.diff?.base_sha ? f.diff.base_sha.slice(0, 7) : "";
+  $("fileFoot").hidden = show.msg || !$("fileLocked").hidden;   // nothing to save, or the lock note says it already
   $("fileFoot").textContent = mode === "diff" ? `Diff · ${f.diff?.base_label ?? "merge-base"} ${base} (origin/HEAD) → ${dirty ? "your unsaved edits" : "on disk"} · read-only`
     : f.root === "todo" ? "Saving writes to disk only. The agent isn't notified. Tell it in chat when you want it to act."
-    : f.root === "worktree" ? (locked ? "Read-only while the agent runs. Read mode follows the file as it changes." : "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it.")
+    : f.root === "worktree" ? "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it."
     : "Main checkout. Editable any time; a save warns if the file changed on disk since you opened it.";
 }
 const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed(1)} KB` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
@@ -2706,8 +2727,10 @@ function mountEditor(f, host, rw, locked) {
   destroyEditor();
   host.innerHTML = "";
   const handle = SBEditor.create(host, { doc: f.text ?? "", name: f.name, readOnly: locked || rw === "ro", onChange: (text) => {
+    const was = isDirty(f);
     f.text = text; syncEdit(f);
-    renderFile(cur());   // header badges, preview and status bar; the editor itself is kept
+    if (was !== isDirty(f)) render();   // the file list's unsaved square too
+    else renderFile(cur());   // header strip and preview; the editor itself is kept
   } });
   S.cm = { key, handle, f };
 }
@@ -2856,7 +2879,8 @@ function ensureXterm(x, t) {
   });
   return v;
 }
-addEventListener("resize", () => { for (const v of xterms.values()) if (!v.host.hidden && v.fit) v.fit.fit(); });
+const fitTerms = () => { for (const v of xterms.values()) if (!v.host.hidden && v.fit) v.fit.fit(); };
+addEventListener("resize", fitTerms);
 function renderTermFoot() {
   const t = cur(), tid = t && S.termSel[t.id], v = tid && xterms.get(tid), x = v?.info, foot = $("termFoot");
   foot.hidden = !x || !!S.cform;
@@ -3010,7 +3034,7 @@ const ACTIONS = {
   // A pill: a click sends its text as the user's message; ⇧-click puts it in the composer to edit first.
   suggestion: async (id, el, e) => {
     const [tid, i] = id.split(":").map(Number);
-    const t = el.closest(".card, .row-i") ? S.todos.find((x) => x.id === tid) : cur();
+    const t = el.closest(".card") ? S.todos.find((x) => x.id === tid) : cur();
     const text = t?.suggestions?.[i];
     if (!text) return;
     if (e?.shiftKey) {
@@ -3112,6 +3136,7 @@ const ACTIONS = {
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
   "save-file": () => saveFile(),
+  "revert-file": () => S.file && discardFile(S.file),
   "file-mode": (id) => setFileMode(id),
   "pick-project": (id) => { S.projSel = Number(id); fillProjForm(); render(); },
   // 801: Rescan asks before it overwrites a profile the user edited.
@@ -3146,6 +3171,56 @@ document.addEventListener("click", (e) => {
   if (!el || el.disabled) return;
   ACTIONS[el.dataset.act]?.(el.dataset.id, el, e);
 });
+// Splitters (design v7): the widths of the file list, editor and preview, terminal list and operator panel. They live
+// in CSS variables on :root, so a re-render keeps them, and in localStorage. split is the editor's share of the row.
+const PANE_DEF = { tree: 260, split: 0.5, term: 220, op: 360 };
+const panes = { ...PANE_DEF };
+try { Object.assign(panes, JSON.parse(localStorage.getItem("switchboard-panes") || "{}")); } catch (e) {}
+function applyPanes() {
+  const st = document.documentElement.style;
+  for (const k of ["tree", "term", "op"]) st.setProperty(`--pane-${k}`, Math.round(panes[k]) + "px");
+  st.setProperty("--pane-split-a", panes.split + "fr");
+  st.setProperty("--pane-split-b", 1 - panes.split + "fr");
+}
+applyPanes();
+// The box a bar measures against, and how far it may go: lists up to half of it, the operator up to 60% of the window.
+const paneBox = (sep) => (sep.dataset.pane === "op" ? $("app") : sep.parentElement).getBoundingClientRect();
+function paneLimits(key, w) {
+  if (key === "split") return [Math.min(0.5, 300 / Math.max(1, w)), Math.max(0.5, 1 - 240 / Math.max(1, w))];
+  return key === "op" ? [280, Math.max(280, w * 0.6)] : [160, Math.max(160, w * 0.5)];
+}
+function setPane(key, v, save) {
+  panes[key] = v;
+  applyPanes();
+  requestAnimationFrame(fitTerms);
+  if (save) try { localStorage.setItem("switchboard-panes", JSON.stringify(panes)); } catch (e) {}
+}
+document.addEventListener("pointerdown", (e) => {
+  const sep = e.target.closest?.(".pane-sep");
+  if (!sep || e.button !== 0) return;
+  e.preventDefault();
+  const key = sep.dataset.pane, r = paneBox(sep), [lo, hi] = paneLimits(key, r.width);
+  const move = (ev) => setPane(key, Math.max(lo, Math.min(hi, key === "op" ? r.right - ev.clientX : key === "split" ? (ev.clientX - r.left) / r.width : ev.clientX - r.left)));
+  const up = () => {
+    removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+    document.body.style.cursor = document.body.style.userSelect = "";
+    sep.classList.remove("drag");
+    setPane(key, panes[key], true);
+  };
+  addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+  document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none";
+  sep.classList.add("drag");
+});
+document.addEventListener("dblclick", (e) => { const sep = e.target.closest?.(".pane-sep"); if (sep) setPane(sep.dataset.pane, PANE_DEF[sep.dataset.pane], true); });
+document.addEventListener("keydown", (e) => {
+  const sep = e.target.closest?.(".pane-sep"), d = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+  if (!sep || !d) return;
+  e.preventDefault();
+  const key = sep.dataset.pane, [lo, hi] = paneLimits(key, paneBox(sep).width);
+  const step = (key === "split" ? 0.02 : 16) * (e.shiftKey ? 4 : 1) * (key === "op" ? -d : d);   // the operator bar grows the panel leftwards
+  setPane(key, Math.max(lo, Math.min(hi, panes[key] + step)), true);
+});
+
 document.addEventListener("keydown", (e) => {
   const k = (e.key || "").toLowerCase(), mod = modKey(e);
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
