@@ -719,7 +719,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fstrip .hint { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
 .fstrip .seg { padding: 2px; }
 .fstrip .seg > button { height: 24px; padding: 0 8px; font-size: 11px; }
-.fstrip .p { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.fstrip .p { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
 .fstrip .mkl { flex: none; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .fstrip .dirty, .fitem > .dirty, .tr > .dirty { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
 .fstrip .right { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; }
@@ -2598,8 +2598,8 @@ function renderFileList(t, d) {
   if (root === "todo") {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
     const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
-      : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.lines == null ? " disabled" : ""}>
-          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}<span class="mt">${f.lines == null ? "missing" : plural(f.lines, "line")}</span></button>`).join("");
+      : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
+          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
@@ -2680,13 +2680,13 @@ function renderFile(t) {
   const dstat = drows && { a: drows.filter((r) => r.sign === "+").length, d: drows.filter((r) => r.sign === "-").length };
   const seg = modes.length > 1 ? `<div class="seg" role="radiogroup" aria-label="File mode">${modes.map(([id, label]) =>
     `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
-    : modes.length ? `<span class="ml">${modes[0][1]}</span>` : "";
+    : modes.length ? `<span class="ml">${modes[0][1]}</span>` : `<span class="ml">${f.image ? "Image" : f.large ? "Large file" : "Binary"}</span>`;
   const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${["write", "split", "preview"].map((v) =>
     `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${v}</button>`).join("")}</div>` : "";
   const words = show.md ? ` · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}` : "";
   const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
-  setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}">${esc(shown)}</span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}
+  setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}
     <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}
       ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
@@ -2711,9 +2711,10 @@ function renderFile(t) {
     else loadEditor().then(() => render());
   }
   const base = f.diff?.base_sha ? f.diff.base_sha.slice(0, 7) : "";
+  $("fileFoot").hidden = show.msg || !$("fileLocked").hidden;   // nothing to save, or the lock note says it already
   $("fileFoot").textContent = mode === "diff" ? `Diff · ${f.diff?.base_label ?? "merge-base"} ${base} (origin/HEAD) → ${dirty ? "your unsaved edits" : "on disk"} · read-only`
     : f.root === "todo" ? "Saving writes to disk only. The agent isn't notified. Tell it in chat when you want it to act."
-    : f.root === "worktree" ? (locked ? "Read-only while the agent runs. Read mode follows the file as it changes." : "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it.")
+    : f.root === "worktree" ? "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it."
     : "Main checkout. Editable any time; a save warns if the file changed on disk since you opened it.";
 }
 const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed(1)} KB` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
