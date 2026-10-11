@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, topicIntro, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, topicIntro, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
   type Ctx, type Permission, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -277,10 +277,46 @@ export async function stopAll() {
 
 // Marks the messages delivered to the live session and returns their bodies with the paths of their attachments, oldest first.
 function take(todoId: number | null, state: "pending" | "queued") {
+  return takeMessages(todoId, state).bodies;
+}
+function takeMessages(todoId: number | null, state: "pending" | "queued") {
   const msgs = db.query("SELECT id, body FROM messages WHERE todo_id IS ? AND state = ? ORDER BY id").all(todoId, state) as { id: number; body: string }[];
   const at = now(), no = liveSessionNo(todoId);
   for (const m of msgs) db.run("UPDATE messages SET state = 'delivered', delivered_at = ?, session_no = ? WHERE id = ?", [at, no, m.id]);
-  return msgs.map((m) => withAttachments(m.body, attachmentsOf(m.id).map((a) => a.path)));
+  return { ids: msgs.map((m) => m.id), bodies: msgs.map((m) => withAttachments(m.body, attachmentsOf(m.id).map((a) => a.path))) };
+}
+
+// Item 20: at a tool boundary the queued messages go to the running turn, as one steer, and the agent reads them at
+// its next step. They are marked delivered first, so the run's end does not send them again meanwhile. When the turn
+// did not take them (it just ended, or the agent cannot steer) they are queued again and go out as the next prompt.
+// While a permission request is open they wait: the user answers it first (item 132).
+const steering = new Set<number>();
+// The last steer of the running turn: its messages and its `steered` event, for a Stop before the agent read them.
+const steered = new Map<number, { ids: number[]; eventId: number }>();
+function requeue(ids: number[]) {
+  const back = db.prepare("UPDATE messages SET state = 'queued', delivered_at = NULL, session_no = NULL WHERE id = ?");
+  for (const id of ids) back.run(id);
+}
+async function steerQueued(todoId: number, agent: Agent) {
+  if (steering.has(todoId) || pending.has(todoId) || interrupting.has(todoId) || !running.has(todoId)) return;
+  const queued = (db.query("SELECT COUNT(*) AS n FROM messages WHERE todo_id = ? AND state = 'queued'").get(todoId) as { n: number }).n;
+  if (!queued) return;
+  steering.add(todoId);
+  const { ids, bodies } = takeMessages(todoId, "queued");
+  let took = false, error = "";
+  try {
+    took = await agent.live.steer(deliveryPrompt(null, bodies));
+  } catch (e: any) {
+    error = e?.message ?? String(e);
+  }
+  steering.delete(todoId);
+  if (took) {
+    steered.set(todoId, { ids, eventId: addEvent(todoId, "steered", "user", bodies.join("\n\n")) });
+    return;
+  }
+  requeue(ids);
+  addEvent(todoId, "steer declined", "app", error || "no turn running");
+  deliver(todoId, "queued messages");
 }
 
 // The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
@@ -353,6 +389,10 @@ function parkAgent(key: Key) {
 function turnState(todo: number | null, onDenied: (name: string, input: any, reason: string) => void, actor: "agent" | "operator" = "agent") {
   const calls = new Map<string, { meta: ToolMeta; eventId: number | null }>();
   const t = { text: "", tools: 0, ctx: null as Ctx | null };
+  // The tool calls the agent made together (no text or thinking in between), for the tool boundary of item 20.
+  const batch = new Set<string>();
+  let afterText = true;
+  const hooks = { boundary: null as null | (() => void) };
   let buf: { kind: "say" | "thought"; text: string } | null = null;
   let planEvent: number | null = null;
   let streamTimer: Timer | null = null;
@@ -375,6 +415,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
     const kind = u.sessionUpdate === "agent_message_chunk" ? "say" : u.sessionUpdate === "agent_thought_chunk" ? "thought" : null;
     if (kind && u.content?.type === "text") {
       if (buf && buf.kind !== kind) flush(true);
+      afterText = true;
       buf ??= { kind, text: "" };
       buf.text += u.content.text;
       if (kind === "say") t.text += u.content.text;
@@ -398,6 +439,9 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
       const meta = toolMeta(null, u);
       c = { meta, eventId: todo === null ? null : addEvent(todo, "tool", actor, toolLine(meta.name, meta.input), meta) };
       calls.set(u.toolCallId, c);
+      if (afterText) batch.clear();
+      afterText = false;
+      batch.add(u.toolCallId);
       if (todo !== null) setTodo(todo, { last_tool: meta.name }, false);
     } else {
       c.meta = toolMeta(c.meta, u);
@@ -406,6 +450,8 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
     // A denial (a settings rule or the auto mode classifier) ends the call as failed with the reason in _meta (spike 6).
     const denial = u.status === "failed" && u._meta?.claudeCode?.toolResponse?.decisionReasonType;
     if (denial) onDenied(c.meta.name, c.meta.input, u._meta.claudeCode.toolResponse.decisionReason ?? u._meta.claudeCode.toolResponse.message ?? "");
+    if (u.sessionUpdate === "tool_call_update" && (u.status === "completed" || u.status === "failed")
+      && atToolBoundary([...batch].map((id) => calls.get(id)?.meta.status))) hooks.boundary?.();
   };
   // The turn ended: thinking still open is written; the text is the result. The live item is cleared. A tool call
   // that never got a final status (a server tool such as advisor, or one cut off by an interrupt) is marked ended.
@@ -419,7 +465,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
     }
     if (todo !== null) emit({ type: "stream", id: todo, item: null });
   };
-  return { t, onUpdate, finish };
+  return { t, hooks, onUpdate, finish };
 }
 
 // ---------- workers ----------
@@ -625,6 +671,7 @@ function workerTurn(todoId: number, agent: Agent) {
     addEvent(todoId, "attention raised", "app", `${name} denied`);
   };
   const turn = turnState(todoId, deny);
+  turn.hooks.boundary = () => void steerQueued(todoId, agent);
   const ctx = todoRow(todoId)!.ctx;
   turn.t.ctx = ctx ? JSON.parse(ctx) : null;
   agent.sink.s = {
@@ -655,6 +702,14 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   if (turn.t.ctx?.used) setTodo(todoId, { ctx: JSON.stringify({ ...turn.t.ctx, turns: turn.t.ctx.turns + 1 }) }, false);
   if (text) addEvent(todoId, "result", "agent", text, { duration_ms: Math.round(performance.now() - started), tools: turn.t.tools });
   if (stopped) addEvent(todoId, "interrupted", stopped);
+  // Stopped right after a steer, before the agent did anything more: it never read the messages, so they are queued
+  // again and go out right after, like the other queued messages (item 129).
+  const last = steered.get(todoId);
+  steered.delete(todoId);
+  if (stopped && last && !text && !db.query("SELECT 1 FROM events WHERE todo_id = ? AND id > ? AND kind IN ('say', 'thought', 'tool')").get(todoId, last.eventId)) {
+    requeue(last.ids);
+    addEvent(todoId, "steer undone", "app", "stopped before the agent read the message");
+  }
   if (error && !stopped) {
     addMessage(todoId, "app", cutToTwoLines(error));
     addEvent(todoId, "error", "app", error);
