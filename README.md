@@ -1,6 +1,6 @@
 # switchboard
 
-Local web app where every TODO runs as one or more Claude Code sessions: capture TODOs across projects in a backlog,
+Local web app where every TODO runs as one or more Claude Code sessions: capture TODOs across topics in a backlog,
 start each one when ready, steer it with short chat messages, start a fresh session when a step is done, browse and
 edit the files of its worktree, and open terminals in it. A pinned operator session answers questions about all
 TODOs and acts only when told. Spec: `designs/feature-spec-switchboard.md`.
@@ -37,8 +37,10 @@ There is no login shell on Windows: the app inherits your user environment, wher
 PATH. On Windows and Linux the app's title bar holds the window controls, like VS Code; there is no menu bar, but
 Alt+, still opens Settings.
 
-Needs a Claude Code login. Agents run with your normal Claude Code settings, in auto permission mode. Projects are
-set up in Settings › Projects (the gear, or ⌘,). Shortcuts written with ⌘ use Alt on Linux and Windows.
+Needs a Claude Code login. Agents run with your normal Claude Code settings, in auto permission mode. Topics are
+set up in Settings › Topics (the gear, or ⌘,). A topic is one folder, a git repository or not: agents start
+there, and only a git repository gets worktrees, branches and pull requests. In the code and the database a topic is
+still a project. Shortcuts written with ⌘ use Alt on Linux and Windows.
 Data lives in `~/.switchboard/` (`SWITCHBOARD_HOME` to change): `db.sqlite`, `token` while the server runs, and
-`data/<project-slug>/<todo-id>/` for the agents' files. On first start, projects are imported from
+`data/<todo-id>/` for the agents' files. On first start, topics are imported from
 `~/.auto-coder/db.sqlite`.

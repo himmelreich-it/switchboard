@@ -953,28 +953,28 @@ pre.cmd > .dollar { color: var(--accent-lime); }
   <div id="vSettings" class="view" hidden>
    <div class="settings">
     <nav class="set-nav" aria-label="Settings sections">
-      <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Repos</span><span id="cProjects" class="n">0</span></button>
+      <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Topics</span><span id="cProjects" class="n">0</span></button>
       <button type="button" id="agentsNav" class="set-sec" data-act="set-sec" data-id="agents"><span>Agents</span><span id="cAgents" class="n">0</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="runs"><span>Runs</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
     </nav>
     <div id="secProjects" class="set-main">
-      <div class="set-title"><h2>Repos</h2><span>One folder per repo. The operator picks a TODO's repo when you start it; its agents start there.</span></div>
+      <div class="set-title"><h2>Topics</h2><span>A topic is where TODOs belong: one folder, a git repository or not. The operator picks a TODO's topic when you start it; its agents start in the topic's folder.</span></div>
       <div class="proj-grid">
         <div class="proj-side">
           <div id="projList" class="proj-list"></div>
-          <button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="new-project" style="align-self:flex-start">New repo</button>
-          <button type="button" id="scanAll" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="scan-all" style="align-self:flex-start" hidden title="Write a profile for every repo that has none">Scan all</button>
+          <button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="new-project" style="align-self:flex-start">New topic</button>
+          <button type="button" id="scanAll" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="scan-all" style="align-self:flex-start" hidden title="Write a profile for every topic that has none">Scan all</button>
         </div>
         <form id="projForm" class="proj-main">
           <div class="scard">
-            <span class="t">Repo</span>
+            <span class="t">Topic</span>
             <div class="fgrid">
               <div class="mb-field"><label class="mb-field__label" for="pName">Name</label><input id="pName" class="mb-input" autocomplete="off"></div>
-              <div class="mb-field"><label class="mb-field__label" for="pPath">Folder</label><input id="pPath" class="mb-input" autocomplete="off" placeholder="~/code/my-repo"><span id="pPathHint" class="mb-field__hint"></span></div>
+              <div class="mb-field"><label class="mb-field__label" for="pPath">Folder</label><input id="pPath" class="mb-input" autocomplete="off" placeholder="~/code/my-project"><span id="pPathHint" class="mb-field__hint"></span></div>
             </div>
-            <div class="mb-field"><label class="mb-field__label" for="pRepo">Repository</label><input id="pRepo" class="mb-input" readonly><span class="mb-field__hint">Read from git remote get-url origin.</span></div>
-            <div class="mb-field"><label class="mb-field__label" for="pPrompt">Repo prompt</label><textarea id="pPrompt" class="mb-textarea" rows="3"></textarea><span class="mb-field__hint">Added to every session's instructions in this repo, after the app contract.</span></div>
+            <div class="mb-field"><label class="mb-field__label" for="pRepo">Git remote</label><input id="pRepo" class="mb-input" readonly><span class="mb-field__hint">Read from git remote get-url origin.</span></div>
+            <div class="mb-field"><label class="mb-field__label" for="pPrompt">Topic prompt</label><textarea id="pPrompt" class="mb-textarea" rows="3"></textarea><span class="mb-field__hint">Added to every session's instructions in this topic, after the app contract.</span></div>
             <div class="mb-field"><label class="mb-field__label" for="pProfile">Profile</label><textarea id="pProfile" class="mb-textarea" rows="6"></textarea><span id="pProfileHint" class="mb-field__hint"></span></div>
           </div>
           <div class="scard cyan">
@@ -992,7 +992,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
           <span id="projErr" class="mb-field__error" role="alert"></span>
           <div style="display:flex; justify-content:flex-end;"><button type="submit" id="projSave" class="mb-btn mb-btn--primary mb-btn--md" disabled>Save changes</button></div>
           <div class="scard">
-            <div class="tt"><span class="t">App contract</span><span>Every agent gets this before the repo prompt. {artifact_dir} becomes the TODO's artifact folder. Not editable.</span></div>
+            <div class="tt"><span class="t">App contract</span><span>Every agent gets this before the topic prompt. {artifact_dir} becomes the TODO's artifact folder. Not editable.</span></div>
             <pre id="contract" class="box" style="color:var(--text-secondary);"></pre>
           </div>
         </form>
@@ -1063,7 +1063,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
     <div class="mb-field">
       <label class="mb-field__label" for="newText">First instruction</label>
       <textarea id="newText" class="mb-textarea" rows="5" placeholder="Describe the task, paste a ticket, or write 'review PR #482'."></textarea>
-      <span id="newNote" class="mb-field__hint">Paste images with ⌘V. Lands in the backlog. The operator picks the repo when you start it.</span>
+      <span id="newNote" class="mb-field__hint">Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.</span>
       <div id="newFiles" class="atts"></div>
     </div>
     <div class="foot">
@@ -1149,9 +1149,9 @@ const ico = (k, size = 13, color = "var(--text-muted)") => SVG(I[KIND_ICON[k] ??
 const DOTS = (size = 15) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">${I.dots}</svg>`;
 const mmss = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const tNum = (t) => `T-${t.id}`;
-// 801: the TODO's repo as the UI names it. Before routing it has none yet; after, "no repo" means thinking only.
-const repoName = (t) => t.project_name ?? (t.routed_at ? "no repo" : "");
-// Change repo: while no worktree is registered, no run or routing runs, and no terminal runs (the server checks too).
+// 801: the TODO's topic as the UI names it. Before routing it has none yet; after, "no topic" means thinking only.
+const repoName = (t) => t.project_name ?? (t.routed_at ? "no topic" : "");
+// Change topic: while no worktree is registered, no run or routing runs, and no terminal runs (the server checks too).
 const canChangeRepo = (t) => !t.worktree_path && t.status !== "running" && !t.removed_at;
 const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "");
 
@@ -1248,7 +1248,7 @@ const S = {
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
   // design v6
   opOpen: false, opUnread: false,       // the operator side panel (⌘K), kept in localStorage; a reply arrived while it was closed
-  pop: null,                            // the one open popover or menu: "card:<id>", "more", "repo", "session"
+  pop: null,                            // the one open popover or menu: "card:<id>", "more", "repo" (the topic chip), "session"
   newOpen: false,                       // the New TODO dialog (N)
   removedOpen: false,                   // the Removed list under the backlog
   openWork: new Map(),                  // work group key -> open/closed as the user set it (default: open while live or with the transcript on)
@@ -1274,9 +1274,9 @@ const opLog = $("opLog"), chatLog = $("chatLog"), pName = $("pName"), pPath = $(
 
 const live = () => S.todos.filter((t) => !t.removed_at);
 const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.todos.find((t) => t.id === S.sel)) || null;
-// A saved filter for a repo that is gone (or not loaded yet) shows all, without forgetting the pick. "none": the
-// TODOs without a repo (801).
-const filterProject = () => (S.filter === "none" ? { id: "none", name: "No repo" } : S.projects.find((p) => String(p.id) === S.filter) ?? null);
+// A saved filter for a topic that is gone (or not loaded yet) shows all, without forgetting the pick. "none": the
+// TODOs without a topic (801).
+const filterProject = () => (S.filter === "none" ? { id: "none", name: "No topic" } : S.projects.find((p) => String(p.id) === S.filter) ?? null);
 const inFilter = (t) => { const p = filterProject(); return !p || (p.id === "none" ? t.project_id == null : t.project_id === p.id); };
 // P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf).
 const laneOf = (t) => (t.status === "running" && t.permission ? "waiting" : t.status);
@@ -1298,7 +1298,7 @@ const modeChoices = (agent, t) => (agent || "claude") === "claude" ? Object.entr
 const modeOptions = (value, projectDefault, agent, t) => {
   const claude = (agent || "claude") === "claude", choices = modeChoices(agent, t);
   const name = (v) => choices.find(([x]) => x === v)?.[1] ?? v;
-  const first = projectDefault !== undefined ? [["", `Repo's (${projectDefault ? name(projectDefault) : claude ? MODES.auto : "agent's own"})`]] : claude ? [] : [["", "Agent's own"]];
+  const first = projectDefault !== undefined ? [["", `Topic's (${projectDefault ? name(projectDefault) : claude ? MODES.auto : "agent's own"})`]] : claude ? [] : [["", "Agent's own"]];
   return first.concat(choices).map(([v, l]) => `<option value="${esc(v)}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
 };
 // P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
@@ -1487,7 +1487,7 @@ function nextWaiting() {
   const next = i >= 0 ? (wl.length > 1 ? wl[(i + 1) % wl.length] : null) : wl[0];
   if (next) return select(next.id);
   const other = live().filter((t) => laneOf(t) === "waiting" && !inFilter(t)).length;
-  if (other) toast("info", "Nothing waiting in " + filterProject().name, `${other} waiting in other repos. Show all to see them.`);
+  if (other) toast("info", "Nothing waiting in " + filterProject().name, `${other} waiting in other topics. Show all to see them.`);
   else toast("muted", i >= 0 ? "Nothing else waits on you." : "Nothing waits on you.");
 }
 function toggleOperator(open = !S.opOpen) {
@@ -1577,7 +1577,7 @@ async function addTodo(start = false) {
   render();
   const files = uploads.new ?? [];
   try {
-    const agent = agentsFound().length > 1 ? newAgent.value : null;   // "": the repo's default, once routing picks it
+    const agent = agentsFound().length > 1 ? newAgent.value : null;   // "": the topic's default, once routing picks it
     const t = await call("POST", "/api/todos", { instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}) });
     newText.value = "";
     S.newOpen = false;
@@ -1612,16 +1612,16 @@ async function saveEdit() {
     render();
   }
 }
-// 801: Change repo while the TODO has no worktree, and a click on one of the operator's options. pid null: no repo.
+// 801: Change topic while the TODO has no worktree, and a click on one of the operator's options. pid null: no topic.
 async function setRepo(id, pid) {
-  const name = pid == null ? "No repo" : S.projects.find((x) => x.id === pid)?.name ?? "repo";
+  const name = pid == null ? "No topic" : S.projects.find((x) => x.id === pid)?.name ?? "topic";
   try {
-    const t = await call("POST", `/api/todos/${id}/repo`, { project_id: pid });
-    const where = pid == null ? "without a repo" : "in " + name;
-    if (t.status === "not_started") toast("success", "Repo set", `Session 1 starts ${where} when you start the TODO.`);
-    else if (t.session_count) toast("success", "Repo changed", `Your next message starts session ${t.session_count + 1} ${where}.`);
-    else toast("success", pid == null ? "No repo" : "Runs in " + name, "Session 1 is starting there.");
-  } catch (e) { toast("danger", "Repo not changed", e.message); }
+    const t = await call("POST", `/api/todos/${id}/topic`, { project_id: pid });
+    const where = pid == null ? "without a topic" : "in " + name;
+    if (t.status === "not_started") toast("success", "Topic set", `Session 1 starts ${where} when you start the TODO.`);
+    else if (t.session_count) toast("success", "Topic changed", `Your next message starts session ${t.session_count + 1} ${where}.`);
+    else toast("success", pid == null ? "No topic" : "Runs in " + name, "Session 1 is starting there.");
+  } catch (e) { toast("danger", "Topic not changed", e.message); }
   need("detail", "todos");
 }
 // Items 12, 115: Remove asks while the agent runs or terminals are open, and says what closes.
@@ -1845,7 +1845,7 @@ $("projForm").addEventListener("submit", async (e) => {
     S.projects = [...S.projects.filter((x) => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name));
     S.projSel = saved.id;
     fillProjForm();
-    toast("success", "Repo saved", p ? "Applies from the next launch or resume." : "Writing its profile now.");
+    toast("success", "Topic saved", p ? "Applies from the next launch or resume." : "Writing its profile now.");
   } catch (err) { S.projErr = err.message; }
   render();
 });
@@ -1950,15 +1950,15 @@ const lastWord = (t) => {
 function renderOverview() {
   const backlog = S.board === "backlog";
   $("ov").classList.toggle("backlog", backlog);
-  // Not-started TODOs have no repo yet (801), so the backlog shows them all, without the filter.
+  // Not-started TODOs have no topic yet (801), so the backlog shows them all, without the filter.
   const lv = live(), fp = backlog ? null : filterProject();
   const isIdea = (t) => t.status === "not_started";
   const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
   const view = lv.filter(inView), rows = view.filter((t) => backlog || inFilter(t)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first
-  // Item 63, 90: one select; its counts are the board's. While a repo is picked, the rest is "hidden by the filter".
-  const options = [["all", `All repos · ${view.length}`], ...S.projects.map((p) => [String(p.id), `${p.name || "untitled"} · ${view.filter((t) => t.project_id === p.id).length}`]),
-    ["none", `No repo · ${view.filter((t) => t.project_id == null).length}`]];
-  const filter = `<div class="filter"><span class="mb-select-wrap"><select class="mb-select" aria-label="Repo" data-change="filter">${options.map(([v, l]) => `<option value="${v}"${v === String(fp?.id ?? "all") ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></span></div>`;
+  // Item 63, 90: one select; its counts are the board's. While a topic is picked, the rest is "hidden by the filter".
+  const options = [["all", `All topics · ${view.length}`], ...S.projects.map((p) => [String(p.id), `${p.name || "untitled"} · ${view.filter((t) => t.project_id === p.id).length}`]),
+    ["none", `No topic · ${view.filter((t) => t.project_id == null).length}`]];
+  const filter = `<div class="filter"><span class="mb-select-wrap"><select class="mb-select" aria-label="Topic" data-change="filter">${options.map(([v, l]) => `<option value="${v}"${v === String(fp?.id ?? "all") ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></span></div>`;
   const hidden = view.length - rows.length, hw = lv.filter((t) => !inFilter(t) && laneOf(t) === "waiting").length;
   const hiddenNote = fp ? `<span class="mono" style="font-size:12px; color:${hw ? "var(--accent-amber)" : "var(--text-muted)"}">${hidden} hidden by the filter${hw ? ` · ${hw} waiting` : ""}</span>${btn("Show all", "filter", { v: "ghost", id: "all" })}` : "";
   const newBtn = `<span class="right"><span class="kbd">N</span><button type="button" class="mb-btn mb-btn--primary mb-btn--sm" data-act="new-open" data-fk="new-open">New TODO</button></span>`;
@@ -1988,10 +1988,10 @@ function renderOverview() {
 // Suggested follow-ups (item 137): shown while the agent waits for the user. The shortest pill keeps its width but leaves
 // room for a few words of the other, so the longer one is cut first and neither leaves the card. The click reads the text from S.todos by index.
 function pillsHtml(t, where) {
-  // 801: while the operator asks which repo, its options take the pills' place. A click runs the TODO there.
+  // 801: while the operator asks which topic, its options take the pills' place. A click runs the TODO there.
   const r = t?.routing;
-  if (r?.state === "asking" && t.status !== "running") return `<div class="pills${where === "chat" ? " chat" : ""}" aria-label="Pick a repo">${[...r.options, { id: "none", name: "No repo" }].map((o) =>
-    `<button type="button" class="pill" data-act="route" data-id="${t.id}:${o.id}" data-fk="route:${t.id}:${o.id}" title="Run this TODO in ${o.id === "none" ? "its own folder, without a repo" : esc(o.name)}"><span>→</span><span>${esc(o.name)}</span></button>`).join("")}</div>`;
+  if (r?.state === "asking" && t.status !== "running") return `<div class="pills${where === "chat" ? " chat" : ""}" aria-label="Pick a topic">${[...r.options, { id: "none", name: "No topic" }].map((o) =>
+    `<button type="button" class="pill" data-act="route" data-id="${t.id}:${o.id}" data-fk="route:${t.id}:${o.id}" title="Run this TODO in ${o.id === "none" ? "its own folder, without a topic" : esc(o.name)}"><span>→</span><span>${esc(o.name)}</span></button>`).join("")}</div>`;
   if (!t?.suggestions?.length || t.status === "running" || t.permission) return "";
   const tip = where === "chat" ? "Send to the agent · ⇧-click to edit first" : "Send to the agent · ⇧-click to open and edit first";
   const shortest = t.suggestions.reduce((a, s, i) => (s.length < t.suggestions[a].length ? i : a), 0);
@@ -2045,7 +2045,7 @@ function waitCard(t) {
 
 // What a running agent does now: the text it writes, else its last tool, else thinking (design v6).
 function activityOf(t) {
-  if (t.routing) return ["search", "Picking a repo"];   // 801: the operator decides where the TODO runs
+  if (t.routing) return ["search", "Picking a topic"];   // 801: the operator decides where the TODO runs
   const lv = S.live[t.id];
   if (lv?.kind === "say" && lv.text.trim()) return ["edit", "Writing · " + lv.text.trim().replace(/\s+/g, " ").slice(0, 60)];
   if (lv?.kind === "thought") return ["think", "Thinking"];
@@ -2121,7 +2121,7 @@ function renderOperator() {
   if (!S.opOpen) return;
   const o = S.operator;
   setHtml($("opBadge"), o?.status === "running" ? badge("Running", "cyan", true) : badge("Idle", "neutral", true));
-  setHtml($("opIntro"), `<span>Answers about every TODO and acts only when you ask. It can create TODOs and message them. When you start one, it picks the repo.</span>
+  setHtml($("opIntro"), `<span>Answers about every TODO and acts only when you ask. It can create TODOs and message them. When you start one, it picks the topic.</span>
     <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">${o?.session_id ? `<button type="button" class="sid-btn" data-act="copy" data-id="${esc(o.session_id)}" data-title="Operator session id" title="Copy session id">${esc(o.session_id.slice(0, 8))}${SVG(COPY_ICON, 12)}</button>` : ""}${ctxHtml(o?.ctx, "Operator session", o?.status === "running", true)}</span>`);
   const ids = new Set(S.todos.map((t) => t.id));
   const msgs = o?.messages ?? [];
@@ -2150,13 +2150,13 @@ function renderNew() {
   for (const el of [$("app"), document.querySelector("header.top")]) el.inert = S.newOpen || !!S.dlg;
   if (!S.newOpen) return;
   // P5: the agent select shows only when there is a choice. Rebuilt only when the list changed, so an open dropdown
-  // is not reset by a live update. "Repo's default" leaves the pick to the repo routing chooses (801).
+  // is not reset by a live update. "Topic's default" leaves the pick to the topic routing chooses (801).
   const found = agentsFound();
   $("newAgentField").hidden = found.length < 2;
   const akey = found.map((a) => a.id).join("|");
-  if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Repo\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(""); newAgent.dataset.key = akey; }
+  if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(""); newAgent.dataset.key = akey; }
   newAgent.value = S.newAgent ?? "";
-  $("newNote").textContent = keys("Paste images with ⌘V. Lands in the backlog. The operator picks the repo when you start it.");
+  $("newNote").textContent = keys("Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.");
   $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || adding;
   setHtml($("newFiles"), uploadChips("new"));
 }
@@ -2192,7 +2192,7 @@ function sessionRows(t) {
     const inh = pd.mode ?? (agent === "claude" ? "auto" : (t.config ?? []).find((o) => o.category === "mode")?.value ?? null);
     const eff = t.mode ?? inh;
     rows.push({ kind: "mode", id: "mode", label: "Permission mode", own: t.mode ?? null, from: pd.mode ? "Project" : "Agent",
-      first: pd.mode ? `Repo's (${name(pd.mode)})` : inh ? `Agent's default (${name(inh)})` : "Agent's default",
+      first: pd.mode ? `Topic's (${name(pd.mode)})` : inh ? `Agent's default (${name(inh)})` : "Agent's default",
       options: modes, value: eff, short: eff ? (agent === "claude" ? MODE_SHORT[eff] ?? name(eff) : name(eff)) : null, desc: agent === "claude" ? MODE_DESC[eff] : null });
   }
   for (const o of configList(t)) {
@@ -2200,7 +2200,7 @@ function sessionRows(t) {
     const eff = own ?? inh ?? live;
     const isFast = o.category === "model_config";
     rows.push({ kind: "cfg", id: o.id, label: o.name, own, from: inh ? "Project" : "Agent",
-      first: inh ? `Repo's (${optName(o, inh)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
+      first: inh ? `Topic's (${optName(o, inh)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
       options: o.options.map((x) => [x.value, x.name]), value: eff,
       short: isFast ? (eff === "on" ? "Fast" : null) : eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null });
   }
@@ -2216,7 +2216,7 @@ function sessionPop(t, d) {
         <span class="mb-select-wrap"><select class="mb-select" aria-label="${esc(r.label)}" data-change="${r.kind === "mode" ? "todo-mode" : "todo-config"}" data-id="${t.id}" data-cfg="${esc(r.id)}">${[["", r.first], ...r.options].map(([v, l]) => `<option value="${esc(v)}"${(r.own ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></span>
         <span class="src">${r.own != null ? `<button type="button" class="this-todo" data-act="reset-cfg" data-id="${t.id}|${esc(r.id)}" title="Back to ${esc(r.first)}">This TODO ${SVG(CLOSE, 11)}</button>` : `<span class="ml">${r.from}</span>`}</span>
         ${r.desc ? `<span class="desc">${esc(r.desc)}</span>` : ""}</div>`).join("")
-      : `<span class="note">The lists come from the agent. They fill in after this repo's first session.</span>`}</div>
+      : `<span class="note">The lists come from the agent. They fill in after this topic's first session.</span>`}</div>
     <span class="note">${note}</span>
     ${s?.resume ? `<div class="resume"><code>${esc(s.resume)}</code>${btn("Copy", "copy", { v: "ghost", id: s.resume })}</div>` : ""}
   </div>`;
@@ -2231,7 +2231,7 @@ function ctxHtml(c, title, running, right = false) {
   return `<span class="ctxm hov" tabindex="0"><span class="ml">Context</span><span class="ctxbar"><i style="width:${pct}%; background:${col}"></i></span><span style="color:${p >= 0.6 ? col : "var(--text-secondary)"}">${kTok(c.used)} / ${kTok(max)}</span>
     <span class="popover pop-tip hovtip${right ? " right" : ""}" role="tooltip" style="width:300px"><span class="ml">Context · ${esc(title)}${running ? " · updates after the turn" : ""}</span><span style="color:var(--text-primary)">${kTok(c.used)} of ${kTok(max)} tokens · ${pct}%</span>${c.turns != null ? `<span>${plural(c.turns, "turn")} in this session</span>` : ""}<span class="note">${note}</span></span></span>`;
 }
-// The git summary on the repo chip: the first amber or red fact, else the first one.
+// The git summary on the topic chip: the first amber or red fact, else the first one.
 function gitHead(t) {
   const facts = t.git ? gitFactsOf(t.git, false) : [];
   return facts.find((f) => f.color === GC.amber || f.color === GC.red) ?? facts.find((f) => f.text === "pushed") ?? facts[0] ?? null;
@@ -2250,7 +2250,7 @@ function renderFocusHead(t, d) {
   if (running) {
     const since = t.run_started_at ? `<span data-since="${esc(t.run_started_at)}"></span>` : "";
     const tip = t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : keys("Stop · interrupts the agent, like Esc in Claude Code. Queued messages wait for the next turn. ⌘.");
-    status += `<span class="runseg"><span class="l"><span class="live-dot"></span>${t.routing ? "Picking a repo" : t.background_wait ? "Background" : "Running"} ${since}</span><button type="button" data-act="stop" data-id="${t.id}" data-fk="stop:${t.id}" title="${esc(tip)}"><i></i>Stop</button></span>`;
+    status += `<span class="runseg"><span class="l"><span class="live-dot"></span>${t.routing ? "Picking a topic" : t.background_wait ? "Background" : "Running"} ${since}</span><button type="button" data-act="stop" data-id="${t.id}" data-fk="stop:${t.id}" title="${esc(tip)}"><i></i>Stop</button></span>`;
   }
   if (!running && t.session_id) status += `<span title="Start a fresh session. The hand-over carries this TODO's history." style="display:flex">${btn("New session", "open-ns", { id: t.id })}</span>`;
   const resume = sessions.at(-1)?.resume;
@@ -2271,15 +2271,15 @@ function renderFocusHead(t, d) {
   const g = gitHead(t), p = S.projects.find((x) => x.id === t.project_id), repoOpen = S.pop === "repo";
   const facts = t.git ? gitFactsOf(t.git, true) : [];
   const folder = t.worktree_path ?? p?.local_path ?? (t.routed_at ? artifactPath(t) : "");
-  const repoPop = repoOpen ? `<div class="popover gitpop" role="dialog" aria-label="Repo" data-act="noop">
-      <span class="ml">Git · ${esc(t.branch ?? repoName(t))}</span>
-      ${facts.length ? facts.map((f) => `<span style="color:${f.color === GC.muted ? "var(--text-secondary)" : f.color}">${esc(f.text)}</span>`).join("") : `<span style="color:var(--text-muted)">${!t.routed_at ? "The operator picks the repo when you start it" : !p ? "No repo: runs in the TODO's own folder" : t.status === "not_started" ? "No worktree yet" : "Repo folder, shared with other TODOs"}</span>`}
+  const repoPop = repoOpen ? `<div class="popover gitpop" role="dialog" aria-label="Topic" data-act="noop">
+      <span class="ml">${t.branch ? "Git" : "Topic"} · ${esc(t.branch ?? repoName(t))}</span>
+      ${facts.length ? facts.map((f) => `<span style="color:${f.color === GC.muted ? "var(--text-secondary)" : f.color}">${esc(f.text)}</span>`).join("") : `<span style="color:var(--text-muted)">${!t.routed_at ? "The operator picks the topic when you start it" : !p ? "No topic: runs in the TODO's own folder" : !p.git ? "Topic folder, not a git repository" : t.status === "not_started" ? "No worktree yet" : "Topic folder, shared with other TODOs"}</span>`}
       <span class="folder">${esc(folder)}</span>
       ${canChangeRepo(t)
-        ? `<div class="foot"><span class="mb-select-wrap" style="width:160px"><select class="mb-select" aria-label="Change repo" title="Change repo" data-change="set-repo" data-id="${t.id}">${t.routed_at ? "" : '<option value="" selected disabled>Change repo</option>'}${S.projects.map((x) => `<option value="${x.id}"${t.routed_at && x.id === t.project_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="none"${t.routed_at && !p ? " selected" : ""}>No repo</option></select></span><span>${t.session_id ? "Starts a new session in the other folder." : "Session 1 starts there."}</span></div>`
-        : `<div class="foot">${t.git ? "local · uncommitted plus commits since the merge base with origin/HEAD" : t.worktree_path ? "The repo is fixed once a worktree exists." : "The agent registers a worktree with set_worktree."}</div>`}
+        ? `<div class="foot"><span class="mb-select-wrap" style="width:160px"><select class="mb-select" aria-label="Change topic" title="Change topic" data-change="set-repo" data-id="${t.id}">${t.routed_at ? "" : '<option value="" selected disabled>Change topic</option>'}${S.projects.map((x) => `<option value="${x.id}"${t.routed_at && x.id === t.project_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="none"${t.routed_at && !p ? " selected" : ""}>No topic</option></select></span><span>${t.session_id ? "Starts a new session in the other folder." : "Session 1 starts there."}</span></div>`
+        : `<div class="foot">${t.git ? "local · uncommitted plus commits since the merge base with origin/HEAD" : t.worktree_path ? "The topic is fixed once a worktree exists." : "The agent registers a worktree with set_worktree."}</div>`}
     </div>` : "";
-  let chips = `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="repo" data-fk="pop:repo" aria-expanded="${repoOpen}" title="Repo and branch"><span class="pri">${esc(repoName(t) || "repo not picked")}</span>${t.branch ? `${SVG(BRANCH, 12)}<span>${esc(t.branch)}</span>` : ""}${g ? `<span class="mut">·</span><span style="color:${g.text === "pushed" ? "var(--status-success)" : g.color}">${esc(g.text)}</span>` : ""}</button>${repoPop}</span>`;
+  let chips = `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="repo" data-fk="pop:repo" aria-expanded="${repoOpen}" title="Topic and branch"><span class="pri">${esc(repoName(t) || "topic not picked")}</span>${t.branch ? `${SVG(BRANCH, 12)}<span>${esc(t.branch)}</span>` : ""}${g ? `<span class="mut">·</span><span style="color:${g.text === "pushed" ? "var(--status-success)" : g.color}">${esc(g.text)}</span>` : ""}</button>${repoPop}</span>`;
   // P5: the agent, editable until the start
   if (t.status === "not_started" && agentsFound().length > 1) chips += `<span class="mb-select-wrap" style="width:150px">${agentSelect(t.agent, `class="mb-select" style="height:26px; font-size:12px" aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}</span>`;
   const pr = t.pr;
@@ -2335,7 +2335,7 @@ function msgHtml(m, t) {
   return `<div class="msg">${head}${body}${files ? `<div class="atts">${files}</div>` : ""}${chip}</div>`;
 }
 // Item 127 in a TODO's chat (801): the tools the routing operator used since the message before this one.
-const ROUTER_TOOLS = new Set(["read_todo", "read_file", "route_todo", "ask_repo"]);
+const ROUTER_TOOLS = new Set(["read_todo", "read_file", "route_todo", "ask_topic"]);
 function opToolsLine(m) {
   const ms = S.detail?.messages ?? [], i = ms.findIndex((x) => x.id === m.id), prev = i > 0 ? ms[i - 1].at : "";
   const tools = (S.detail?.events ?? []).filter((e) => e.actor === "operator" && ROUTER_TOOLS.has(e.kind) && e.at > prev && e.at <= m.at).map((e) => `${e.kind}(${e.detail ?? ""})`);
@@ -2564,7 +2564,7 @@ function renderHint() {
   const ns = S.nsMode[t.id], n = S.detail?.todo.id === t.id ? S.detail.sessions.length : t.session_count ?? 0;
   // R20 delivery hint, worded as in the design
   const running = t.status === "running" && !t.background_wait;
-  const hint = t.routing?.state === "asking" && !running ? "Goes to the operator, which picks the repo. Session 1 then starts with it."
+  const hint = t.routing?.state === "asking" && !running ? "Goes to the operator, which picks the topic. Session 1 then starts with it."
     : t.routing ? "Stored. Delivered with the first instruction when session 1 starts."
     : running && t.permission ? "Queued until you answer the request above."
     : running ? "Queued. Sends when the turn ends."
@@ -2591,8 +2591,8 @@ function renderFileList(t, d) {
   let root = S.fileRoot[t.id] ?? "todo";
   if (root === "worktree" && !treeUsable(t)) root = S.fileRoot[t.id] = "todo";
   const p = S.projects.find((x) => x.id === t.project_id), f0 = S.file?.todoId === t.id ? S.file : null;
-  if (root === "project" && !p) root = S.fileRoot[t.id] = "todo";   // the repo changed to none (801)
-  const roots = [["todo", "TODO", d?.files[0]?.path.replace(/\/[^/]*$/, "") ?? ""], treeUsable(t) && ["worktree", "Worktree", t.worktree_path], p && ["project", "Repo", p.local_path]].filter(Boolean);
+  if (root === "project" && !p) root = S.fileRoot[t.id] = "todo";   // the topic changed to none (801)
+  const roots = [["todo", "TODO", d?.files[0]?.path.replace(/\/[^/]*$/, "") ?? ""], treeUsable(t) && ["worktree", "Worktree", t.worktree_path], p && ["project", "Topic", p.local_path]].filter(Boolean);
   const seg = `<div class="seg" role="radiogroup" aria-label="Files root">${roots.map(([id, label, title]) =>
     `<button type="button" role="radio" aria-checked="${root === id}" tabindex="${root === id ? 0 : -1}" data-act="file-root" data-id="${id}" data-fk="file-root:${id}" title="${esc(title)}">${label}</button>`).join("")}</div>`;
   const markHtml = (m) => (m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : '<span class="mk"></span>');
@@ -2610,9 +2610,10 @@ function renderFileList(t, d) {
   }
   // Items 102, 103: folders first; folders on the way to a change start open; Changed lists the changed files flat.
   const key = `${t.id}:${root}`, tr = S.trees[key];
-  const note = root === "worktree" ? `${t.worktree_path} · git ls-files · refreshed every 5 s` : `${p?.local_path ?? ""} · main checkout`;
+  const note = root === "worktree" ? `${t.worktree_path} · git ls-files · refreshed every 5 s` : `${p?.local_path ?? ""} · ${tr?.git === false ? "not a git repository" : "main checkout"}`;
   const nChanged = tr?.marks ? Object.keys(tr.marks).length : 0;
-  const head = seg + `<span class="ml grp">${root === "worktree" ? esc(t.branch ?? "Worktree") : esc(p?.name ?? "Project")}<button type="button" class="chg" aria-pressed="${S.changedOnly}" data-act="changed" data-fk="changed" title="Uncommitted changes plus commits since the merge base with origin/HEAD">Changed <span style="color:${nChanged ? "var(--accent-amber)" : "var(--text-muted)"}">${nChanged}</span></button></span>`;
+  if (tr?.git === false) S.changedOnly = false;   // a topic folder outside git has no changes to filter on
+  const head = seg + `<span class="ml grp">${root === "worktree" ? esc(t.branch ?? "Worktree") : esc(p?.name ?? "Topic")}${tr?.git === false ? "" : `<button type="button" class="chg" aria-pressed="${S.changedOnly}" data-act="changed" data-fk="changed" title="Uncommitted changes plus commits since the merge base with origin/HEAD">Changed <span style="color:${nChanged ? "var(--accent-amber)" : "var(--text-muted)"}">${nChanged}</span></button>`}</span>`;
   if (!tr) { need("tree"); return setHtml($("fileList"), head + '<span class="empty">Loading…</span>'); }
   if (tr.error) return setHtml($("fileList"), head + `<span class="empty">Can't list files: ${esc(tr.error)}</span>`);
   const marks = tr.marks, links = new Set(tr.links), open = S.treeOpen[key] ?? new Set();
@@ -2642,7 +2643,7 @@ function renderFileList(t, d) {
     };
     walk(top, 0);
   }
-  const empty = S.changedOnly ? (root === "worktree" ? "No changes on this branch." : "No uncommitted changes in the main folder.") : "No files git knows about.";
+  const empty = S.changedOnly ? (root === "worktree" ? "No changes on this branch." : "No uncommitted changes in the main folder.") : tr.git === false ? "No files in this folder." : "No files git knows about.";
   setHtml($("fileList"), head + (rows.length ? `<div class="tree" role="tree">${rows.join("")}</div>` : `<span class="empty">${empty}</span>`) + `<span class="root-note" title="${esc(note)}">${esc(note)}</span>`);
 }
 
@@ -2662,7 +2663,7 @@ const isMd = (name) => /\.(md|markdown)$/i.test(name ?? "");
 function renderFile(t) {
   const f = S.file, locked = fileLocked(f), dirty = isDirty(f), md0 = isMd(f.name);
   const text0 = !f.binary && !f.image && !f.large && f.content != null;
-  const canDiff = f.root !== "todo" && !f.binary && !f.image && !f.large && (f.mark || dirty || f.saved || f.deleted);
+  const canDiff = f.root !== "todo" && S.trees[`${f.todoId}:${f.root}`]?.git !== false && !f.binary && !f.image && !f.large && (f.mark || dirty || f.saved || f.deleted);
   if (f.mode === "edit" && (locked || !text0)) f.mode = "read";
   if (f.mode === "diff" && !canDiff) f.mode = "read";
   const mode = f.mode, shown = f.root === "todo" ? f.abs : f.rel, m = f.mark && MARK[f.mark];
@@ -2716,7 +2717,7 @@ function renderFile(t) {
   $("fileFoot").textContent = mode === "diff" ? `Diff · ${f.diff?.base_label ?? "merge-base"} ${base} (origin/HEAD) → ${dirty ? "your unsaved edits" : "on disk"} · read-only`
     : f.root === "todo" ? "Saving writes to disk only. The agent isn't notified. Tell it in chat when you want it to act."
     : f.root === "worktree" ? "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it."
-    : "Main checkout. Editable any time; a save warns if the file changed on disk since you opened it.";
+    : `${S.trees[`${f.todoId}:project`]?.git === false ? "Topic folder" : "Main checkout"}. Editable any time; a save warns if the file changed on disk since you opened it.`;
 }
 const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed(1)} KB` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 // One CodeMirror view at a time, rebuilt when the file, its host or read/write changes.
@@ -2760,16 +2761,16 @@ function termTheme() {
   };
 }
 addEventListener("sb-theme", () => { const th = termTheme(); for (const v of xterms.values()) if (v.term) v.term.options.theme = th; });
-const termLabel = (x, t) => (x.title || `${x.kind === "claude" ? "Claude" : "Shell"} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · repo" : "");
+const termLabel = (x, t) => (x.title || `${x.kind === "claude" ? "Claude" : "Shell"} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · topic" : "");
 const claudeDefault = (t) => {
   const p = S.projects.find((x) => x.id === t.project_id);
   return `I'm working on the Switchboard TODO "${t.title}". What its agent is doing, its branch and PR, the recent chat and its files are in ${artifactPath(t)}terminal/context.md. Read it, then wait for my instructions.`;
 };
 const artifactPath = (t) => (S.detail?.todo.id === t.id ? S.detail.artifact_dir : `data/${t.id}/`);
-// A TODO without a repo opens its terminals in its artifact folder (801); the server picks that folder for "project".
+// A TODO without a topic opens its terminals in its artifact folder (801); the server picks that folder for "project".
 function termDirs(t) {
   const p = S.projects.find((x) => x.id === t.project_id);
-  const main = p ? ["project", `Repo folder · ${p.local_path}`, p.local_path] : ["project", `TODO folder · ${artifactPath(t)}`, artifactPath(t)];
+  const main = p ? ["project", `Topic folder · ${p.local_path}`, p.local_path] : ["project", `TODO folder · ${artifactPath(t)}`, artifactPath(t)];
   return treeUsable(t) ? [["worktree", `Worktree · ${t.branch ?? basename(t.worktree_path)}`, t.worktree_path], main] : [main];
 }
 async function newTerm(kind, root, message = "") {
@@ -2900,7 +2901,7 @@ function renderTerminals(t, d) {
   const items = list.map((x) => `<div class="titem" role="tab" tabindex="0" aria-selected="${!S.cform && x.id === sel}" data-act="term-sel" data-id="${x.id}" data-fk="term:${x.id}" title="${esc(x.cwd)}">
       ${x.kind === "claude" ? SVG(I.run, 14, "var(--accent-violet)") : SVG(I.run, 14, "var(--text-primary)")}
       <span class="c"><span class="nm" style="color:${x.kind === "claude" ? "var(--accent-violet)" : "var(--text-primary)"}">${esc(termLabel(x, t))}</span>
-        <span class="sb">${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind === "claude" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "main checkout" : "TODO folder") : basename(x.cwd))}</span></span>
+        <span class="sb">${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind === "claude" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "topic folder" : "TODO folder") : basename(x.cwd))}</span></span>
       <span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="Close">${SVG(CLOSE, 12)}</span></div>`).join("");
   const add = S.termsUnsupported ? "" : dirs.map(([root, head]) => `<div class="term-add">${dirs.length > 1 ? `<span class="ml h ellipsis" title="${esc(head)}">${esc(root === "worktree" ? "Worktree" : "Project folder")}</span>` : ""}
       <span title="A shell in ${esc(head)}: git, docker, tests, a dev server" style="display:flex">${btn("Shell", "term-new", { id: "shell:" + root })}</span>
@@ -3006,31 +3007,31 @@ $("agentForm").addEventListener("submit", async (e) => {
 
 function renderProjects() {
   const p = selProject();
-  $("projList").innerHTML = S.projects.map((x) => `<button type="button" class="proj-row" data-act="pick-project" data-id="${x.id}" data-fk="pick-project:${x.id}" aria-current="${x.id === S.projSel}" title="${esc(x.repo || "no repo")}">
+  $("projList").innerHTML = S.projects.map((x) => `<button type="button" class="proj-row" data-act="pick-project" data-id="${x.id}" data-fk="pick-project:${x.id}" aria-current="${x.id === S.projSel}" title="${esc(x.repo || x.local_path)}">
       <span class="nm">${esc(x.name)}</span><span class="ct">${plural(x.todo_count, "TODO")}${x.default_agent && x.default_agent !== "claude" ? " · " + esc(agentLabel(x.default_agent)) : ""}</span></button>`).join("")
-    + (S.projSel === "new" ? '<div class="proj-row" aria-current="true"><span class="nm">New repo</span><span class="ct">not saved yet</span></div>' : "");
+    + (S.projSel === "new" ? '<div class="proj-row" aria-current="true"><span class="nm">New topic</span><span class="ct">not saved yet</span></div>' : "");
   // 801: the profile routing reads. A scan that finished replaces the text unless the user is editing it.
   if (p && pProfile.value === pProfile.dataset.base && (p.profile ?? "") !== pProfile.dataset.base) pProfile.value = pProfile.dataset.base = p.profile ?? "";
   pProfile.disabled = !p || p.scanning;
-  pProfile.placeholder = p ? "No profile yet. Rescan writes one, or write it yourself." : "An agent writes it once you save the repo.";
-  setHtml($("pProfileHint"), !p ? "What lives in this repo, for routing. Under 300 words." : p.scanning ? "Scanning…"
+  pProfile.placeholder = p ? "No profile yet. Rescan writes one, or write it yourself." : "An agent writes it once you save the topic.";
+  setHtml($("pProfileHint"), !p ? "What lives in this topic, for routing. Under 300 words." : p.scanning ? "Scanning…"
     : `${p.scan_error ? `<span style="color:var(--accent-red)">Scan failed: ${esc(p.scan_error)}</span> · ` : ""}${p.profile_edited ? "edited" : p.profile_at ? "scanned " + esc(ago(p.profile_at)) : "not scanned"} · <button type="button" class="edit-btn" data-act="rescan" data-id="${p.id}">Rescan</button>`);
   $("scanAll").hidden = !S.projects.some((x) => !x.profile && !x.scanning);
   pRepo.value = p?.repo ?? "";
-  pRepo.placeholder = p ? "No origin remote found" : "Read from git when you save";
+  pRepo.placeholder = !p ? "Read from git when you save" : p.git ? "No origin remote found" : "Not a git repository";
   pPath.disabled = !!p?.locked;   // R44
   $("pPathHint").textContent = p?.locked
-    ? "Read-only: a TODO in this repo has started. Claude Code keeps session transcripts under this folder, so a new path would make those TODOs impossible to resume."
-    : "Agents launch here, so CLAUDE.md, CLAUDE.local.md and .claude/ apply. Must be a git repository.";
+    ? "Read-only: a TODO in this topic has started. Claude Code keeps session transcripts under this folder, so a new path would make those TODOs impossible to resume."
+    : "Agents launch here, so CLAUDE.md, CLAUDE.local.md and .claude/ apply. Any folder; a git repository adds worktrees, branches and pull requests.";
   $("projErr").textContent = S.projErr;
-  $("projSave").textContent = p ? "Save changes" : "Create repo";
+  $("projSave").textContent = p ? "Save changes" : "Create topic";
   $("projSave").disabled = !projDirty() || !pName.value.trim() || !pPath.value.trim();
   $("contract").textContent = S.meta?.contract ?? "";
 }
 
 // ---------- events ----------
 const ACTIONS = {
-  // 801: one of the operator's repo options; the TODO runs there.
+  // 801: one of the operator's topic options; the TODO runs there.
   route: (id) => { const [tid, pid] = id.split(":"); setRepo(Number(tid), pid === "none" ? null : Number(pid)); },
   // A pill: a click sends its text as the user's message; ⇧-click puts it in the composer to edit first.
   suggestion: async (id, el, e) => {
