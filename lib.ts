@@ -79,8 +79,7 @@ export function ctxStep(c: Ctx | null, u: any): Ctx | null {
 
 // The agent's background tasks still running, oldest first, kept from its ACP updates (spike 2026-10-09). A Bash call
 // with run_in_background ends at once with `backgroundTaskId` in its result; TaskStop (KillShell before it) names the
-// task it stopped. Each finished task gets a follow-up cycle of its own, ended by a usage_update of origin
-// task-notification; that does not say which task finished, so the oldest is taken off.
+// task it stopped. How a task ends otherwise (it exits, a plain `kill`) only the SDK's level says, below.
 export function backgroundStep(ids: string[], u: any): string[] {
   const cc = u?._meta?.claudeCode, res = cc?.toolResponse;
   if (u?.sessionUpdate === "tool_call_update" && res) {
@@ -88,7 +87,17 @@ export function backgroundStep(ids: string[], u: any): string[] {
     const stopped = res.task_id ?? res.shell_id;
     if ((cc.toolName === "TaskStop" || cc.toolName === "KillShell") && ids.includes(stopped)) return ids.filter((id) => id !== stopped);
   }
-  return u?.sessionUpdate === "usage_update" && u._meta?.["_claude/origin"]?.kind === "task-notification" && ids.length ? ids.slice(1) : ids;
+  return ids;
+}
+
+// The SDK's background_tasks_changed, forwarded raw by the adapter when the session asks for it (spike 2026-10-11):
+// the full set of live background tasks on every change, so it replaces the list. A task killed by a plain `kill`
+// leaves it at once, with no follow-up cycle. Only shell tasks count, as above; `ambient` ones are not activity.
+export function backgroundLevel(ids: string[], m: any): string[] {
+  if (m?.type !== "system" || m.subtype !== "background_tasks_changed" || !Array.isArray(m.tasks)) return ids;
+  const live = m.tasks.filter((t: any) => t.task_type === "local_bash" && !t.ambient).map((t: any) => String(t.task_id));
+  const next = [...ids.filter((id) => live.includes(id)), ...live.filter((id: string) => !ids.includes(id))];
+  return next.length === ids.length && next.every((id, i) => id === ids[i]) ? ids : next;
 }
 
 // Between turns the agent can work on its own, e.g. a background task's follow-up. Such a cycle starts with any of
