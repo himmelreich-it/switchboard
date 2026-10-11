@@ -413,12 +413,12 @@ export function versionAtLeast(version: string, min: string): boolean {
 }
 
 // What the worker is told about where it runs, between the contract and the topic prompt. The user files TODOs under
-// topics; the agent needs a folder, so the intro names both, and says whether a worktree is possible at all.
-export function topicIntro(p: { name: string; local_path: string } | null, git: boolean) {
+// topics; the agent needs a folder, so the intro names both, and where worktrees go (`worktrees`: null outside git).
+export function topicIntro(p: { name: string; local_path: string } | null, worktrees: string | null) {
   if (!p) return "This TODO has no topic: it is thinking only, with no code changes. Your working directory is its artifact folder. Do not create a worktree.";
   const head = `This TODO belongs to the topic "${p.name}". The user knows it by that name; its folder on disk, ${p.local_path}, is your working directory.`;
-  return git
-    ? `${head} The folder is a git repository. Follow the topic prompt, if there is one, for worktrees and branches.`
+  return worktrees
+    ? `${head} The folder is a git repository. Worktrees go under ${worktrees}, e.g. \`git worktree add -b <branch> ${worktrees}/<name>\`; the topic prompt may say more.`
     : `${head} The folder is not a git repository: work in it directly, without a worktree, branches or a pull request, and do not run git init.`;
 }
 
