@@ -341,12 +341,12 @@ test("migrateDb adds todos.suggestions", () => {
 
 test("topicIntro: the user's topic, the agent's folder, and whether a worktree is possible", () => {
   const p = { name: "Notes", local_path: "/home/u/notes" };
-  const git = topicIntro(p, true), plain = topicIntro(p, false), none = topicIntro(null, false);
+  const git = topicIntro(p, "/home/u/worktrees"), plain = topicIntro(p, null), none = topicIntro(null, null);
   for (const s of [git, plain]) {
     expect(s).toContain('topic "Notes"');
     expect(s).toContain("/home/u/notes, is your working directory");
   }
-  expect(git).toContain("is a git repository");
+  expect(git).toContain("is a git repository. Worktrees go under /home/u/worktrees");
   expect(plain).toContain("not a git repository: work in it directly, without a worktree");
   expect(none).toContain("has no topic");
   expect(none).toContain("Do not create a worktree");

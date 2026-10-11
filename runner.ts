@@ -24,7 +24,7 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 - A prompt that starts with "This TODO continues earlier work" is a hand-over from earlier sessions. Keep the title it names, work in the worktree it names instead of creating a new one, and read the listed files you need before you start.
 - Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
 - The TODO text and the user's committed messages are your go-ahead for local edits within this TODO's scope. Outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user.
-- Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Only a topic whose folder is a git repository can have one; the topic prompt says how to create it.
+- Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Only a topic whose folder is a git repository can have one; the topic intro below says where it goes.
 - T-<n> in text (T-38) is switchboard TODO number n. Read that TODO with mcp__app__read_todo and its files with mcp__app__read_file.
 - After creating a worktree, call mcp__app__set_worktree with its absolute path and work only there. Ignore any skill instruction not to switch context.
 - As soon as you know this TODO works on an existing GitHub pull request (a review, a merge check, a fix on someone's PR), call mcp__app__set_pr with its number, also without a worktree. The app then shows the PR's state, checks and reviews on the TODO's card. A PR opened from your worktree's branch is found without it.
@@ -507,7 +507,6 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
   const agentId = open?.agent || t.agent || DEFAULT_AGENT;
   const dir = artifactDir(todoId);
   const contract = contractFor(agentId, dir);
-  const prompt = [topicIntro(p, !!p && isGitFolder(p.local_path)), p?.agent_prompt.trim()].filter(Boolean).join("\n\n");
   const cwd = p?.local_path ?? dir;
   const run: Run = { done: Promise.resolve(), live: null };
   running.set(todoId, run);
@@ -515,14 +514,16 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
   posted.delete(todoId);
 
   run.done = (async () => {
-    let agent: Agent;
+    let agent: Agent, prompt = "";
     try {
       mkdirSync(dir, { recursive: true });
+      const worktrees = p ? worktreeRoot(p.local_path) : null;   // creates the root: inside try, like the artifact folder
+      prompt = [topicIntro(p, worktrees), p?.agent_prompt.trim()].filter(Boolean).join("\n\n");
       agent = await agentFor(todoId, open ? null : t.session_id, {
         agent: agentId,
         cwd,
         // The worktree root lets a `cd` into the worktree persist; the artifact folder is outside cwd and must be writable.
-        dirs: p ? [worktreeRoot(p.local_path), dir].filter((d): d is string => !!d) : [],
+        dirs: [worktrees, dir].filter((d): d is string => !!d),
         meta: isClaude(agentId) ? {
           systemPrompt: { append: [contract, prompt].filter(Boolean).join("\n\n") },
           // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).

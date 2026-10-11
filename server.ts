@@ -353,10 +353,10 @@ function registerDiskFiles(t: Todo) {
 }
 
 async function projectOut(p: Project) {
-  const r = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
+  const [r, g] = await Promise.all([sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]), sh(["git", "-C", p.local_path, "rev-parse", "--git-dir"])]);
   const c = db.query(`SELECT EXISTS (SELECT 1 FROM todos WHERE project_id = ? AND session_id IS NOT NULL) AS locked,
     (SELECT COUNT(*) FROM todos WHERE project_id = ? AND removed_at IS NULL) AS todo_count`).get(p.id, p.id) as any;
-  return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, git: isGitFolder(p.local_path), locked: !!c.locked, todo_count: c.todo_count,
+  return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, git: g.ok, locked: !!c.locked, todo_count: c.todo_count,
     profile_edited: !!p.profile_edited, scanning: isScanning(p.id), scan_error: scanError(p.id) };
 }
 
