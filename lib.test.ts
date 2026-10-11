@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView,
 } from "./lib";
@@ -38,6 +38,14 @@ test("withAttachments and safeFileName", () => {
   expect(safeFileName(".env")).toBe("env");
   expect(safeFileName("a/b\\c.txt")).toBe(process.platform === "win32" ? "c.txt" : "b-c.txt");   // a backslash separates on Windows only
   expect(safeFileName("x".repeat(300) + ".png")).toBe("x".repeat(116) + ".png");
+});
+
+test("atToolBoundary: a message is steered only when the whole batch of tool calls has ended", () => {
+  expect(atToolBoundary(["completed"])).toBe(true);
+  expect(atToolBoundary(["completed", "failed"])).toBe(true);
+  expect(atToolBoundary(["completed", "in_progress"])).toBe(false); // a parallel command still runs
+  expect(atToolBoundary(["completed", "pending"])).toBe(false);
+  expect(atToolBoundary([])).toBe(false);
 });
 
 test("deliveryAction and statusAfterRun", () => {
