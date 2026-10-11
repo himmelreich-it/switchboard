@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, topicIntro, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, backgroundLevel, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, topicIntro, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
   type Ctx, type Permission, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -344,9 +344,23 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     if (sink.s) sink.s.onUpdate(u);
     else if (typeof key === "number" && agents.get(key) === self) unprompted(key, self, u);
   };
-  const handlers = { onUpdate, onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
+  const onSdk = (m: any) => {
+    if (!self) return;
+    const bg = backgroundLevel(self.bg, m), had = self.bg.length;
+    if (bg !== self.bg && typeof key === "number") emit({ type: "todo", id: key });
+    self.bg = bg;
+    // The last task ended between turns: the TODO no longer waits. Claude's follow-up, if any, runs as usual.
+    if (had && !bg.length && typeof key === "number" && agents.get(key) === self && !running.has(key) && todoRow(key)?.status === "running") {
+      setTodo(key, { status: statusAfterRun(todoRow(key)!.attention) });
+      addEvent(key, "run ended", "app", `${todoRow(key)!.status} · background tasks ended`);
+      parkAgent(key);
+    }
+  };
+  const handlers = { onUpdate, onSdk, onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
   const g = grant(o.grant, (secret) => secretHeader(o.agent, secret));
-  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta: o.meta, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
+  // Claude forwards the SDK's level of live background tasks, which tells when one ends (backgroundLevel).
+  const meta = isClaude(o.agent) ? { ...o.meta, claudeCode: { ...(o.meta.claudeCode as object), emitRawSDKMessages: [{ type: "system", subtype: "background_tasks_changed" }] } } : o.meta;
+  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
   let live: Live;
   try {
     live = sessionId ? await reopenSession(spec, sessionId, opts, handlers as any) : await acpOpen(spec, opts, handlers as any);

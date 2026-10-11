@@ -20,6 +20,7 @@ const authMethodsOf = (init: any): AuthMethod[] =>
 
 export type Handlers = {
   onUpdate(u: Update): void;
+  onSdk?(m: any): void; // a raw SDK message the session asked for in `_meta.claudeCode.emitRawSDKMessages` (Claude only)
   onPermission(r: PermissionRequest): Promise<PermissionOutcome> | PermissionOutcome;
 };
 export type SessionOpts = {
@@ -89,6 +90,7 @@ async function spawnAgent(spec: Spec, handlers: { h: Handlers | null }, extraEnv
         state.commands = u.availableCommands.map((c: any) => ({ name: String(c.name), description: String(c.description ?? ""), hint: c.input?.hint ?? null }));
       handlers.h?.onUpdate(u as Update);
     })
+    .onNotification("_claude/sdkMessage", (p: unknown) => p as { message?: unknown }, (ctx) => handlers.h?.onSdk?.(ctx.params.message))
     .connect(acp.ndJsonStream(input, proc.stdout as ReadableStream<Uint8Array>));
   proc.exited.then((code) => conn.close(new Error(`the agent process exited (code ${code})${log ? ": " + lastLine(log) : ""}`)));
   try {

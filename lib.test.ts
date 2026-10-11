@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
 } from "./lib";
@@ -169,11 +169,25 @@ test("backgroundStep keeps the running background tasks", () => {
   expect(ids).toEqual(["a", "b", "c"]);
   ids = backgroundStep(ids, stop("b"));
   expect(ids).toEqual(["a", "c"]);
-  ids = backgroundStep(ids, done);
-  expect(ids).toEqual(["c"]);
+  expect(backgroundStep(ids, done)).toBe(ids); // a follow-up does not say which task ended: the level does
   expect(backgroundStep(ids, stop("x"))).toBe(ids);
   expect(backgroundStep(ids, { sessionUpdate: "usage_update", _meta: { "_claude/origin": { kind: "human" } } })).toBe(ids);
-  expect(backgroundStep([], done)).toEqual([]);
+});
+
+test("backgroundLevel replaces the list with the SDK's live shell tasks", () => {
+  const level = (...tasks: any[]) => ({ type: "system", subtype: "background_tasks_changed", tasks });
+  const sh = (task_id: string, more = {}) => ({ task_id, task_type: "local_bash", description: "x", ...more });
+  // T-14: six servers backgrounded, then ended with a plain `kill`; only the level says so.
+  expect(backgroundLevel(["a", "b", "c"], level(sh("a"), sh("c")))).toEqual(["a", "c"]);
+  expect(backgroundLevel(["a", "b"], level())).toEqual([]);
+  // A task the level knows first joins at the end; the order of the others stays.
+  expect(backgroundLevel(["b"], level(sh("a"), sh("b")))).toEqual(["b", "a"]);
+  // Subagents, monitors and ambient tasks do not count.
+  expect(backgroundLevel([], level(sh("a"), { task_id: "g", task_type: "local_agent" }, { task_id: "m", task_type: "local_monitor" }, sh("w", { ambient: true })))).toEqual(["a"]);
+  const ids = ["a"];
+  expect(backgroundLevel(ids, level(sh("a")))).toBe(ids);
+  expect(backgroundLevel(ids, { type: "system", subtype: "task_notification", task_id: "a" })).toBe(ids);
+  expect(backgroundLevel(ids, undefined)).toBe(ids);
 });
 
 test("agentActivity and cycleEnd tell a cycle the agent runs on its own", () => {
