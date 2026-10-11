@@ -375,7 +375,8 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .card .pills { flex: 1 1 auto; }
 .pill { height: 28px; padding: 0 10px; display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 100%; cursor: pointer; background: var(--tint-cyan); border: 1px solid var(--line-cyan); border-radius: var(--radius-1); color: var(--accent-cyan); font-family: var(--font-sans); font-size: 13px; }
 .pill:hover { border-color: var(--accent-cyan); }
-.pill.short { flex: none; min-width: auto; }
+.pill.short { flex: none; }
+.pill.short:not(:only-child) { max-width: calc(100% - 70px); }
 .pill > span:first-child { flex: none; }
 .pill > span:last-child { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pills.chat { flex-wrap: wrap; }
@@ -1984,8 +1985,8 @@ function renderOverview() {
   setHtml($("ov"), `<div class="toolbar">${filter}${hiddenNote}${newBtn}</div>${body}`);
 }
 
-// Suggested follow-ups (item 137): shown while the agent waits for the user. The shortest pill never shrinks, so the
-// longer one is cut first. The click reads the text from S.todos by index.
+// Suggested follow-ups (item 137): shown while the agent waits for the user. The shortest pill keeps its width but leaves
+// room for a few words of the other, so the longer one is cut first and neither leaves the card. The click reads the text from S.todos by index.
 function pillsHtml(t, where) {
   // 801: while the operator asks which repo, its options take the pills' place. A click runs the TODO there.
   const r = t?.routing;
