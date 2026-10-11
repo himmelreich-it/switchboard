@@ -412,6 +412,16 @@ export function versionAtLeast(version: string, min: string): boolean {
   return true;
 }
 
+// What the worker is told about where it runs, between the contract and the topic prompt. The user files TODOs under
+// topics; the agent needs a folder, so the intro names both, and says whether a worktree is possible at all.
+export function topicIntro(p: { name: string; local_path: string } | null, git: boolean) {
+  if (!p) return "This TODO has no topic: it is thinking only, with no code changes. Your working directory is its artifact folder. Do not create a worktree.";
+  const head = `This TODO belongs to the topic "${p.name}". The user knows it by that name; its folder on disk, ${p.local_path}, is your working directory.`;
+  return git
+    ? `${head} The folder is a git repository. Follow the topic prompt, if there is one, for worktrees and branches.`
+    : `${head} The folder is not a git repository: work in it directly, without a worktree, branches or a pull request, and do not run git init.`;
+}
+
 // Item 114: what a Claude terminal reads first, written to <artifact folder>/terminal/context.md at each launch.
 export function contextFile(c: {
   title: string; project: string; status: string; first: string; worktree: string | null; branch: string | null;
@@ -420,11 +430,11 @@ export function contextFile(c: {
 }): string {
   const out: string[] = [
     `# Switchboard TODO: ${c.title}`, "",
-    `- Repo: ${c.project}`, `- Status: ${c.status === "not_started" ? "not started (in the backlog)" : c.status}`,
+    `- Topic: ${c.project}`, `- Status: ${c.status === "not_started" ? "not started (in the backlog)" : c.status}`,
     ...[c.worktree && `- Worktree: ${c.worktree}`, c.branch && `- Branch: ${c.branch}`, c.git && `- Git: ${c.git}`, c.pr && `- Pull request: ${c.pr}`].filter((l): l is string => !!l),
     "", "## First instruction", "", c.first, "",
     "## Note", "",
-    "The TODO's own agent may be working in the same worktree at the same time. Check with the user before you commit, switch branches or rewrite history.", "",
+    "The TODO's own agent may be working in the same folder or worktree at the same time. Check with the user before you commit, switch branches or rewrite history.", "",
   ];
   if (c.files.length) out.push("## Files", "", ...c.files.map((f) => `- ${f}`), "");
   if (c.sessions.length) out.push("## Sessions", "", ...c.sessions.map((s) => `- Session ${s.no}: ${s.session_id} (${s.started_at}${s.ended_at ? ` to ${s.ended_at}` : ", live"}). Its full transcript is under ~/.claude/projects/.`), "");
@@ -496,7 +506,7 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("todos", "suggestions", "TEXT");     // the agent's suggested follow-ups (JSON string[]), cleared at each run start
   addColumn("todos", "run_started_at", "TEXT");  // when the current or last run started, for the running timers (v6)
   addColumn("todos", "routing", "TEXT");         // the routing step while it runs or asks the user (JSON Routing), 801
-  // When the TODO's repo (or "no repo") was decided. A TODO made before routing got its project from the user.
+  // When the TODO's topic (or "no topic") was decided. A TODO made before routing got its project from the user.
   if (addColumn("todos", "routed_at", "TEXT")) db.run("UPDATE todos SET routed_at = created_at");
   addColumn("projects", "profile", "TEXT");      // what lives in the repo, written by a scan or the user, for routing
   addColumn("projects", "profile_at", "TEXT");   // when the last scan wrote the profile
