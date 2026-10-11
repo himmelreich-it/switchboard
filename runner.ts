@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, topicIntro, permissionOf, planCount, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
   type Ctx, type Permission, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -16,7 +16,7 @@ import {
   saveAttachments, sessionsOf, setEvent, setMeta, setTodo, todoRow, type Upload,
 } from "./server";
 
-// The fixed app contract (R31), appended to the claude_code system prompt before the project prompt.
+// The fixed app contract (R31), appended to the claude_code system prompt before the topic intro and the topic prompt.
 // GET /api/meta shows it with the placeholder; each run fills in the TODO's own folder.
 export const CONTRACT = `You are running inside switchboard, a local app where the user tracks this work as a TODO and steers it with short chat messages. A TODO can span several agent sessions, one after another; this session is one of them.
 
@@ -24,7 +24,7 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 - A prompt that starts with "This TODO continues earlier work" is a hand-over from earlier sessions. Keep the title it names, work in the worktree it names instead of creating a new one, and read the listed files you need before you start.
 - Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
 - The TODO text and the user's committed messages are your go-ahead for local edits within this TODO's scope. Outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user.
-- Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Follow the repo prompt for how to create one.
+- Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Only a topic whose folder is a git repository can have one; the topic intro below says where it goes.
 - T-<n> in text (T-38) is switchboard TODO number n. Read that TODO with mcp__app__read_todo and its files with mcp__app__read_file.
 - After creating a worktree, call mcp__app__set_worktree with its absolute path and work only there. Ignore any skill instruction not to switch context.
 - As soon as you know this TODO works on an existing GitHub pull request (a review, a merge check, a fix on someone's PR), call mcp__app__set_pr with its number, also without a worktree. The app then shows the PR's state, checks and reviews on the TODO's card. A PR opened from your worktree's branch is found without it.
@@ -41,29 +41,30 @@ The app's MCP tools write to the TODO, which the user sees on its card and in it
 - mcp__app__set_attention raises the TODO's attention flag when the user should come back to it; clear it once that is resolved.
 - mcp__app__set_title, mcp__app__set_worktree and mcp__app__set_pr change the TODO itself: call them only when the user asks.
 
-The TODO's own agent may be working in the same worktree at the same time. Check with the user before you commit, switch branches or rewrite history.`;
+The TODO's own agent may be working in the same folder or worktree at the same time. Check with the user before you commit, switch branches or rewrite history.`;
 
 // The contract for one agent's session: the TODO's folder filled in, and the app tools named the way that agent sees them.
 export const contractFor = (agent: string, dir: string) =>
   CONTRACT.replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
 
 // What an agent without a system-prompt append gets in front of the first prompt of each session (design §9). After a
-// restart the resumed session still has it in its context; an edited project prompt reaches it with the next session.
+// restart the resumed session still has it in its context; an edited topic prompt reaches it with the next session.
 const instructionsText = (contract: string, prompt: string) =>
   `# Switchboard instructions\n\n${[contract, prompt.trim()].filter(Boolean).join("\n\n")}\n\n# Your task\n\n`;
 
 const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
 
-- Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, and never start a TODO on your own: the user starts them. When the user presses Start, a separate routing run of yours decides which repo the TODO runs in.
+- Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, and never start a TODO on your own: the user starts them. When the user presses Start, a separate routing run of yours decides which topic the TODO belongs to.
 - Get the state of the TODOs from your tools every time (mcp__app__list_todos, mcp__app__read_todo, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh operator session at any time.
 - A TODO with status not_started is in the user's backlog; the others are on the board. A TODO can span several sessions; only the latest is live.
 - TODOs are numbered: T-42 is TODO 42. Use that form when you name one. Jira keys such as AI-1234 are something else.
-- mcp__app__create_todo creates a TODO in the backlog (not started, no repo yet). mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". Use them only when the user asks.
+- mcp__app__create_todo creates a TODO in the backlog (not started, no topic yet). mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". Use them only when the user asks.
 - TODO artifact files live under ${home}/data/<todo-id>/. You can also read them with Read, Grep and Glob.
+- A topic is what the user files TODOs under: one folder on disk (often a git repository, not always), with its own prompt and profile. Say "topic" to the user; name its folder only when the path matters.
 - Your replies are shown in full and rendered as markdown. Brainstorming with the user here is fine.`;
 
-// What a no-repo TODO's agent gets in place of a repo prompt (801).
-const NO_REPO_PROMPT = "This TODO has no repo: it is thinking only, with no code changes. Your working folder is its artifact folder. Do not create a worktree.";
+// `git rev-parse` in the topic's folder: a plain folder is a topic too.
+export const isGitFolder = (dir: string) => Bun.spawnSync(["git", "-C", dir, "rev-parse", "--git-dir"]).exitCode === 0;
 
 const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
 // An idle agent process is closed after this; the next turn starts a new one with session/resume.
@@ -201,7 +202,7 @@ async function applyMode(a: Agent, mode: string | null) {
 // offers one (Claude's model and effort), since an unset option would otherwise keep its last value.
 // The TODO's own values belong to its agent: a session that opens on another agent (New session) takes the project's.
 export async function applyConfig(todoId: number, a: Agent, reset?: string) {
-  const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a no-repo TODO has no defaults
+  const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a TODO without a topic has no defaults
   const own = (t.agent || DEFAULT_AGENT) === a.agent;
   const d = defaultsFor(p.defaults, a.agent);
   const wanted = { ...d.config, ...(own ? configIn(t.overrides ? JSON.parse(t.overrides) : null) : {}) };
@@ -441,12 +442,12 @@ export function commitMessage(todoId: number, author: "user" | "user via operato
   return id;
 }
 
-// Start: routing first while the repo is not decided (801), then the first turn, where every message committed before
+// Start: routing first while the topic is not decided (801), then the first turn, where every message committed before
 // the start goes out as one prompt.
 export function start(todoId: number) {
   if (!todoRow(todoId)!.routed_at) {
     if (db.query("SELECT 1 FROM projects LIMIT 1").get()) return runRouting(todoId);
-    routeTo(todoId, null, null);   // no repos yet: nothing to pick, the TODO runs without one
+    routeTo(todoId, null, null);   // no topics yet: nothing to pick, the TODO runs without one
   }
   runWorker(todoId, () => take(todoId, "pending"), { no: 1 }, "start");
 }
@@ -475,7 +476,7 @@ export function newSession(todoId: number, agent?: string) {
 
 // Resumes the session with every queued message as one prompt. Does nothing while the TODO runs (the run's end calls
 // this again), when it is removed or not started, or when nothing is queued.
-// A session that Change repo ended (801) is not resumed: the queued messages start the next session in the new repo.
+// A session that Change topic ended (801) is not resumed: the queued messages start the next session in the new topic.
 export function deliver(todoId: number, reason = "deliver") {
   const t = todoRow(todoId);
   if (running.has(todoId) || !t?.session_id || t.removed_at || t.status === "not_started") return;
@@ -486,7 +487,9 @@ export function deliver(todoId: number, reason = "deliver") {
 }
 
 // `git config worktree.root`, else <local_path>/../worktrees. Created if missing, so the agent always gets a real folder.
+// null for a topic folder that is not a git repository: it gets no worktrees, so no folder is made next to it.
 export function worktreeRoot(localPath: string) {
+  if (!isGitFolder(localPath)) return null;
   const r = Bun.spawnSync(["git", "-C", localPath, "config", "worktree.root"]);
   const set = r.exitCode === 0 ? r.stdout.toString().trim() : "";
   const root = resolve(localPath, set ? set.replace(/^~(?=\/|$)/, homedir()) : "../worktrees");
@@ -500,11 +503,10 @@ export function worktreeRoot(localPath: string) {
 // pending or queued, and the user sees an app message instead of messages that look sent but never reached the agent.
 function runWorker(todoId: number, takeBodies: () => string[], open: { no: number; header?: string; agent?: string } | null, reason: string) {
   const t = todoRow(todoId)!;
-  const p = projectRow(t.project_id);   // null: a no-repo TODO, which runs in its artifact folder (801)
+  const p = projectRow(t.project_id);   // null: a TODO without a topic, which runs in its artifact folder (801)
   const agentId = open?.agent || t.agent || DEFAULT_AGENT;
   const dir = artifactDir(todoId);
   const contract = contractFor(agentId, dir);
-  const prompt = p ? p.agent_prompt.trim() : NO_REPO_PROMPT;
   const cwd = p?.local_path ?? dir;
   const run: Run = { done: Promise.resolve(), live: null };
   running.set(todoId, run);
@@ -512,14 +514,16 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
   posted.delete(todoId);
 
   run.done = (async () => {
-    let agent: Agent;
+    let agent: Agent, prompt = "";
     try {
       mkdirSync(dir, { recursive: true });
+      const worktrees = p ? worktreeRoot(p.local_path) : null;   // creates the root: inside try, like the artifact folder
+      prompt = [topicIntro(p, worktrees), p?.agent_prompt.trim()].filter(Boolean).join("\n\n");
       agent = await agentFor(todoId, open ? null : t.session_id, {
         agent: agentId,
         cwd,
         // The worktree root lets a `cd` into the worktree persist; the artifact folder is outside cwd and must be writable.
-        dirs: p ? [worktreeRoot(p.local_path), dir] : [],
+        dirs: [worktrees, dir].filter((d): d is string => !!d),
         meta: isClaude(agentId) ? {
           systemPrompt: { append: [contract, prompt].filter(Boolean).join("\n\n") },
           // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).
@@ -722,18 +726,19 @@ function backToStart(todoId: number, open: { no: number } | null) {
 
 // ---------- routing (801) ----------
 
-// The step between Start and session 1: the operator picks the TODO's repo, picks no repo, or asks the user. Stored in
-// todos.routing while it runs or asks; todos.routed_at is set once the repo is decided.
+// The step between Start and session 1: the operator picks the TODO's topic, picks no topic, or asks the user. Stored in
+// todos.routing while it runs or asks; todos.routed_at is set once the topic is decided.
 export type Routing = { state: "running" } | { state: "asking"; question: string; options: { id: number; name: string }[] };
 
-const ROUTING_PROMPT = `You are the operator of switchboard, a local app where each TODO is an agent session the user starts and steers. The user pressed Start on one TODO. You decide which repo its agent runs in. You do not do the task.
+const ROUTING_PROMPT = `You are the operator of switchboard, a local app where each TODO is an agent session the user starts and steers. The user pressed Start on one TODO. You decide which topic it belongs to; its agent then runs in that topic's folder. You do not do the task.
 
-- The prompt lists the repos with their profiles, then the TODO's messages so far. Read the repo folders with Read, Grep and Glob when the profiles do not settle it.
-- T-<n> in text (T-38) is switchboard TODO number n. Read it with mcp__app__read_todo and its files with mcp__app__read_file. A follow-up of a TODO most likely belongs in that TODO's repo. Jira keys such as AI-1234 are something else.
+- A topic is what the user files TODOs under: one folder on disk, often a git repository but not always, with a profile of what lives there.
+- The prompt lists the topics with their folders and profiles, then the TODO's messages so far. Read the topic folders with Read, Grep and Glob when the profiles do not settle it.
+- T-<n> in text (T-38) is switchboard TODO number n. Read it with mcp__app__read_todo and its files with mcp__app__read_file. A follow-up of a TODO most likely belongs in that TODO's topic. Jira keys such as AI-1234 are something else.
 - End with exactly one call, then stop:
-  - mcp__app__route_todo with the repo's name when one repo clearly fits, or with repo "none" when the TODO is thinking only with no code changes (its agent then runs in the TODO's own folder). The reason is one short sentence the user reads, such as "the MCP server lives there".
-  - mcp__app__ask_repo with a short question and the 2 or 3 likely repos when you cannot tell. The user also gets a "No repo" choice.
-- A repo without a profile can still be picked on its name and folder; say so when you ask.`;
+  - mcp__app__route_todo with the topic's name when one topic clearly fits, or with topic "none" when the TODO fits no topic and is thinking only (its agent then runs in the TODO's own folder). The reason is one short sentence the user reads, such as "the MCP server lives there".
+  - mcp__app__ask_topic with a short question and the 2 or 3 likely topics when you cannot tell. The user also gets a "No topic" choice.
+- A topic without a profile can still be picked on its name and folder; say so when you ask.`;
 const ROUTING_BUILTINS = ["Read", "Grep", "Glob"];
 
 const refuse = (r: PermissionRequest) => {
@@ -751,17 +756,17 @@ function runRouting(todoId: number) {
   const asked = was.routing ? (JSON.parse(was.routing) as Routing) : null;
   setTodo(todoId, { status: "running", routing: JSON.stringify({ state: "running" }), last_tool: null, suggestions: null, run_started_at: now(),
     ...(was.attention_by === "operator" ? { attention: 0, attention_by: null } : {}) });
-  addEvent(todoId, "routing", "operator", asked ? "the user replied" : "picking a repo");
+  addEvent(todoId, "routing", "operator", asked ? "the user replied" : "picking a topic");
 
   run.done = (async () => {
     const turn = turnState(todoId, () => {}, "operator");
     let error = "";
     try {
-      const repos = db.query("SELECT local_path FROM projects ORDER BY name").all() as { local_path: string }[];
+      const topics = db.query("SELECT local_path FROM projects ORDER BY name").all() as { local_path: string }[];
       const a = await agentFor(todoId, null, {
         agent: "claude", // like the operator (design §8)
         cwd: HOME,
-        dirs: repos.map((r) => r.local_path).filter((d) => existsSync(d)),
+        dirs: topics.map((r) => r.local_path).filter((d) => existsSync(d)),
         meta: {
           systemPrompt: { append: ROUTING_PROMPT },
           claudeCode: { options: { tools: ROUTING_BUILTINS, allowedTools: [...ROUTING_BUILTINS, ...ROUTER_TOOLS], strictMcpConfig: true, extraArgs: { "system-prompt-snapshot": "off" } } },
@@ -784,47 +789,47 @@ function runRouting(todoId: number) {
     if (t.routed_at) return startRouted(todoId);
     const r = JSON.parse(t.routing!) as Routing;
     if (r.state !== "asking") {
-      // Neither tool was called (or the run failed): the user picks from every repo.
+      // Neither tool was called (or the run failed): the user picks from every topic.
       if (error) addEvent(todoId, "error", "app", error);
       const options = db.query("SELECT id, name FROM projects ORDER BY name").all() as { id: number; name: string }[];
-      const question = error ? `Routing failed (${cutToTwoLines(error)}). Which repo should this TODO run in?` : "I could not tell where this TODO belongs. Which repo should it run in?";
+      const question = error ? `Routing failed (${cutToTwoLines(error)}). Which topic does this TODO belong to?` : "I could not tell where this TODO belongs. Which topic is it?";
       addMessage(todoId, "operator", question);
       setTodo(todoId, { routing: JSON.stringify({ state: "asking", question, options }) });
     }
-    if (!todoRow(todoId)!.attention) addEvent(todoId, "attention raised", "operator", "which repo?");
+    if (!todoRow(todoId)!.attention) addEvent(todoId, "attention raised", "operator", "which topic?");
     setTodo(todoId, { status: "waiting", attention: 1, attention_by: todoRow(todoId)!.attention ? todoRow(todoId)!.attention_by : "operator" });
   })();
 }
 
-// The routing turn's prompt: the repos with their profiles, the TODO's messages waiting for session 1 (the first
+// The routing turn's prompt: the topics with their profiles, the TODO's messages waiting for session 1 (the first
 // instruction, notes, and a reply to the question), and the question asked before, if any.
 function routingPrompt(todoId: number, asked: Routing | null) {
-  const repos = db.query("SELECT name, local_path, profile FROM projects ORDER BY name").all() as { name: string; local_path: string; profile: string | null }[];
+  const topics = db.query("SELECT name, local_path, profile FROM projects ORDER BY name").all() as { name: string; local_path: string; profile: string | null }[];
   const msgs = db.query("SELECT id, body FROM messages WHERE todo_id = ? AND state = 'pending' ORDER BY id").all(todoId) as { id: number; body: string }[];
   return [
-    "# Repos",
-    ...repos.map((r) => `## ${r.name}\nFolder: ${r.local_path}\n\n${r.profile?.trim() || "No profile yet."}`),
+    "# Topics",
+    ...topics.map((r) => `## ${r.name}\nFolder: ${r.local_path}\n\n${r.profile?.trim() || "No profile yet."}`),
     `# The TODO: T-${todoId}`,
     ...msgs.map((m) => {
       const files = attachmentsOf(m.id).map((a) => a.name);
       return m.body + (files.length ? `\n(Attached: ${files.join(", ")})` : "");
     }),
-    asked?.state === "asking" && `# Your question\n\nYou asked: ${asked.question}\nOptions: ${[...asked.options.map((o) => o.name), "No repo"].join(", ")}.\nThe user's reply is the last message above. If it is not a clear choice, ask again.`,
+    asked?.state === "asking" && `# Your question\n\nYou asked: ${asked.question}\nOptions: ${[...asked.options.map((o) => o.name), "No topic"].join(", ")}.\nThe user's reply is the last message above. If it is not a clear choice, ask again.`,
   ].filter(Boolean).join("\n\n");
 }
 
-// The repo is decided: by route_todo, a click on an option, or Change repo. The repo's default agent becomes the TODO's
+// The topic is decided: by route_todo, a click on an option, or Change topic. The topic's default agent becomes the TODO's
 // when the user picked none. `reason` is the operator's sentence; a user's pick has none.
 export function routeTo(todoId: number, projectId: number | null, reason: string | null) {
   const t = todoRow(todoId)!, p = projectRow(projectId);
   setTodo(todoId, { project_id: projectId, routed_at: now(), routing: null, ...(!t.agent && p?.default_agent ? { agent: p.default_agent } : {}) });
-  const where = p ? `Runs in **${p.name}**` : "Runs without a repo, in the TODO's own folder";
+  const where = p ? `Runs in **${p.name}**` : "Runs without a topic, in the TODO's own folder";
   if (reason !== null) addMessage(todoId, "operator", `${where}${reason.trim() ? `: ${reason.trim().replace(/\.?$/, ".")}` : "."}`);
-  else addEvent(todoId, "repo", "user", p ? p.name : "no repo");
+  else addEvent(todoId, "topic", "user", p ? p.name : "no topic");
   emit({ type: "todos" });
 }
 
-// Session 1 starts in the decided repo; the attention the question raised drops.
+// Session 1 starts in the decided topic; the attention the question raised drops.
 function startRouted(todoId: number) {
   const t = todoRow(todoId)!;
   if (t.attention_by === "operator") setTodo(todoId, { attention: 0, attention_by: null });
@@ -840,33 +845,33 @@ export function cancelRouting(todoId: number) {
   addEvent(todoId, "routing cancelled", "app");
 }
 
-// POST /api/todos/:id/repo (server.ts checked: no worktree, not running, no live terminal). While the operator asks, a
-// click routes and starts session 1. Before the start it only records the repo. After it, the live session ends, since
-// its folder is fixed at launch: the next message starts the next session in the new repo, with the hand-over header.
+// POST /api/todos/:id/topic (server.ts checked: no worktree, not running, no live terminal). While the operator asks, a
+// click routes and starts session 1. Before the start it only records the topic. After it, the live session ends, since
+// its folder is fixed at launch: the next message starts the next session in the new topic, with the hand-over header.
 export function changeRepo(todoId: number, projectId: number | null) {
   const t = todoRow(todoId)!;
   if (t.routing) {
     routeTo(todoId, projectId, null);
-    addMessage(todoId, "app", projectId ? `Runs in ${projectRow(projectId)!.name}.` : "Runs without a repo, in the TODO's own folder.");
+    addMessage(todoId, "app", projectId ? `Runs in ${projectRow(projectId)!.name}.` : "Runs without a topic, in the TODO's own folder.");
     return startRouted(todoId);
   }
   if (t.routed_at && t.project_id === projectId) return;
-  const from = projectRow(t.project_id)?.name ?? "no repo";
+  const from = projectRow(t.project_id)?.name ?? "no topic";
   routeTo(todoId, projectId, null);
   if (!t.session_id) return;
   closeAgent(todoId);
   db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND ended_at IS NULL", [now(), todoId]);
-  addMessage(todoId, "app", `Repo changed from ${from} to ${projectRow(projectId)?.name ?? "no repo"}. Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
+  addMessage(todoId, "app", `Topic changed from ${from} to ${projectRow(projectId)?.name ?? "no topic"}. Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
 }
 
-// ---------- repo profiles (801) ----------
+// ---------- topic profiles (801) ----------
 
-// A short text per repo saying what lives there, for routing. A read-only Claude run in the repo folder writes it when
-// the repo is added and on Rescan. In memory: which scans run, and the last failure per repo.
-const SCAN_PROMPT = `You write a repo profile for switchboard, an app that routes each new task (a TODO) to the repo it belongs in. Look around this repository with Read, Grep and Glob, then reply with the profile only, as markdown under 300 words:
-- what this repo is, in one or two sentences;
+// A short text per topic saying what lives there, for routing. A read-only Claude run in the topic's folder writes it
+// when the topic is added and on Rescan. In memory: which scans run, and the last failure per topic.
+const SCAN_PROMPT = `You write a topic profile for switchboard, an app that files each new task (a TODO) under the topic it belongs to. A topic is one folder: this one. It may be a git repository, a set of notes or documents, or anything else. Look around it with Read, Grep and Glob, then reply with the profile only, as markdown under 300 words:
+- what this folder holds, in one or two sentences;
 - its main parts and the folders they live in;
-- its languages and stack;
+- its languages and stack, if it holds code;
 - which kinds of tasks belong here, and which belong elsewhere.`;
 const scanning = new Set<number>();
 const scanErrors = new Map<number, string>();
@@ -888,7 +893,7 @@ export async function scanRepo(projectId: number) {
       cwd: p.local_path, mcpServers: [],
       meta: { systemPrompt: { append: SCAN_PROMPT }, claudeCode: { options: { tools: ROUTING_BUILTINS, allowedTools: ROUTING_BUILTINS, strictMcpConfig: true } } },
     }, { onUpdate: turn.onUpdate, onPermission: refuse } as any);
-    await live.prompt("Write the profile of this repository.");
+    await live.prompt("Write the profile of this folder.");
     const text = turn.t.text.trim();
     if (!text) throw new Error("the scan ended without a profile");
     db.run("UPDATE projects SET profile = ?, profile_at = ?, profile_edited = NULL WHERE id = ?", [text, now(), projectId]);

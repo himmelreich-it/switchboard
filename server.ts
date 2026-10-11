@@ -12,7 +12,7 @@ import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKno
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
   CONTRACT, DEFAULT_BACKGROUND_HOURS, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, cancelRouting, changeRepo, closeAgent, metaKey, commandsOf, commitMessage,
-  commitOperatorMessage, deliver, interrupt, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
+  commitOperatorMessage, deliver, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
@@ -44,11 +44,11 @@ export type Project = {
 
 export const now = () => new Date().toISOString();
 export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = ?").get(id) as Todo | null;
-// A TODO's repo: null before routing and for a no-repo TODO (801).
+// A TODO's topic: null before routing and for a TODO without a topic (801).
 export const projectRow = (id: number | null) => (id == null ? null : db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null);
 export const filesOf = (todoId: number) =>
   db.query("SELECT id, path, session_no FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null }[];
-// Since 801 the folder no longer depends on the repo, so it exists before routing and never moves.
+// Since 801 the folder no longer depends on the topic, so it exists before routing and never moves.
 export const artifactDir = (todoId: number) => join(HOME, "data", String(todoId));
 export const attachmentsOf = (messageId: number) =>
   db.query("SELECT id, name, path FROM attachments WHERE message_id = ? ORDER BY id").all(messageId) as { id: number; name: string; path: string }[];
@@ -353,17 +353,17 @@ function registerDiskFiles(t: Todo) {
 }
 
 async function projectOut(p: Project) {
-  const r = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
+  const [r, g] = await Promise.all([sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]), sh(["git", "-C", p.local_path, "rev-parse", "--git-dir"])]);
   const c = db.query(`SELECT EXISTS (SELECT 1 FROM todos WHERE project_id = ? AND session_id IS NOT NULL) AS locked,
     (SELECT COUNT(*) FROM todos WHERE project_id = ? AND removed_at IS NULL) AS todo_count`).get(p.id, p.id) as any;
-  return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, locked: !!c.locked, todo_count: c.todo_count,
+  return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, git: g.ok, locked: !!c.locked, todo_count: c.todo_count,
     profile_edited: !!p.profile_edited, scanning: isScanning(p.id), scan_error: scanError(p.id) };
 }
 
 // ---------- writes shared with runner.ts ----------
 
-// One transaction, so a failed file write leaves no TODO behind. A new TODO has no repo: routing picks it at Start (801).
-// `agent` is the agent of the first session (P5); when not given, routing takes the repo's default.
+// One transaction, so a failed file write leaves no TODO behind. A new TODO has no topic: routing picks it at Start (801).
+// `agent` is the agent of the first session (P5); when not given, routing takes the topic's default.
 export function createTodo(instruction: string, actor: "user" | "operator", uploads: Upload[] = [], agent: string | null = null) {
   const id = db.transaction(() => {
     const at = now();
@@ -455,9 +455,11 @@ function liveTodo(id: number) {
   return t;
 }
 const expandHome = (p: string) => resolve(p.trim().replace(/^~(?=\/|$)/, homedir()));
-async function requireRepo(path: string) {
-  const r = await sh(["git", "-C", path, "rev-parse", "--git-dir"]);
-  if (!r.ok) throw httpError(400, `${path} is not a git repository`);
+// A topic's folder: any existing folder, a git repository or not.
+function requireFolder(path: string) {
+  let dir = false;
+  try { dir = statSync(path).isDirectory(); } catch {}
+  if (!dir) throw httpError(400, `${path} is not a folder`);
 }
 function uploadsIn(v: unknown): Upload[] {
   if (v == null) return [];
@@ -468,26 +470,47 @@ function uploadsIn(v: unknown): Upload[] {
 
 // ---------- worktree and project files (items 101-110) ----------
 
-// A request names a root and a path relative to it. The real path must lie inside the project's local folder or its
-// worktree root (item 110), so the worktree skill's symlinks into the main folder open and nothing else does.
+// A request names a root and a path relative to it. The real path must lie inside the topic's folder or its
+// worktree root (item 110; a folder that is not a git repository has none), so the worktree skill's symlinks into the main folder open and nothing else does.
 function rootDir(t: Todo, root: string) {
   const base = root === "worktree" ? t.worktree_path : root === "project" ? projectRow(t.project_id)?.local_path : null;
-  if (!base || !existsSync(base)) throw httpError(404, root === "worktree" ? "this TODO has no worktree on disk" : root === "project" ? "this TODO has no repo" : "unknown root");
+  if (!base || !existsSync(base)) throw httpError(404, root === "worktree" ? "this TODO has no worktree on disk" : root === "project" ? "this TODO has no topic" : "unknown root");
   return base;
 }
 function fsTarget(t: Todo, root: string, rel: string, write = false) {
   const base = rootDir(t, root);
-  const p = projectRow(t.project_id)!;   // rootDir found a folder, so the TODO has a repo
+  const p = projectRow(t.project_id)!;   // rootDir found a folder, so the TODO has a topic
   if (typeof rel !== "string" || !rel || isAbsolute(rel)) throw httpError(400, "path must be relative to the root");
   const lexical = resolve(base, rel);
   if (!isInside(lexical, resolve(base))) throw httpError(403, `${rel} is outside the ${root}`);
   // A link whose target is missing would make a write create that target, wherever it points.
   if (!existsSync(lexical)) { let link = false; try { link = lstatSync(lexical).isSymbolicLink(); } catch {} if (link) throw httpError(403, `${rel} is a link to a missing file`); }
   const real = existsSync(lexical) ? realpathSync(lexical) : join(realpathSync(dirname(lexical)), basename(lexical));
-  const allowed = [realpathSync(p.local_path), realpathSync(worktreeRoot(p.local_path))];
+  const wt = worktreeRoot(p.local_path);
+  const allowed = [realpathSync(p.local_path), ...(wt ? [realpathSync(wt)] : [])];
   if (!allowed.some((d) => isInside(real, d))) throw httpError(403, `${rel} points outside the project`);
   if (write && (rel.split("/").includes(".git") || real.split("/").includes(".git"))) throw httpError(403, "writes inside .git/ are refused");
   return { base, real };
+}
+// The Files tree of a folder git does not know: its files, without dot entries and node_modules.
+// ponytail: stops after 5000 files, enough for notes and documents; a big checkout is a git repository anyway.
+function plainFiles(base: string) {
+  const found: string[] = [];
+  const walk = (rel: string) => {
+    let names: string[];
+    try { names = readdirSync(join(base, rel)).sort(); } catch { return; }
+    for (const n of names) {
+      if (found.length >= 5000 || n.startsWith(".") || n === "node_modules") continue;
+      const r = rel ? `${rel}/${n}` : n;
+      try {
+        const st = lstatSync(join(base, r));
+        if (st.isDirectory()) walk(r);
+        else if (st.isFile() || (st.isSymbolicLink() && statSync(join(base, r), { throwIfNoEntry: false })?.isFile())) found.push(r);
+      } catch {}
+    }
+  };
+  walk("");
+  return found;
 }
 // The base the marks and Diff compare with: the merge base of HEAD with origin/HEAD, else HEAD.
 async function diffBase(dir: string) {
@@ -541,7 +564,7 @@ async function writeContext(t: Todo) {
   const dir = artifactDir(t.id);
   const g = s.git, pr = s.pr;
   const text = contextFile({
-    title: s.title, project: s.project_name ?? (t.routed_at ? "none (thinking only)" : "not picked yet"), status: s.status, first: msgs[0]?.body ?? "", worktree: s.worktree_path, branch: s.branch,
+    title: s.title, project: s.project_name ? `${s.project_name} (folder ${projectRow(t.project_id)!.local_path})` : t.routed_at ? "none (thinking only)" : "not picked yet", status: s.status, first: msgs[0]?.body ?? "", worktree: s.worktree_path, branch: s.branch,
     git: g ? [g.commits != null && `${g.commits} commits`, g.changed && `${g.changed} changed`, g.untracked && `${g.untracked} untracked`,
       g.push === "none" ? "not pushed" : g.push === "unpushed" ? `${g.unpushed} unpushed` : g.push].filter(Boolean).join(" · ") : null,
     pr: pr ? `#${pr.number} ${pr.state}${pr.draft ? " (draft)" : ""} · ${pr.url}` : s.pr_number ? `#${s.pr_number}` : null,
@@ -699,7 +722,7 @@ async function api(req: Request, path: string): Promise<Response> {
     const name = String(body.name ?? "").trim();
     if (!name || !String(body.local_path ?? "").trim()) return fail("name and local folder are required");
     const localPath = expandHome(body.local_path);
-    await requireRepo(localPath);
+    requireFolder(localPath);
     const taken = new Set((db.query("SELECT slug FROM projects").all() as any[]).map((r) => r.slug));
     const defaults = defaultsIn(body.defaults), agent = agentIn(body.default_agent);
     if (defaults && typeof defaults === "object") return fail(defaults.error);
@@ -721,7 +744,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (localPath !== p.local_path) {
       // Claude Code keeps transcripts under the launch folder, so moving it would orphan every started session.
       if ((await projectOut(p)).locked) return fail("the local folder is read-only once a TODO in this project has started");
-      await requireRepo(localPath);
+      requireFolder(localPath);
     }
     const defaults = body.defaults === undefined ? p.defaults : defaultsIn(body.defaults);
     if (defaults && typeof defaults === "object") return fail(defaults.error);
@@ -737,10 +760,10 @@ async function api(req: Request, path: string): Promise<Response> {
     return json(await projectOut(projectRow(p.id)!));
   }
 
-  // 801: Rescan writes the profile again; an edited one only with force. Scan all scans every repo without a profile.
+  // 801: Rescan writes the profile again; an edited one only with force. Scan all scans every topic without a profile.
   if ((m = path.match(/^\/api\/projects\/(\d+)\/scan$/)) && method === "POST") {
     const p = projectRow(Number(m[1]));
-    if (!p) return fail("no such repo", 404);
+    if (!p) return fail("no such topic", 404);
     if (p.profile_edited && body.force !== true) return json({ error: "edited" }, 409);
     scanRepo(p.id);
     return json({});
@@ -763,7 +786,7 @@ async function api(req: Request, path: string): Promise<Response> {
     return json((await summaries("t.id = ?", [id]))[0]);
   }
 
-  // Items 94-97: the first instruction and the agent can change until the TODO starts. The repo has its own route below.
+  // Items 94-97: the first instruction and the agent can change until the TODO starts. The topic has its own route below.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/edit$/)) && method === "POST") {
     const t = liveTodo(Number(m[1]));
     if (t.status !== "not_started") return fail("this TODO has started; its first instruction is fixed now", 409);
@@ -789,15 +812,15 @@ async function api(req: Request, path: string): Promise<Response> {
     return json((await summaries("t.id = ?", [t.id]))[0]);
   }
 
-  // 801: Change repo, and a click on one of the operator's options while routing asks. project_id null is "no repo".
+  // 801: Change topic, and a click on one of the operator's options while routing asks. project_id null is "no topic".
   // Allowed while the TODO has no worktree and no terminal running, as a session's folder is fixed at its launch.
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/repo$/)) && method === "POST") {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/topic$/)) && method === "POST") {
     const t = liveTodo(Number(m[1]));
     const to = body.project_id == null ? null : projectRow(Number(body.project_id));
-    if (body.project_id != null && !to) return fail("no such repo");
-    if (t.worktree_path) return fail("this TODO has a worktree; its repo is fixed now", 409);
-    if (isRunning(t.id)) return fail("the agent is running; change the repo once it stops", 409);
-    if (termsOf(t.id).some((x) => !x.exited)) return fail("close this TODO's terminals first; they run in the old repo's folder", 409);
+    if (body.project_id != null && !to) return fail("no such topic");
+    if (t.worktree_path) return fail("this TODO has a worktree; its topic is fixed now", 409);
+    if (isRunning(t.id)) return fail("the agent is running; change the topic once it stops", 409);
+    if (termsOf(t.id).some((x) => !x.exited)) return fail("close this TODO's terminals first; they run in the old topic's folder", 409);
     changeRepo(t.id, to?.id ?? null);
     return json((await summaries("t.id = ?", [t.id]))[0]);
   }
@@ -829,6 +852,8 @@ async function api(req: Request, path: string): Promise<Response> {
     const url = new URL(req.url), root = url.searchParams.get("root") ?? body?.root, rel = url.searchParams.get("path") ?? body?.path;
     if (what === "tree" && method === "GET") {
       const base = rootDir(t, String(root));
+      // A topic folder that is not a git repository: every file, no marks and no base, so no Diff either.
+      if (!isGitFolder(base)) return json({ paths: plainFiles(base), marks: {}, links: [], base: null, dir: base, git: false });
       const b = await diffBase(base);
       const [files, others, diff] = await Promise.all([
         sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]),
@@ -844,7 +869,7 @@ async function api(req: Request, path: string): Promise<Response> {
       for (const n of readdirSync(base)) {
         try { if (lstatSync(join(base, n)).isSymbolicLink()) { links.push(n); paths.add(n); } } catch {}
       }
-      return json({ paths: [...paths].filter((p) => marks[p] !== "D" || existsSync(join(base, p))), marks, links, base: b, dir: base });
+      return json({ paths: [...paths].filter((p) => marks[p] !== "D" || existsSync(join(base, p))), marks, links, base: b, dir: base, git: true });
     }
     if (what === "fs" && method === "GET") {
       const { real } = fsTarget(t, String(root), String(rel));
@@ -895,7 +920,7 @@ async function api(req: Request, path: string): Promise<Response> {
       const key = `${id}:${kind}`, no = (termNos.get(key) ?? 0) + 1;
       termNos.set(key, no);
       const x: Term = {
-        // A TODO without a repo (not routed yet, or thinking only) opens its terminals in the artifact folder (801).
+        // A TODO without a topic (not routed yet, or thinking only) opens its terminals in the artifact folder (801).
         id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)?.local_path ?? artifactDir(id), no,
         message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null, secret: null,
         buf: [], bufLen: 0, sockets: new Set(), fresh: false,
@@ -960,7 +985,7 @@ async function api(req: Request, path: string): Promise<Response> {
     const mode = modeIn(body.mode, t.agent);
     if (mode === undefined) return fail(`mode must be one of ${MODES.join(", ")}, or empty for the project's`);
     setTodo(t.id, { mode }, false);
-    addEvent(t.id, "mode", "user", mode ?? `repo's (${modeOf({ mode, agent: t.agent }, projectRow(t.project_id) ?? { defaults: null }) ?? "the agent's own"})`);
+    addEvent(t.id, "mode", "user", mode ?? `topic's (${modeOf({ mode, agent: t.agent }, projectRow(t.project_id) ?? { defaults: null }) ?? "the agent's own"})`);
     return applyNow(t.id);
   }
 
@@ -1055,7 +1080,7 @@ async function api(req: Request, path: string): Promise<Response> {
     } else if (action === "restore") {
       const t = todoOr404(id);
       if (!t.removed_at) return fail("this TODO is not removed", 409);
-      // A session ended by Change repo is not resumed: the next message starts a new one.
+      // A session ended by Change topic is not resumed: the next message starts a new one.
       if (t.session_id && !sessionsOf(id).at(-1)?.ended_at) {
         const folder = projectRow(t.project_id)?.local_path ?? artifactDir(id);
         const spec = specOf(t.agent || DEFAULT_AGENT);
@@ -1063,7 +1088,7 @@ async function api(req: Request, path: string): Promise<Response> {
           return json({ warning: `The ${agentName(t.agent)} session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
         if (t.worktree_path && !existsSync(t.worktree_path))
           return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
-        if (!existsSync(folder)) return json({ warning: `The repo folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+        if (!existsSync(folder)) return json({ warning: `The topic's folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
       }
       setTodo(id, { removed_at: null, removed_by: null });
       addEvent(id, "restored", "user");
