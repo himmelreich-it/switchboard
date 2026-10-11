@@ -2459,7 +2459,7 @@ function workHtml(g, t, live, key) {
     else if (e.kind === "thought") {
       const o = S.openEv.has(e.id);
       html += `<div class="rail"><button type="button" class="thought" data-act="ev-toggle" data-id="${e.id}" aria-expanded="${o}">${SVG(I.think, 13)}Thought${SVG(o ? CHEV_D : CHEV_R, 12)}</button>${o ? `<div class="thought-t">${esc(e.detail)}</div>` : ""}</div>`;
-    } else if (e.kind === "steered") html += `<div class="rail"><span class="thought" style="cursor:default"><span class="ml" style="color:var(--accent-blue)">You</span>read mid-turn · ${esc(String(e.detail ?? "").split("\n")[0].slice(0, 80))}</span></div>`;
+    } else if (e.kind === "steered") html += evs.some((x) => x.kind === "steer undone" && x.id > e.id) ? "" : `<div class="rail"><span class="thought" style="cursor:default"><span class="ml" style="color:var(--accent-blue)">You</span>read mid-turn · ${esc(String(e.detail ?? "").split("\n")[0].slice(0, 80))}</span></div>`;
     else html += evRow(e, false);
   }
   const lv = live && S.live[t.id];

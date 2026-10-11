@@ -290,6 +290,12 @@ function takeMessages(todoId: number | null, state: "pending" | "queued") {
 // did not take them (it just ended, or the agent cannot steer) they are queued again and go out as the next prompt.
 // While a permission request is open they wait: the user answers it first (item 132).
 const steering = new Set<number>();
+// The last steer of the running turn: its messages and its `steered` event, for a Stop before the agent read them.
+const steered = new Map<number, { ids: number[]; eventId: number }>();
+function requeue(ids: number[]) {
+  const back = db.prepare("UPDATE messages SET state = 'queued', delivered_at = NULL, session_no = NULL WHERE id = ?");
+  for (const id of ids) back.run(id);
+}
 async function steerQueued(todoId: number, agent: Agent) {
   if (steering.has(todoId) || pending.has(todoId) || interrupting.has(todoId) || !running.has(todoId)) return;
   const queued = (db.query("SELECT COUNT(*) AS n FROM messages WHERE todo_id = ? AND state = 'queued'").get(todoId) as { n: number }).n;
@@ -304,11 +310,10 @@ async function steerQueued(todoId: number, agent: Agent) {
   }
   steering.delete(todoId);
   if (took) {
-    addEvent(todoId, "steered", "user", bodies.join("\n\n"));
+    steered.set(todoId, { ids, eventId: addEvent(todoId, "steered", "user", bodies.join("\n\n")) });
     return;
   }
-  const back = db.prepare("UPDATE messages SET state = 'queued', delivered_at = NULL, session_no = NULL WHERE id = ?");
-  for (const id of ids) back.run(id);
+  requeue(ids);
   addEvent(todoId, "steer declined", "app", error || "no turn running");
   deliver(todoId, "queued messages");
 }
@@ -693,6 +698,14 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   if (turn.t.ctx?.used) setTodo(todoId, { ctx: JSON.stringify({ ...turn.t.ctx, turns: turn.t.ctx.turns + 1 }) }, false);
   if (text) addEvent(todoId, "result", "agent", text, { duration_ms: Math.round(performance.now() - started), tools: turn.t.tools });
   if (stopped) addEvent(todoId, "interrupted", stopped);
+  // Stopped right after a steer, before the agent did anything more: it never read the messages, so they are queued
+  // again and go out right after, like the other queued messages (item 129).
+  const last = steered.get(todoId);
+  steered.delete(todoId);
+  if (stopped && last && !text && !db.query("SELECT 1 FROM events WHERE todo_id = ? AND id > ? AND kind IN ('say', 'thought', 'tool')").get(todoId, last.eventId)) {
+    requeue(last.ids);
+    addEvent(todoId, "steer undone", "app", "stopped before the agent read the message");
+  }
   if (error && !stopped) {
     addMessage(todoId, "app", cutToTwoLines(error));
     addEvent(todoId, "error", "app", error);
