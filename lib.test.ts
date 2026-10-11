@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   agentActivity, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
-  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView,
+  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -337,4 +337,17 @@ test("migrateDb adds todos.suggestions", () => {
   const db = new Database(":memory:");
   migrateDb(db);
   expect(db.query("SELECT 1 FROM pragma_table_info('todos') WHERE name = 'suggestions'").get()).toBeTruthy();
+});
+
+test("topicIntro: the user's topic, the agent's folder, and whether a worktree is possible", () => {
+  const p = { name: "Notes", local_path: "/home/u/notes" };
+  const git = topicIntro(p, true), plain = topicIntro(p, false), none = topicIntro(null, false);
+  for (const s of [git, plain]) {
+    expect(s).toContain('topic "Notes"');
+    expect(s).toContain("/home/u/notes, is your working directory");
+  }
+  expect(git).toContain("is a git repository");
+  expect(plain).toContain("not a git repository: work in it directly, without a worktree");
+  expect(none).toContain("has no topic");
+  expect(none).toContain("Do not create a worktree");
 });
