@@ -2066,7 +2066,7 @@ function planSegs(t) {
 function runCard(t) {
   const [kind, text] = activityOf(t);
   return `<div class="card run" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Sends when the turn ends">${t.queued_count} queued</span>` : ""}
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Goes to the agent after its current step">${t.queued_count} queued</span>` : ""}
       <span class="right"><span class="ticker"><span class="live-dot"></span>${t.run_started_at ? `<span class="timer" data-since="${esc(t.run_started_at)}"></span>` : ""}</span>
         <span class="stop" title="Stop · interrupts the agent, like Esc in Claude Code">${btn("Stop", "stop", { id: t.id })}</span></span></div>
     <div class="card-title clamp2">${esc(t.title)}</div>
@@ -2319,7 +2319,7 @@ function msgHtml(m, t) {
   else [who, color] = [agentLabel(t.agent), "var(--accent-cyan)"];
   const flags = [];
   if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
-  if (m.state === "queued") flags.push(badge(t.status === "running" ? "Queued · sends at turn end" : "Queued", "blue", true));
+  if (m.state === "queued") flags.push(badge(t.status === "running" ? "Queued · after the current step" : "Queued", "blue", true));
   if (m.state === "pending") flags.push(badge("Delivers at start", "violet", true));
   if (m.state === "sending") flags.push(badge(["idle", "waiting"].includes(t.status) ? "Resuming" : "Sending", "blue", true));
   const head = `<div class="msg-head">${m.via ? SVG(I.run, 13, "var(--accent-violet)") : ""}<span class="ml b" style="color:${color}">${esc(who)}</span>${sub}${flags.join("")}<span class="t">${esc(fmtTime(m.at))}</span>
@@ -2447,7 +2447,7 @@ function workHtml(g, t, live, key) {
   let html = `<button type="button" class="work" data-act="work-toggle" data-id="${esc(key)}" data-fk="work:${esc(key)}" aria-expanded="${isOpen}">${SVG(isOpen ? CHEV_D : CHEV_R, 14)}${asking ? '<span class="sq" style="background:var(--accent-amber)"></span>' : live ? '<span class="live-dot"></span>' : ""}<span class="lbl" style="color:${label[1]}">${label[0]}</span><span class="st">${stats}</span></button>`;
   if (!isOpen) return html;
   if (plan) html += planHtml(plan);
-  let shown = evs.filter((e) => e.kind !== "plan" && e.kind !== "result" && (tr || e.kind === "tool" || e.kind === "say" || e.kind === "thought"));
+  let shown = evs.filter((e) => e.kind !== "plan" && e.kind !== "result" && (tr || e.kind === "tool" || e.kind === "say" || e.kind === "thought" || e.kind === "steered"));
   if (live && !tr && !S.showAll.has(key) && shown.length > 4) {
     const n = shown.length - 4;
     html += `<div class="rail" style="padding:2px 0 2px 16px"><button type="button" class="more-btn" data-act="show-all" data-id="${esc(key)}">Show ${plural(n, "earlier step")}</button></div>`;
@@ -2459,7 +2459,8 @@ function workHtml(g, t, live, key) {
     else if (e.kind === "thought") {
       const o = S.openEv.has(e.id);
       html += `<div class="rail"><button type="button" class="thought" data-act="ev-toggle" data-id="${e.id}" aria-expanded="${o}">${SVG(I.think, 13)}Thought${SVG(o ? CHEV_D : CHEV_R, 12)}</button>${o ? `<div class="thought-t">${esc(e.detail)}</div>` : ""}</div>`;
-    } else html += evRow(e, false);
+    } else if (e.kind === "steered") html += evs.some((x) => x.kind === "steer undone" && x.id > e.id) ? "" : `<div class="rail"><span class="thought" style="cursor:default"><span class="ml" style="color:var(--accent-blue)">You</span>read mid-turn · ${esc(String(e.detail ?? "").split("\n")[0].slice(0, 80))}</span></div>`;
+    else html += evRow(e, false);
   }
   const lv = live && S.live[t.id];
   if (lv?.kind === "say" && lv.text.trim()) html += `<div class="writing"><span class="ml">Writing</span><span class="tx">${esc(lv.text.trim())}</span></div>`;
@@ -2567,7 +2568,7 @@ function renderHint() {
   const hint = t.routing?.state === "asking" && !running ? "Goes to the operator, which picks the topic. Session 1 then starts with it."
     : t.routing ? "Stored. Delivered with the first instruction when session 1 starts."
     : running && t.permission ? "Queued until you answer the request above."
-    : running ? "Queued. Sends when the turn ends."
+    : running ? "Goes to the agent after its current step, or when the turn ends."
     : ns ? `Starts session ${n + 1}. The hand-over carries this TODO's history.`
     : t.background_wait ? `Agent waits for ${plural(t.background, "background task")}. Resumes session ${n}.`
     : t.status === "not_started" ? "Stored. Delivered with the first instruction when you start."

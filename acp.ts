@@ -39,6 +39,9 @@ export type Live = {
   readonly commands: Command[];
   // Resolves when the turn ends: the prompt response is the end of the turn (ACP v1). Rejects on a protocol error or exit.
   prompt(text: string): Promise<acp.StopReason>;
+  // Hands a message to the running turn (`_session/steering`, item 20). True when the turn took it; false when no
+  // turn runs or the agent cannot steer, and the message should go out as the next prompt.
+  steer(text: string): Promise<boolean>;
   cancel(): void;
   setConfig(configId: string, value: string): Promise<void>;
   // SIGTERM, so the agent can stop the processes it started; SIGKILL if it is still there 5 s later.
@@ -121,6 +124,13 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
         const code = await Promise.race([a.proc.exited, Bun.sleep(1000).then(() => null)]);
         throw new Error(`the agent process ${code === null ? "stopped answering" : `exited (code ${code})`}${a.log() ? ": " + lastLine(a.log()) : ""}`);
       }
+    },
+    async steer(text) {
+      if (!(a.init as any)._meta?.steering?.supported) return false;
+      const r: any = await a.conn.agent.request("_session/steering" as any, {
+        sessionId, prompt: [{ type: "text", text }], _meta: { steering: { idleBehavior: "promptRequired" } },
+      } as any);
+      return r?.outcome === "injected";
     },
     cancel() {
       a.conn.agent.notify(acp.methods.agent.session.cancel, { sessionId }).catch(() => {});

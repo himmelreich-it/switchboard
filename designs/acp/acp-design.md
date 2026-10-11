@@ -23,7 +23,7 @@ Work happens on branch `feature/acp`, which is not merged into `main`.
 
 **Decisions taken:**
 - **Option B.** This is a full switch: Claude and the operator run on ACP too, and the app tools are served at `/mcp/app` over HTTP.
-- **Item 20, option (b).** A message committed while the agent runs is queued and goes out when the turn ends. Steering is not used, because it pre-empts the running tool and errors during tool-call streaming (see `acp-spike.md`).
+- **Item 20: steering at tool boundaries (2026-10-11).** A message committed while the agent runs is queued, then handed to the running turn with `_session/steering` when a tool call ends and no other call of its batch still runs. If the turn already ended, or the agent cannot steer, it goes out as the next prompt. This replaced option (b), queueing until the turn ends: adapter 0.89.1 no longer errors when a steer lands during tool-call streaming, and steering at a boundary avoids the backgrounded command (see `acp-spike.md`).
 
 **What P1 and P2 found beyond this design:**
 - **One agent process per live session.** It is kept between turns, closed after 30 minutes idle, and resumed with `session/resume`.
@@ -174,7 +174,7 @@ Storage reuses `events` (`kind`, `detail`, `meta`, `session_no`). Rows hold coal
 - **Project defaults.** `projects.defaults` JSON, keyed by agent kind and config id, is set in Settings › Projects and applied right after `session/new`.
 - **Slash commands.** `available_commands_update` fills an autocomplete in the composer when the message starts with `/`. Commands go out as plain prompt text, which is how ACP runs them.
 - **Stop (item 129, now on main).** It calls `cancel()`.
-- **Push into a running turn (item 20).** Decided as option (b): the message is queued until the turn ends. Steering is not used; see `acp-spike.md`.
+- **Push into a running turn (item 20).** Steering at tool boundaries (`steerQueued` in `runner.ts`). The messages are marked delivered before the steer; when the steer is declined they are queued again and `deliver()` sends them. See `acp-spike.md`.
 
 ## 8. Operator
 
