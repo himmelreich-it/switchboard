@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
 } from "./lib";
@@ -85,6 +85,13 @@ test("parseGitStatus and parseRefCounts", () => {
   expect(parseRefCounts("refs/remotes/origin/HEAD origin/main 2 3\nrefs/remotes/origin/renovate  0 1\n", "renovate"))
     .toEqual({ base: "main", behind: 2, commits: 3, push: "unpushed", unpushed: 1 });
   expect(parseRefCounts("refs/remotes/origin/x  0 0", "x")).toEqual({ base: null, behind: null, commits: null, push: "pushed", unpushed: 0 });
+});
+
+test("parseGhLogins", () => {
+  expect(parseGhLogins(JSON.stringify({ hosts: { "github.com": [{ login: "a" }, { login: "b" }] } }), "")).toEqual(["a", "b"]);
+  expect(parseGhLogins(null, "github.com\n  ✓ Logged in to github.com account himmelreich-it (keyring)\n  - Active account: true\n  ✓ Logged in to github.com account work-acct (keyring)")).toEqual(["himmelreich-it", "work-acct"]);
+  expect(parseGhLogins(null, "github.com\n  ✓ Logged in to github.com as old-user (oauth_token)")).toEqual(["old-user"]);
+  expect(parseGhLogins(null, "You are not logged into any GitHub hosts. Run gh auth login to authenticate.")).toEqual([]);
 });
 
 test("parseGithubRemote", () => {

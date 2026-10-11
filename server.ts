@@ -4,7 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  MODES, configIn, contextFile, defaultsOf, ghOutcome, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Status,
 } from "./lib";
 import { authenticate, describe, sessionExists } from "./acp";
@@ -230,9 +230,12 @@ async function fetchPrs(projectId: number) {
 
   let logins: string[];
   try {
-    ghLogins ??= (JSON.parse((await sh(["gh", "auth", "status", "--json", "hosts"], { timeout: 15_000 })).out || "{}").hosts?.["github.com"] ?? [])
-      .map((h: any) => h.login);
-    logins = ghLogins!;
+    if (!ghLogins) {
+      const j = await sh(["gh", "auth", "status", "--json", "hosts"], { timeout: 15_000 });
+      const t = j.ok ? null : await sh(["gh", "auth", "status", "--hostname", "github.com"], { timeout: 15_000 });
+      ghLogins = parseGhLogins(j.ok ? j.out : null, t ? `${t.out}\n${t.err}` : "");
+    }
+    logins = ghLogins;
   } catch {
     return fail({ kind: "gh access failed", why: "gh is not installed or did not answer. Install it, run gh auth login, then retry." });
   }
