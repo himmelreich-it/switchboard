@@ -150,11 +150,19 @@ export function safeFileName(name: string): string {
 }
 
 // What a committed message does, by the TODO's status (item 20) and whether a turn runs (`busy`):
-// not started -> stored until start; a turn running -> queued until it ends; otherwise sent now. A TODO that shows
+// not started -> stored until start; a turn running -> queued, and handed to the turn at its next tool boundary or sent
+// when it ends; otherwise sent now. A TODO that shows
 // running only because its agent waits for background tasks (item 136) is not busy: the agent can answer now.
 export function deliveryAction(status: Status, busy: boolean): "pending" | "queue" | "send" {
   return status === "not_started" ? "pending" : busy ? "queue" : "send";
 }
+
+// Item 20: a message committed during a turn goes to it at a tool boundary, the way typing into Claude Code does: when a
+// tool call ends and no other call of the same batch (the calls the agent made together) still runs. Steering at any
+// other moment cuts off a tool call being written, or moves a running command to the background and can end the turn
+// early (designs/acp/acp-spike.md).
+export const atToolBoundary = (batch: (string | null | undefined)[]) =>
+  batch.length > 0 && batch.every((s) => s === "completed" || s === "failed");
 
 // A run that ended (normally, with an error, or by interrupt) leaves the TODO waiting while the flag is raised.
 export const statusAfterRun = (attention: boolean | number): Status => (attention ? "waiting" : "idle");

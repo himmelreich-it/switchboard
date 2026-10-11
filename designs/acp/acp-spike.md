@@ -50,6 +50,16 @@ For P1:
 - **Steering error.** If steering is used, handle the error case without matching the adapter's error text. When the prompt rejects after a steer, agent text has arrived since the steer, and no tool call is still pending or in progress, settle the turn as `end_turn` with an `error` event and no chat message.
 - **Upstream report (P1 task).** Report both problems to agentclientprotocol/claude-agent-acp: the error when steering during tool-call streaming, and the pre-empting of a running tool.
 
+### Re-run on 2026-10-11 (Claude Code 2.1.296)
+
+The same check, with the agent running two 6 s Bash commands in a row and a steer at three moments:
+
+- **While the first tool call streams.** On 0.86 the prompt still rejects. On 0.89.1 it returns `end_turn`: the half-written call is "stopped before it ran", and the agent issues it again (2 of 2 runs).
+- **3 s into the running Bash.** The command moves to the background on both versions. On 0.89.1 the agent waited for it once and ended the turn early once; on 0.86 it ended the turn early.
+- **Right after a tool call completed.** On 0.89.1 the result was clean in 2 of 2 runs: the agent read the message in the same turn and nothing was backgrounded.
+
+Item 20 now steers at that third moment, on 0.89.1 (see `acp-design.md`).
+
 ## Consequences for the design (`acp-design.md`)
 
 - **Packaging.** It needs nothing new: the adapter runs on the Bun that already runs the server. Bun's own node compatibility is enough.
