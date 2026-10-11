@@ -319,6 +319,14 @@ export function parseGithubRemote(url: string) {
   return m ? { owner: m[1], name: m[2] } : null;
 }
 
+// The gh accounts logged in to github.com. `gh auth status --json hosts` is missing from older gh versions
+// (Ubuntu ships 2.46) reject the flag, so their text output is read instead: "Logged in to github.com account X" (2.40+)
+// or "Logged in to github.com as X" (older).
+export function parseGhLogins(json: string | null, text: string): string[] {
+  try { if (json) return (JSON.parse(json).hosts?.["github.com"] ?? []).map((h: any) => h.login); } catch {}
+  return [...new Set([...text.matchAll(/Logged in to github\.com (?:account|as) (\S+)/g)].map((m) => m[1]!))];
+}
+
 const PR_FIELDS = `fragment F on PullRequest { number url state isDraft mergeable mergeStateStatus reviewDecision baseRefName
   reviewThreads(first: 100) { nodes { isResolved } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { nodes {
