@@ -1278,8 +1278,9 @@ const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.to
 // TODOs without a topic (801).
 const filterProject = () => (S.filter === "none" ? { id: "none", name: "No topic" } : S.projects.find((p) => String(p.id) === S.filter) ?? null);
 const inFilter = (t) => { const p = filterProject(); return !p || (p.id === "none" ? t.project_id == null : t.project_id === p.id); };
-// P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf).
-const laneOf = (t) => (t.status === "running" && t.permission ? "waiting" : t.status);
+// P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf),
+// and so does one that waits only for background tasks after the agent raised attention itself (item 136).
+const laneOf = (t) => (t.status === "running" && (t.permission || (t.background_wait && t.attention_by === "agent")) ? "waiting" : t.status);
 const waitingList = () => live().filter((t) => laneOf(t) === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
 // P5: the agents (Settings › Agents); only the found ones can run. Claude is the default everywhere.
 const agentsAll = () => S.meta?.agents ?? [{ id: "claude", name: "Claude", builtin: true, found: true }];
@@ -1985,14 +1986,14 @@ function renderOverview() {
   setHtml($("ov"), `<div class="toolbar">${filter}${hiddenNote}${newBtn}</div>${body}`);
 }
 
-// Suggested follow-ups (item 137): shown while the agent waits for the user. The shortest pill keeps its width but leaves
+// Suggested follow-ups (item 137): shown while the agent waits for the user, also while it waits only for background tasks. The shortest pill keeps its width but leaves
 // room for a few words of the other, so the longer one is cut first and neither leaves the card. The click reads the text from S.todos by index.
 function pillsHtml(t, where) {
   // 801: while the operator asks which topic, its options take the pills' place. A click runs the TODO there.
   const r = t?.routing;
   if (r?.state === "asking" && t.status !== "running") return `<div class="pills${where === "chat" ? " chat" : ""}" aria-label="Pick a topic">${[...r.options, { id: "none", name: "No topic" }].map((o) =>
     `<button type="button" class="pill" data-act="route" data-id="${t.id}:${o.id}" data-fk="route:${t.id}:${o.id}" title="Run this TODO in ${o.id === "none" ? "its own folder, without a topic" : esc(o.name)}"><span>→</span><span>${esc(o.name)}</span></button>`).join("")}</div>`;
-  if (!t?.suggestions?.length || t.status === "running" || t.permission) return "";
+  if (!t?.suggestions?.length || (t.status === "running" && !t.background_wait) || t.permission) return "";
   const tip = where === "chat" ? "Send to the agent · ⇧-click to edit first" : "Send to the agent · ⇧-click to open and edit first";
   const shortest = t.suggestions.reduce((a, s, i) => (s.length < t.suggestions[a].length ? i : a), 0);
   return `<div class="pills${where === "chat" ? " chat" : ""}"${where === "chat" ? ' aria-label="Suggested follow-ups"' : ""}>${t.suggestions.map((s, i) =>

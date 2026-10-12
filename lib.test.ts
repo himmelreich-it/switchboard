@@ -309,6 +309,12 @@ test("laneOf, attentionAfterAnswer and MODES (P3)", () => {
   expect(laneOf({ status: "running", permission: null })).toBe("running");
   expect(laneOf({ status: "idle", permission: perm })).toBe("idle");         // stale column after a crash: the status wins
   expect(laneOf({ status: "not_started", permission: null })).toBe("not_started");
+  // T-42: the agent's report asks the user while its Monitor still runs. Only the agent's own flag moves it.
+  const bg = { status: "running" as const, permission: null, background_wait: true };
+  expect(laneOf({ ...bg, attention_by: "agent" })).toBe("waiting");
+  expect(laneOf({ ...bg, attention_by: "app" })).toBe("running");   // "background task finished" on a progress follow-up
+  expect(laneOf({ ...bg, attention_by: null })).toBe("running");
+  expect(laneOf({ ...bg, background_wait: false, attention_by: "agent" })).toBe("running");   // mid-turn: the agent works on
   // Answering clears the flag only when the request raised it.
   expect(attentionAfterAnswer("permission")).toBe(0);
   expect(attentionAfterAnswer("agent")).toBe(1);
