@@ -5,18 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>switchboard</title>
 <script>
-// Theme pick in localStorage: "dark" or "light" overrides the OS setting; anything else ("auto", unset) follows it.
+// Appearance (design v8) in localStorage: the mode ("auto" follows the OS) and the theme family each mode uses.
+// Before v8 the key "switchboard-theme" held the mode alone; it seeds the mode until the first change.
+const FAM = { cyberpunk: "Cyberpunk", monokai: "Monokai" };
+function appearance() {
+  let a = null; try { a = JSON.parse(localStorage.getItem("switchboard-appearance")) ?? { mode: localStorage.getItem("switchboard-theme") }; } catch (e) {}
+  const fam = (f) => f === "cyberpunk" ? "cyberpunk" : "monokai";
+  return { mode: a?.mode === "dark" || a?.mode === "light" ? a.mode : "auto", light: fam(a?.light), dark: fam(a?.dark) };
+}
+function setAppearance(patch) { try { localStorage.setItem("switchboard-appearance", JSON.stringify({ ...appearance(), ...patch })); } catch (e) {} applyTheme(); }
+const isDark = () => !document.documentElement.dataset.theme.endsWith("light");
+// data-theme: "dark" / "light" (Cyberpunk), "monokai-dark" / "monokai-light".
 function applyTheme() {
-  let pick = "auto"; try { pick = localStorage.getItem("switchboard-theme"); } catch (e) {}
-  if (pick !== "dark" && pick !== "light") pick = "auto";
-  const os = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  if (pick === "light" || (pick === "auto" && os === "light")) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
-  document.querySelectorAll('[data-act="theme"]').forEach((b) => { b.setAttribute("aria-checked", b.dataset.id === pick); b.tabIndex = b.dataset.id === pick ? 0 : -1; });
-  const auto = document.querySelector('[data-act="theme"][data-id="auto"]');
-  if (auto) auto.title = `Follow system · now ${os}`;
+  const a = appearance(), osDark = !matchMedia("(prefers-color-scheme: light)").matches;
+  const dark = a.mode === "dark" || (a.mode === "auto" && osDark), fam = dark ? a.dark : a.light;
+  const now = (fam === "monokai" ? "monokai-" : "") + (dark ? "dark" : "light");
+  document.documentElement.dataset.theme = now;
+  document.querySelectorAll('[data-act="theme"]').forEach((b) => { b.setAttribute("aria-checked", b.dataset.id === a.mode); b.tabIndex = b.dataset.id === a.mode ? 0 : -1; });
+  document.querySelectorAll('[data-act="theme-fam"]').forEach((b) => {
+    const [k, f] = b.dataset.id.split(":"), on = a[k] === f;
+    b.setAttribute("aria-checked", on); b.tabIndex = on ? 0 : -1;
+    b.querySelector(".th-state").hidden = !on;
+    b.querySelector(".th-state > span").textContent = on && dark === (k === "dark") ? "In use" : "Selected";
+  });
   const hint = document.getElementById("themeHint");
-  if (hint) hint.textContent = pick === "auto" ? `Auto follows the system setting. Now ${os}.` : `Fixed to ${pick}. Applies to every window.`;
-  const now = document.documentElement.dataset.theme ?? "dark";
+  if (hint) hint.textContent = a.mode === "auto" ? `Follows your system, which is ${osDark ? "dark" : "light"} right now: ${FAM[fam]} ${dark ? "Dark" : "Light"} is in use.`
+    : a.mode === "light" ? `Always light. ${FAM[a.light]} Light is in use.` : `Always dark. ${FAM[a.dark]} Dark is in use.`;
   if (applyTheme.last !== now) { applyTheme.last = now; window.dispatchEvent(new Event("sb-theme")); }   // terminals take colors as values
 }
 applyTheme();
@@ -36,7 +50,8 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
 <script src="/vendor/markdown.js"></script>
 <style>
 /* ---------- Mobbins tokens (from designs/Switchboard-v2.html) ---------- */
-:root {
+/* Cyberpunk dark. Also on [data-theme] so a Cyberpunk preview tile nested in a Monokai page gets its own values (design v8). */
+:root, [data-theme="dark"], [data-theme="light"] {
   --bg-void: #0A0813; --bg-base: #110E20; --surface-1: #181430; --surface-2: #201B3E; --surface-3: #2B2552; --surface-inset: #0C0A18;
   --bg-aurora: radial-gradient(1100px 600px at 85% -10%, rgba(157,107,255,.17), transparent 60%),
                radial-gradient(900px 550px at -10% 110%, rgba(61,232,220,.11), transparent 60%),
@@ -107,6 +122,91 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
   --glow-lime: 0 0 0 3px rgba(69,117,0,.18); --glow-cyan: 0 0 0 3px rgba(0,120,124,.18);
   --focus-ring: 2px solid #457500;
 }
+
+/* ---------- Monokai (from designs/Switchboard v8.html), in the same token names ---------- */
+/* Monokai: shared shape and type. Inter + JetBrains Mono, sentence case, softer radii, no chamfers, no glows. */
+[data-theme="monokai-dark"], [data-theme="monokai-light"] {
+  --font-display: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --tracking-label: 0; --tracking-button: 0;
+  --radius-1: 6px; --radius-2: 8px;
+  --chamfer-sm: none; --chamfer-md: none;
+  --glow-lime: 0 0 0 0 transparent; --glow-cyan: 0 0 0 0 transparent; --glow-magenta: 0 0 0 0 transparent; --glow-red: 0 0 0 0 transparent;
+  font-feature-settings: "cv05" 1, "cv08" 1;
+}
+
+[data-theme="monokai-dark"] {
+  color-scheme: dark;
+  --bg-void: #181714; --bg-base: #242420; --surface-1: #2E2D2A; --surface-2: #363532; --surface-3: #49483E; --surface-inset: #1B1B17;
+  --bg-aurora: #242420;
+  --border-subtle: #5F5E5A; --border-default: #74736F; --border-strong: #87857F;
+  --text-primary: #F8F8F2; --text-secondary: #D7D7CB; --text-muted: #BFBDAE; --text-disabled: #8C8A80;
+  --text-on-accent: #181714; --text-on-primary: #181714; --text-on-danger: #181714;
+  --accent-lime: #F8F8F2; --accent-lime-hover: #FFFFFF; --accent-lime-press: #C6C4BC;
+  --accent-cyan: #D7D7CB; --accent-blue: #D7D7CB; --accent-magenta: #FD7686; --accent-red: #FD7686; --accent-violet: #B7A0FB; --accent-amber: #FFCA35;
+  --tint-lime: #F8F8F212; --line-lime: #87857F;
+  --tint-cyan: #F8F8F212; --line-cyan: #74736F;
+  --tint-blue: #F8F8F212; --line-blue: #74736F;
+  --tint-neutral: #F8F8F212; --line-neutral: #74736F;
+  --tint-magenta: #FD768624; --line-magenta: #FD76868C;
+  --tint-red: #FD768624; --line-red: #FD76868C;
+  --tint-violet: #B7A0FB24; --line-violet: #B7A0FB8C;
+  --tint-amber: #FFCA3524; --line-amber: #FFCA358C;
+  --status-success: #65E0CA; --tint-success: #65E0CA24; --line-success: #65E0CA8C;
+  --status-warning: #FFCA35; --tint-warning: #FFCA3524; --line-warning: #FFCA358C;
+  --status-danger: #FD7686; --status-danger-hover: #FE97A3; --tint-danger: #FD768624; --line-danger: #FD76868C;
+  --status-info: #D7D7CB; --tint-info: #F8F8F212; --line-info: #74736F;
+  --interactive-primary: #E9E8DF; --interactive-primary-hover: #F8F8F2; --interactive-primary-press: #C6C4BC;
+  --surface-card: #2E2D2A; --surface-popover: #363532; --surface-input: #1B1B17;
+  --text-body: #F8F8F2; --text-label: #D7D7CB; --overlay-scrim: rgba(24, 23, 20, 0.72);
+  --surface-tooltip: #181714; --text-tooltip: #F8F8F2; --border-tooltip: #87857F;
+  --shadow-1: 0 1px 0 #00000033, 0 1px 3px #00000040;
+  --shadow-2: 0 2px 4px #0000004D, 0 8px 24px #00000066;
+  --shadow-3: 0 4px 8px #00000059, 0 24px 64px #00000080;
+  --focus-ring-color: #F8F8F2; --focus-ring: 2px solid #F8F8F2;
+  --syntax-keyword: #FF90C5; --syntax-string: #E6DB74; --syntax-number: #CCA0FF; --syntax-function: #A6E22E; --syntax-type: #66D9EF; --syntax-param: #FF9B26;
+}
+
+[data-theme="monokai-light"] {
+  color-scheme: light;
+  --bg-void: #E7E6E1; --bg-base: #EEEDE8; --surface-1: #FDFDFA; --surface-2: #FFFFFF; --surface-3: #E9E8D1; --surface-inset: #F4F3F0;
+  --bg-aurora: #EEEDE8;
+  --border-subtle: #CFCECA; --border-default: #BCBAB6; --border-strong: #85847E;
+  --text-primary: #272822; --text-secondary: #4C4B44; --text-muted: #69675A; --text-disabled: #AFAEA6;
+  --text-on-accent: #FFFFFF; --text-on-primary: #FFFFFF; --text-on-danger: #FFFFFF;
+  --accent-lime: #272822; --accent-lime-hover: #3D3E37; --accent-lime-press: #12120D;
+  --accent-cyan: #4C4B44; --accent-blue: #4C4B44; --accent-magenta: #A10128; --accent-red: #A10128; --accent-violet: #7444B4; --accent-amber: #B66D00;
+  --tint-lime: #2728220F; --line-lime: #85847E;
+  --tint-cyan: #2728220F; --line-cyan: #BCBAB6;
+  --tint-blue: #2728220F; --line-blue: #BCBAB6;
+  --tint-neutral: #2728220F; --line-neutral: #BCBAB6;
+  --tint-magenta: #FD61782E; --line-magenta: #A101288C;
+  --tint-red: #FD61782E; --line-red: #A101288C;
+  --tint-violet: #AE84F22E; --line-violet: #7444B48C;
+  --tint-amber: #F9AD262E; --line-amber: #B66D008C;
+  --status-success: #007A7B; --tint-success: #21D1CA2E; --line-success: #007A7B8C;
+  --status-warning: #B66D00; --tint-warning: #F9AD262E; --line-warning: #B66D008C;
+  --status-danger: #A10128; --status-danger-hover: #860121; --tint-danger: #FD61782E; --line-danger: #A101288C;
+  --status-info: #4C4B44; --tint-info: #2728220F; --line-info: #BCBAB6;
+  --interactive-primary: #272822; --interactive-primary-hover: #3D3E37; --interactive-primary-press: #12120D;
+  --surface-card: #FDFDFA; --surface-popover: #FFFFFF; --surface-input: #FFFFFF;
+  --text-body: #272822; --text-label: #4C4B44; --overlay-scrim: rgba(39, 40, 34, 0.45);
+  --surface-tooltip: #272822; --text-tooltip: #F8F8F2; --border-tooltip: #272822;
+  --shadow-1: 0 1px 0 #2728220A, 0 1px 3px #27282212;
+  --shadow-2: 0 2px 4px #27282214, 0 8px 24px #2728221F;
+  --shadow-3: 0 4px 8px #2728221A, 0 24px 64px #27282233;
+  --focus-ring-color: #272822; --focus-ring: 2px solid #272822;
+  --syntax-keyword: #D44E72; --syntax-string: #8C8000; --syntax-number: #9268DB; --syntax-function: #5E8B00; --syntax-type: #008A9F; --syntax-param: #C56300;
+}
+
+/* Monokai is sentence case: no uppercase labels, no letter tracking. */
+[data-theme^="monokai"] * { text-transform: none !important; letter-spacing: 0 !important; }
+[data-theme^="monokai"] ::selection { background: var(--surface-3); color: var(--text-primary); }
+/* The chamfered buttons set border-radius 0; without the chamfer they get the corners of every other button. */
+[data-theme^="monokai"] :is(.mb-btn--primary, .mb-btn--danger, .aopt.yes) { border-radius: var(--radius-1); }
+/* State marks are round dots. */
+[data-theme^="monokai"] .sq, [data-theme^="monokai"] .chgdot, [data-theme^="monokai"] .op-btn .unread { border-radius: 50%; }
 
 /* ---------- base ---------- */
 * { box-sizing: border-box; }
@@ -270,7 +370,7 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .op-btn:hover { border-color: var(--accent-violet); }
 .op-btn[aria-pressed="true"] { background: var(--tint-violet); border-color: var(--line-violet); }
 .op-btn .unread { width: 6px; height: 6px; flex: none; background: var(--accent-violet); }
-/* a three-way choice in an inset box (theme) */
+/* a two- or three-way choice in an inset box (file roots, file modes) */
 .seg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; flex: none; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
 .seg > button { height: 28px; padding: 0 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 .seg > button:hover { color: var(--text-primary); }
@@ -836,6 +936,32 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .proj-row[aria-current="true"] > .nm { color: var(--accent-lime); }
 .proj-row > .ct { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
 .proj-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* Appearance (design v8): mode buttons, and theme tiles with a small preview drawn in the tile's own theme */
+.mode-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.mode-row > button { height: 34px; min-width: 88px; padding: 0 14px; cursor: pointer; background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-1); color: var(--text-secondary); font-family: var(--font-sans); font-size: 13px; font-weight: 500; }
+.mode-row > button:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.mode-row > button[aria-checked="true"] { background: var(--surface-3); border-color: var(--border-strong); color: var(--text-primary); }
+.th-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.th-tile { padding: 0; display: flex; flex-direction: column; text-align: left; cursor: pointer; overflow: hidden; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-2); color: var(--text-primary); font: inherit; }
+.th-tile:hover { border-color: var(--border-strong); }
+.th-tile[aria-checked="true"] { border-color: var(--accent-lime); box-shadow: 0 0 0 1px var(--accent-lime); }
+.th-prev { height: 136px; display: flex; flex-direction: column; background: var(--bg-base); border-bottom: 1px solid var(--border-subtle); }
+.th-prev i { display: block; flex: none; height: 4px; border-radius: 1px; }
+.th-prev i.sq { height: 6px; border-radius: 0; }
+.th-prev .bar { height: 20px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--bg-void); border-bottom: 1px solid var(--border-subtle); }
+.th-prev .bar > .sq { width: 7px; height: 7px; border-radius: 1px; }
+.th-prev .body { flex: 1; min-height: 0; padding: 12px; display: flex; gap: 8px; }
+.th-prev .card { flex: 1; min-width: 0; padding: 9px; display: flex; flex-direction: column; gap: 7px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); }
+.th-prev .row { gap: 5px; }
+.th-prev .btns { margin-top: auto; gap: 4px; }
+.th-prev .code { height: 16px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 6px; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
+.th-prev .code > i { height: 3px; }
+.th-prev .pri { width: 32px; height: 13px; background: var(--interactive-primary); border-radius: var(--radius-1); }
+.th-prev .sec { width: 28px; height: 13px; border: 1px solid var(--border-strong); border-radius: var(--radius-1); }
+.th-name { min-height: 44px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.th-name > b { font-size: 14px; font-weight: 600; }
+.th-name > span { font-size: 12px; color: var(--text-muted); }
+.th-name > .th-state { margin-left: auto; display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
 .scard { display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); }
 .scard.cyan { border-top: 2px solid var(--accent-cyan); }
 .scard.lime { border-top: 2px solid var(--accent-lime); }
@@ -1023,14 +1149,82 @@ pre.cmd > .dollar { color: var(--accent-lime); }
         <div style="display:flex; align-items:center; gap:8px"><input id="bgHours" class="mb-input" type="number" min="0.25" max="48" step="0.25" style="width:96px" aria-label="Hours to wait for background tasks"><span class="small">hours</span></div>
       </div>
     </div>
-    <div id="secAppearance" class="set-main" hidden>
-      <div class="set-title"><h2>Appearance</h2><span>The sun and moon in the title bar flip between dark and light.</span></div>
-      <div class="scard" style="flex-direction:row; flex-wrap:wrap; align-items:center; gap:16px 24px">
-        <div style="flex:1 1 260px; display:flex; flex-direction:column; gap:6px"><span class="ml">Theme</span><span id="themeHint" style="font-size:14px; color:var(--text-secondary)"></span></div>
-        <div class="seg" role="radiogroup" aria-label="Theme" style="height:36px">
+    <!-- Design v8: a mode, then the theme family each mode uses -->
+    <div id="secAppearance" class="set-main" hidden style="max-width:1100px">
+      <div class="set-title"><h2>Appearance</h2><span>Pick a mode, then the theme each mode uses. Changes save as you go.</span></div>
+      <div class="scard">
+        <span class="t">Mode</span>
+        <div class="mode-row" role="radiogroup" aria-label="Mode">
           <button type="button" role="radio" data-act="theme" data-id="auto" data-fk="theme:auto">Auto</button>
-          <button type="button" role="radio" data-act="theme" data-id="dark" data-fk="theme:dark" title="Dark theme">Dark</button>
-          <button type="button" role="radio" data-act="theme" data-id="light" data-fk="theme:light" title="Light theme">Light</button>
+          <button type="button" role="radio" data-act="theme" data-id="light" data-fk="theme:light">Light</button>
+          <button type="button" role="radio" data-act="theme" data-id="dark" data-fk="theme:dark">Dark</button>
+        </div>
+        <span id="themeHint" style="font-size:13px; color:var(--text-secondary)"></span>
+      </div>
+      <div class="scard">
+        <div class="tt"><span class="t">Light theme</span><span>Used in Light mode, and in Auto when your system is light.</span></div>
+        <div class="th-grid" role="radiogroup" aria-label="Light theme">
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="light:cyberpunk" data-fk="theme-fam:light:cyberpunk">
+            <div class="th-prev" data-theme="light" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Cyberpunk Light</b><span>Violet paper, ink actions</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="light:monokai" data-fk="theme-fam:light:monokai">
+            <div class="th-prev" data-theme="monokai-light" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Monokai Light</b><span>Warm grey, white cards</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
+        </div>
+      </div>
+      <div class="scard">
+        <div class="tt"><span class="t">Dark theme</span><span>Used in Dark mode, and in Auto when your system is dark.</span></div>
+        <div class="th-grid" role="radiogroup" aria-label="Dark theme">
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="dark:cyberpunk" data-fk="theme-fam:dark:cyberpunk">
+            <div class="th-prev" data-theme="dark" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Cyberpunk Dark</b><span>Violet-indigo, acid-lime actions</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="dark:monokai" data-fk="theme-fam:dark:monokai">
+            <div class="th-prev" data-theme="monokai-dark" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Monokai Dark</b><span>Warm charcoal, Monokai syntax</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
         </div>
       </div>
     </div>
@@ -1917,9 +2111,9 @@ function renderHeader() {
   $("gearBtn").classList.toggle("mb-iconbtn--outline", S.view === "settings");
   $("opBtn").setAttribute("aria-pressed", S.opOpen);
   $("opUnread").hidden = !S.opUnread || S.opOpen;
-  const dark = (document.documentElement.dataset.theme ?? "dark") === "dark";
+  const dark = isDark(), ap = appearance();
   setHtml($("themeBtn"), SVG(dark ? I.sun : I.moon, 15));
-  $("themeBtn").title = dark ? "Light theme" : "Dark theme";
+  $("themeBtn").title = dark ? `Light theme · ${FAM[ap.light]}` : `Dark theme · ${FAM[ap.dark]}`;
   const errT = lv.find((t) => (t.git || t.pr_number) && t.gh_error), ghErr = errT?.gh_error, gh = $("ghBtn");
   gh.hidden = !ghErr;
   if (ghErr) {
@@ -3059,7 +3253,7 @@ const ACTIONS = {
   "op-toggle": () => toggleOperator(),
   "new-open": openNew,
   "new-close": closeNew,
-  "theme-toggle": () => { const dark = (document.documentElement.dataset.theme ?? "dark") === "dark"; try { localStorage.setItem("switchboard-theme", dark ? "light" : "dark"); } catch (e) {} applyTheme(); render(); },
+  "theme-toggle": () => { setAppearance({ mode: isDark() ? "light" : "dark" }); render(); },
   // one popover or menu at a time; a second click on its button closes it
   pop: (id) => { S.pop = S.pop === id ? null : id; render(); },
   "removed-toggle": () => { S.removedOpen = !S.removedOpen; render(); },
@@ -3162,7 +3356,8 @@ const ACTIONS = {
     S.ghRetrying = true; render();
     act(call("POST", "/api/gh/retry"), "PR status").finally(() => { S.ghRetrying = false; render(); });
   },
-  theme: (id, el) => { try { localStorage.setItem("switchboard-theme", id); } catch (e) {} applyTheme(); el?.focus(); },
+  theme: (id, el) => { setAppearance({ mode: id }); render(); el?.focus(); },
+  "theme-fam": (id, el) => { const [k, f] = id.split(":"); setAppearance({ [k]: f }); render(); el?.focus(); },
   dlg: (id) => { const b = S.dlg?.buttons[Number(id)]; closeDialog(); b?.[2]?.(); },
   toast: (id) => { const t = S.toasts.find((x) => x.id === Number(id)); S.toasts = S.toasts.filter((x) => x !== t); renderToasts(); t?.action[1](); },
 };
