@@ -2949,7 +2949,7 @@ const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValu
 function termTheme() {
   return {
     background: cssVar("--surface-inset"), foreground: cssVar("--text-primary"), cursor: cssVar("--accent-lime"), cursorAccent: cssVar("--surface-inset"),
-    selectionBackground: "rgba(182,255,58,.25)", black: cssVar("--surface-3"), red: cssVar("--accent-red"), green: cssVar("--status-success"),
+    selectionBackground: document.documentElement.dataset.theme.startsWith("monokai") ? cssVar("--surface-3") : "rgba(182,255,58,.25)", black: cssVar("--surface-3"), red: cssVar("--accent-red"), green: cssVar("--status-success"),
     yellow: cssVar("--accent-amber"), blue: cssVar("--accent-blue"), magenta: cssVar("--accent-violet"), cyan: cssVar("--accent-cyan"),
     white: cssVar("--text-secondary"), brightBlack: cssVar("--text-muted"), brightRed: cssVar("--accent-red"), brightGreen: cssVar("--status-success"),
     brightYellow: cssVar("--accent-amber"), brightBlue: cssVar("--accent-blue"), brightMagenta: cssVar("--accent-violet"), brightCyan: cssVar("--accent-cyan"), brightWhite: cssVar("--text-primary"),
