@@ -285,6 +285,9 @@ SELECT t.*, p.name AS project_name,
   (SELECT json_group_array(path) FROM (SELECT path FROM files f WHERE f.todo_id = t.id ORDER BY f.id)) AS file_paths
 FROM todos t LEFT JOIN projects p ON p.id = t.project_id`;
 
+// Item 136: the TODO shows running only for the agent's background tasks, between turns.
+const backgroundWait = (r: { id: number; status: string }) => r.status === "running" && !isRunning(r.id) && backgroundCount(r.id) > 0;
+
 // ponytail: two git processes per TODO with a worktree on every list fetch; cache gitState() per path for a few seconds
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
@@ -306,7 +309,7 @@ export async function summaries(where = "1", args: any[] = []) {
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
       // Item 136: the agent's background tasks still running, and whether the TODO shows running only for them.
-      background: backgroundCount(r.id), background_wait: r.status === "running" && !isRunning(r.id) && backgroundCount(r.id) > 0,
+      background: backgroundCount(r.id), background_wait: backgroundWait(r),
     };
   }));
 }
@@ -701,8 +704,10 @@ async function api(req: Request, path: string): Promise<Response> {
   }
 
   if (path === "/api/meta" && method === "GET") {
-    // The Waiting lane (laneOf): the status, or a running agent waiting for a permission answer.
+    // The Waiting lane (laneOf): the status, or a running agent waiting for a permission answer, or for background
+    // tasks only after it raised attention itself.
     const w = db.query("SELECT COUNT(*) AS n FROM todos WHERE (status = 'waiting' OR (status = 'running' AND permission IS NOT NULL)) AND removed_at IS NULL").get() as any;
+    w.n += (db.query("SELECT id, status FROM todos WHERE status = 'running' AND permission IS NULL AND attention_by = 'agent' AND removed_at IS NULL").all() as Todo[]).filter(backgroundWait).length;
     // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
     // P5: the agents, and per agent its last seen config options.
     return json({ contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),

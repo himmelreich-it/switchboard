@@ -197,10 +197,11 @@ export function permissionOf(r: { toolCall: any; options: any[] }, at: string): 
   };
 }
 
-// The board lane: a running TODO with an open permission request needs the user now, so it shows in Waiting.
-// Otherwise the lane is the status. The tab title and ⌘J count lanes, not statuses.
-export const laneOf = (t: { status: Status; permission: Permission | null }): Status =>
-  t.status === "running" && t.permission ? "waiting" : t.status;
+// The board lane: a running TODO with an open permission request needs the user now, so it shows in Waiting. So does
+// one that runs only for background tasks (item 136) after the agent raised attention itself: the agent is done and
+// asks, a Monitor of its own still runs. Otherwise the lane is the status. The tab title and ⌘J count lanes, not statuses.
+export const laneOf = (t: { status: Status; permission: Permission | null; background_wait?: boolean; attention_by?: string | null }): Status =>
+  t.status === "running" && (t.permission || (t.background_wait && t.attention_by === "agent")) ? "waiting" : t.status;
 
 // Answering a request clears the attention flag only when the request raised it (`attention_by`); a flag the agent
 // or a denial raised stays until they or the user clear it.
