@@ -2820,16 +2820,19 @@ function dropXterm(tid) {
   if (!v) return;
   v.closed = true;
   try { v.ws?.close(); } catch (e) {}
-  v.term?.dispose(); v.host.remove();
+  v.ro?.disconnect(); v.term?.dispose(); v.host.remove();
   xterms.delete(tid);
 }
+// FitAddon reads the parent's computed size; under a hidden ancestor that is the literal "100%", read as 100px,
+// which shrinks the terminal (and the program in it) to 11x5. Fit only while the host is laid out.
+const fitTerm = (v) => { if (v.fit && v.host.offsetWidth) v.fit.fit(); };
 // One WebSocket per open terminal: binary frames are terminal bytes both ways, text frames JSON control (resize, exit).
 function connectTerm(v) {
   try { v.ws?.close(); } catch (e) {}
   const ws = new WebSocket(withToken(`${location.origin.replace(/^http/, "ws")}/api/todos/${v.todoId}/terminals/${v.info.id}/ws`));
   ws.binaryType = "arraybuffer";
   v.ws = ws; v.down = false;
-  ws.onopen = () => { v.down = false; v.fit.fit(); ws.send(JSON.stringify({ type: "resize", cols: v.term.cols, rows: v.term.rows })); renderTermFoot(); };
+  ws.onopen = () => { v.down = false; fitTerm(v); ws.send(JSON.stringify({ type: "resize", cols: v.term.cols, rows: v.term.rows })); renderTermFoot(); };
   ws.onmessage = (e) => {
     if (typeof e.data !== "string") return v.term.write(new Uint8Array(e.data));
     const c = JSON.parse(e.data);
@@ -2879,12 +2882,12 @@ function ensureXterm(x, t) {
     term.textarea?.addEventListener("focus", renderTermFoot);
     term.textarea?.addEventListener("blur", renderTermFoot);
     connectTerm(v);
-    if (!v.host.hidden) requestAnimationFrame(() => fit.fit());
+    // Refits on every size change of the host: shown again (tab, TODO), window resize, panes dragged, operator panel.
+    v.ro = new ResizeObserver(() => fitTerm(v));
+    v.ro.observe(v.host);
   });
   return v;
 }
-const fitTerms = () => { for (const v of xterms.values()) if (!v.host.hidden && v.fit) v.fit.fit(); };
-addEventListener("resize", fitTerms);
 function renderTermFoot() {
   const t = cur(), tid = t && S.termSel[t.id], v = tid && xterms.get(tid), x = v?.info, foot = $("termFoot");
   foot.hidden = !x || !!S.cform;
@@ -2929,7 +2932,7 @@ claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append
   for (const x of list) ensureXterm(x, t);
   for (const v of xterms.values()) {
     const show = !hosts.hidden && v.todoId === t.id && v.info.id === sel;
-    if (v.host.hidden === show) { v.host.hidden = !show; if (show && v.fit) requestAnimationFrame(() => v.fit.fit()); }
+    if (v.host.hidden === show) v.host.hidden = !show;
   }
   const v = sel && xterms.get(sel), x = v?.info, exitEl = $("termExit");
   const ended = v?.ended, exited = x?.exited || v?.exit;
@@ -3196,7 +3199,6 @@ function paneLimits(key, w) {
 function setPane(key, v, save) {
   panes[key] = v;
   applyPanes();
-  requestAnimationFrame(fitTerms);
   if (save) try { localStorage.setItem("switchboard-panes", JSON.stringify(panes)); } catch (e) {}
 }
 document.addEventListener("pointerdown", (e) => {
