@@ -157,7 +157,7 @@ const topicOf = (s: { project_name: string | null; routed_at: string | null }) =
 
 function operatorTools(s: McpServer, used: Used) {
   s.registerTool("list_todos", {
-    description: "List the TODOs: number (T-<id>), title, topic (null: not picked yet; \"none\": thinking only), status (not_started = in the backlog), attention, branch, git state, pull request, session count, files and the latest messages. Removed TODOs only with include_removed.",
+    description: "List the TODOs: number (T-<id>), title, topic (null: not picked yet; \"none\": thinking only), status (not_started = in the backlog, or the Scheduled lane with a schedule), attention, branch, git state, pull request, session count, files, schedule and next run, the TODO that created it, and the latest messages. Removed TODOs only with include_removed.",
     inputSchema: { include_removed: z.boolean().optional() },
   }, async ({ include_removed }) => {
     used("list_todos", null);
@@ -165,6 +165,7 @@ function operatorTools(s: McpServer, used: Used) {
     return json(list.map((s) => ({
       id: s.id, ref: `T-${s.id}`, title: s.title, topic: topicOf(s), status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
       worktree_path: s.worktree_path, sessions: s.session_count, queued_messages: s.queued_count, pending_messages: s.pending_count, files: s.file_names,
+      schedule: s.schedule_text && { text: s.schedule_text, ...s.schedule }, next_run_at: s.next_run_at, created_by: s.parent_id ? `T-${s.parent_id}` : null,
       updated_at: s.updated_at, removed_at: s.removed_at, latest_messages: latest(s.id, 3),
     })));
   });
@@ -241,6 +242,7 @@ function readTools(s: McpServer, used: Used) {
       id: s.id, ref: `T-${s.id}`, title: s.title, topic: topicOf(s), status: s.status, attention: s.attention, branch: s.branch, git: s.git, pr: s.pr,
       pr_checked_at: s.pr_checked_at, gh_error: s.gh_error, worktree_path: s.worktree_path, live_session_id: s.session_id, created_at: s.created_at,
       removed_at: s.removed_at, removed_by: s.removed_by,
+      schedule: s.schedule_text && { text: s.schedule_text, ...s.schedule }, next_run_at: s.next_run_at, created_by: s.parent_id ? `T-${s.parent_id}` : null, key: s.key,
       files: filesOf(todo_id).map((f) => ({ name: basename(f.path), path: f.path, session: f.session_no })),
       sessions: sessions.map((x) => ({ ...x, label: label(x.no), messages: messages.filter((m) => m.session_no === x.no) })),
       // pending (before the start) and queued messages wait for the live session
