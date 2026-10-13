@@ -48,13 +48,14 @@ export function deliveryPrompt(worktree: string | null, bodies: string[], header
 }
 
 // Item 73: what a new session gets from the earlier ones, built from the TODO's data (no agent writes it).
-// Lines without a value are left out.
+// Lines without a value are left out. `scheduled` is the run line of a scheduled firing (item 144).
 export function handOver(o: {
   no: number; title: string; worktree: string | null; pr: number | null;
-  last: { no: number; body: string } | null; files: { path: string; session_no: number | null }[];
+  last: { no: number; body: string } | null; files: { path: string; session_no: number | null }[]; scheduled?: string | null;
 }): string {
   return [
     `This TODO continues earlier work (session ${o.no}). Title: ${o.title}. Keep this title.`,
+    o.scheduled && `Scheduled run: ${o.scheduled}.`,
     o.worktree && `Your worktree: ${o.worktree}. Work there.`,
     o.pr && `Pull request: #${o.pr}.`,
     o.last && `Last message of session ${o.last.no}: ${o.last.body.replace(/\s*\n\s*/g, " ")}`,
@@ -200,8 +201,10 @@ export function permissionOf(r: { toolCall: any; options: any[] }, at: string): 
 // The board lane: a running TODO with an open permission request needs the user now, so it shows in Waiting. So does
 // one that runs only for background tasks (item 136) after the agent raised attention itself: the agent is done and
 // asks, a Monitor of its own still runs. Otherwise the lane is the status. The tab title and ⌘J count lanes, not statuses.
-export const laneOf = (t: { status: Status; permission: Permission | null; background_wait?: boolean; attention_by?: string | null }): Status =>
-  t.status === "running" && (t.permission || (t.background_wait && t.attention_by === "agent")) ? "waiting" : t.status;
+// A scheduled TODO that is idle or not started is in the Scheduled lane (item 144); running or waiting, it is where any TODO is.
+export const laneOf = (t: { status: Status; permission: Permission | null; background_wait?: boolean; attention_by?: string | null; schedule?: unknown }): Status | "scheduled" =>
+  t.status === "running" && (t.permission || (t.background_wait && t.attention_by === "agent")) ? "waiting"
+    : t.schedule && (t.status === "idle" || t.status === "not_started") ? "scheduled" : t.status;
 
 // Answering a request clears the attention flag only when the request raised it (`attention_by`); a flag the agent
 // or a denial raised stays until they or the user clear it.
@@ -474,6 +477,81 @@ export function contextFile(c: {
   return out.join("\n");
 }
 
+// ---------- schedules (item 144) ----------
+
+// Days 0 = Sunday … 6 = Saturday; times "HH:MM" in the machine's local time. Either fixed `times`, or `every` N minutes
+// from `from` to `to` (both included; without them the whole day). `prompt` null: the first instruction is the prompt.
+export type Schedule = { days: number[]; times?: string[]; every?: number; from?: string; to?: string; prompt: string | null; paused: boolean };
+const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const toMin = (hm: string) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3));
+const p2 = (n: number) => String(n).padStart(2, "0");
+const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// A schedule from a request body or a tool call, or the error the user or agent reads.
+export function scheduleIn(v: any): Schedule | string {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return "schedule must be an object";
+  const days = [...new Set(Array.isArray(v.days) ? v.days : [])].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).sort() as number[];
+  if (!days.length) return "Pick at least one day (days: 0 = Sunday … 6 = Saturday).";
+  const prompt = typeof v.prompt === "string" && v.prompt.trim() ? v.prompt.trim() : null;
+  const base = { days, prompt, paused: v.paused === true };
+  if (v.every != null) {
+    const every = Number(v.every);
+    if (!Number.isInteger(every) || every < 1 || every > 1440) return "every is minutes between runs, 1 to 1440.";
+    const from = v.from || undefined, to = v.to || undefined;
+    if ([from, to].some((x) => x !== undefined && !HM.test(x))) return "from and to are times like 08:00.";
+    if (from && to && toMin(from) > toMin(to)) return "from must come before to.";
+    return { ...base, every, ...(from ? { from } : {}), ...(to ? { to } : {}) };
+  }
+  const times = [...new Set(Array.isArray(v.times) ? v.times : [])] as string[];
+  if (!times.length || !times.every((x) => typeof x === "string" && HM.test(x))) return "Give times like 09:00, or every N minutes.";
+  return { ...base, times: times.sort() };
+}
+
+// A day's slots in minutes after midnight.
+const slotsOf = (s: Schedule) => {
+  if (!s.every) return (s.times ?? []).map(toMin);
+  const out: number[] = [];
+  for (let m = s.from ? toMin(s.from) : 0; m <= (s.to ? toMin(s.to) : 1439); m += s.every) out.push(m);
+  return out;
+};
+
+// The first slot later than `after`, or null. Built from date parts, not by adding 24 hours, so a slot stays at its
+// wall-clock time across a daylight saving change. A slot in the skipped spring-forward hour runs an hour later.
+export function nextRun(s: Schedule, after: Date): Date | null {
+  const slots = slotsOf(s);
+  for (let d = 0; d < 8; d++) {
+    const day = new Date(after.getFullYear(), after.getMonth(), after.getDate() + d);
+    if (!s.days.includes(day.getDay())) continue;
+    for (const m of slots) {
+      const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(m / 60), m % 60);
+      if (at > after) return at;
+    }
+  }
+  return null;
+}
+
+// "Weekdays 09:00", "Mon–Fri 09:00, 14:00", "Daily 09:00", "Mon 08:00", "Every 30 min · 08–18", "Every 2 h": the chip
+// text (design v9) and the hand-over's run line.
+export function scheduleText(s: Schedule): string {
+  if (s.every) return `Every ${s.every % 60 ? `${s.every} min` : `${s.every / 60} h`}${s.from && s.to ? ` · ${s.from.slice(0, 2)}–${s.to.slice(0, 2)}` : ""}`;
+  const times = s.times ?? [], weekdays = s.days.join() === "1,2,3,4,5";
+  const days = s.days.length === 7 ? "Daily" : weekdays ? (times.length > 1 ? "Mon–Fri" : "Weekdays") : [1, 2, 3, 4, 5, 6, 0].filter((d) => s.days.includes(d)).map((d) => DAY[d]).join(", ");
+  return `${days} ${times.join(", ")}`;
+}
+
+// "Tue 13 Oct 09:00", for events and the hand-over.
+export const slotText = (d: Date) => `${DAY[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+
+// Why a firing does not run (design §3.3), or null when it runs. A routing run or one asking counts as running or waiting.
+export function skipReason(t: { status: Status; attention: number | boolean; permission: string | null; routing: string | null }, busy: boolean, queued: number): string | null {
+  if (t.permission) return "waiting for approval";
+  if (t.attention || t.status === "waiting") return "waiting on you";
+  if (busy || t.status === "running" || t.routing) return "still running";
+  if (queued) return "messages waiting";
+  return null;
+}
+
 // ---------- schema ----------
 
 // The whole schema plus its migrations. Migrations add, except one: repo routing (801) made todos.project_id
@@ -537,8 +615,12 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("projects", "profile", "TEXT");      // what lives in the repo, written by a scan or the user, for routing
   addColumn("projects", "profile_at", "TEXT");   // when the last scan wrote the profile
   addColumn("projects", "profile_edited", "INTEGER"); // 1 once the user edited the profile; a Rescan asks first
+  addColumn("todos", "schedule", "TEXT");        // the repeat rule (JSON Schedule), item 144; null: not scheduled
+  addColumn("todos", "next_run_at", "TEXT");     // the next slot; null when paused or not scheduled
+  addColumn("todos", "parent_id", "INTEGER");    // the TODO whose agent created this one (item 145)
+  addColumn("todos", "key", "TEXT");             // create_todo's dedupe key, unique below
   // A TODO has no repo before routing, or none at all: project_id becomes nullable. SQLite cannot drop NOT NULL, so the
-  // table is rebuilt from its own CREATE statement (it has no indexes or triggers).
+  // table is rebuilt from its own CREATE statement. It has no triggers; its one index (todos_key) is made after this.
   if ((db.query("SELECT \"notnull\" AS n FROM pragma_table_info('todos') WHERE name = 'project_id'").get() as any)?.n) {
     const sql = (db.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'todos'").get() as { sql: string }).sql;
     db.transaction(() => {
@@ -546,6 +628,8 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
       db.exec("INSERT INTO todos_new SELECT * FROM todos; DROP TABLE todos; ALTER TABLE todos_new RENAME TO todos;");
     })();
   }
+  // Item 145: a removed TODO keeps its key, so it blocks re-creation too.
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS todos_key ON todos (key) WHERE key IS NOT NULL");
   db.exec(`CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)`);
   // P4 kept the defaults flat and the mode in projects.mode, both Claude's: they move under "claude".

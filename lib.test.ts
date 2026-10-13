@@ -3,6 +3,7 @@ import {
   agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
+  nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -385,4 +386,68 @@ test("topicIntro: the user's topic, the agent's folder, and whether a worktree i
   expect(plain).toContain("not a git repository: work in it directly, without a worktree");
   expect(none).toContain("has no topic");
   expect(none).toContain("Do not create a worktree");
+});
+
+test("scheduleIn, scheduleText and nextRun (item 144), across a DST change", () => {
+  const tz = process.env.TZ;
+  process.env.TZ = "Europe/Amsterdam";   // clocks go back on Sun 25 Oct 2026, 03:00 -> 02:00
+  try {
+    const wd = scheduleIn({ days: [5, 1, 2, 3, 4, 4], times: ["14:00", "09:00"], prompt: "  " }) as Schedule;
+    expect(wd).toEqual({ days: [1, 2, 3, 4, 5], times: ["09:00", "14:00"], prompt: null, paused: false });
+    expect(scheduleText(wd)).toBe("Mon–Fri 09:00, 14:00");
+    expect(scheduleText({ ...wd, times: ["09:00"] })).toBe("Weekdays 09:00");
+    expect(scheduleText({ ...wd, days: [0, 1, 2, 3, 4, 5, 6], times: ["09:00"] })).toBe("Daily 09:00");
+    expect(scheduleText({ ...wd, days: [6, 1], times: ["08:00"] })).toBe("Mon, Sat 08:00");
+    // Tue 13 Oct 09:00 has passed at 09:00 itself; the next slot is 14:00, then Wed 09:00.
+    const at = (s: string) => new Date(s);
+    expect(slotText(nextRun(wd, at("2026-10-13T09:00:00+02:00"))!)).toBe("Tue 13 Oct 14:00");
+    expect(slotText(nextRun(wd, at("2026-10-13T14:00:00+02:00"))!)).toBe("Wed 14 Oct 09:00");
+    expect(slotText(nextRun(wd, at("2026-10-16T15:00:00+02:00"))!)).toBe("Mon 19 Oct 09:00");   // Fri evening: skips the weekend
+    // Sat 24 Oct 09:00 CEST, then Sun 25 Oct 09:00 CET: one day apart is 25 hours, the wall clock stays 09:00.
+    const daily = scheduleIn({ days: [0, 1, 2, 3, 4, 5, 6], times: ["09:00"] }) as Schedule;
+    const sun = nextRun(daily, at("2026-10-24T09:00:00+02:00"))!;
+    expect(slotText(sun)).toBe("Sun 25 Oct 09:00");
+    expect(sun.toISOString()).toBe("2026-10-25T08:00:00.000Z");
+    const every = scheduleIn({ days: [1, 2, 3, 4, 5], every: 30, from: "08:00", to: "18:00" }) as Schedule;
+    expect(scheduleText(every)).toBe("Every 30 min · 08–18");
+    expect(slotText(nextRun(every, at("2026-10-13T11:31:00+02:00"))!)).toBe("Tue 13 Oct 12:00");
+    expect(slotText(nextRun(every, at("2026-10-13T18:00:00+02:00"))!)).toBe("Wed 14 Oct 08:00");   // to is included, then the window ends
+    expect(scheduleText(scheduleIn({ days: [1], every: 120 }) as Schedule)).toBe("Every 2 h");
+    expect(nextRun({ ...daily, days: [] }, new Date())).toBeNull();
+  } finally {
+    process.env.TZ = tz;
+  }
+  expect(scheduleIn({ days: [], times: ["09:00"] })).toContain("day");
+  expect(scheduleIn({ days: [1], times: ["9:00"] })).toContain("09:00");
+  expect(scheduleIn({ days: [1], every: 0 })).toContain("1 to 1440");
+  expect(scheduleIn({ days: [1], every: 30, from: "18:00", to: "08:00" })).toContain("before");
+});
+
+test("laneOf puts idle and not-started scheduled TODOs in Scheduled; skipReason (item 144)", () => {
+  const sch = { days: [1], times: ["09:00"] };
+  expect(laneOf({ status: "idle", permission: null, schedule: sch })).toBe("scheduled");
+  expect(laneOf({ status: "not_started", permission: null, schedule: sch })).toBe("scheduled");
+  expect(laneOf({ status: "running", permission: null, schedule: sch })).toBe("running");
+  expect(laneOf({ status: "waiting", permission: null, schedule: sch })).toBe("waiting");
+  const t = { status: "idle" as const, attention: 0, permission: null, routing: null };
+  expect(skipReason(t, false, 0)).toBeNull();
+  expect(skipReason(t, true, 0)).toBe("still running");                          // background tasks or a turn
+  expect(skipReason({ ...t, routing: "{}" }, false, 0)).toBe("still running");
+  expect(skipReason({ ...t, attention: 1 }, false, 0)).toBe("waiting on you");
+  expect(skipReason({ ...t, status: "running", attention: 1, permission: "{}" }, true, 0)).toBe("waiting for approval");
+  expect(skipReason(t, false, 2)).toBe("messages waiting");
+});
+
+test("migrateDb: create_todo keys are unique, also over removed TODOs (item 145)", () => {
+  const { Database } = require("bun:sqlite");
+  const db = new Database(":memory:");
+  migrateDb(db);
+  migrateDb(db);
+  const add = (key: string | null) => db.run("INSERT INTO todos (title, status, created_at, updated_at, key, removed_at) VALUES ('x', 'idle', '', '', ?, 'gone')", [key]);
+  add("pr:a#1");
+  add(null);
+  add(null);
+  expect(() => add("pr:a#1")).toThrow();
+  expect(handOver({ no: 7, title: "T", worktree: null, pr: null, last: null, files: [], scheduled: "Weekdays 09:00, this one at Tue 13 Oct 09:00" }))
+    .toBe("This TODO continues earlier work (session 7). Title: T. Keep this title.\nScheduled run: Weekdays 09:00, this one at Tue 13 Oct 09:00.");
 });
