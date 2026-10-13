@@ -381,7 +381,8 @@ test("topicIntro: the user's topic, the agent's folder, and whether a worktree i
     expect(s).toContain('topic "Notes"');
     expect(s).toContain("/home/u/notes, is your working directory");
   }
-  expect(git).toContain("is a git repository. Worktrees go under /home/u/worktrees");
+  expect(git).toContain("is a git repository. Before you start work, pull the latest main");
+  expect(git).toContain("Worktrees go under /home/u/worktrees, e.g. `git worktree add -b <branch> /home/u/worktrees/<name> main`");
   expect(plain).toContain("not a git repository: work in it directly, without a worktree");
   expect(none).toContain("has no topic");
   expect(none).toContain("Do not create a worktree");
