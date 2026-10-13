@@ -444,7 +444,7 @@ export function topicIntro(p: { name: string; local_path: string } | null, workt
   if (!p) return "This TODO has no topic: it is thinking only, with no code changes. Your working directory is its artifact folder. Do not create a worktree.";
   const head = `This TODO belongs to the topic "${p.name}". The user knows it by that name; its folder on disk, ${p.local_path}, is your working directory.`;
   return worktrees
-    ? `${head} The folder is a git repository. Worktrees go under ${worktrees}, e.g. \`git worktree add -b <branch> ${worktrees}/<name>\`; the topic prompt may say more.`
+    ? `${head} The folder is a git repository. Before you start work, pull the latest main (\`git pull --ff-only\` when the folder is on a clean main, else \`git fetch origin main\` and branch from origin/main). Worktrees go under ${worktrees}, e.g. \`git worktree add -b <branch> ${worktrees}/<name>\`; the topic prompt may say more.`
     : `${head} The folder is not a git repository: work in it directly, without a worktree, branches or a pull request, and do not run git init.`;
 }
 
