@@ -395,6 +395,55 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .card.idle .foot { margin-top: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .card.idle .foot > .chip { margin-left: auto; flex: none; display: flex; }
 .card.idle .pill { height: 26px; font-size: 12px; }
+/* item 144 (design v9): the Scheduled lane's cards, the schedule chip, the from badge and the schedule editor */
+.card.sched { gap: 8px; padding: 12px 14px; border-top-color: var(--accent-blue); }
+.card.sched.paused { opacity: .62; border-top-color: var(--border-strong); }
+.card.sched .card-meta { min-height: 28px; }
+.card.sched .card-meta > .sub { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.card.sched .card-meta > .next { margin-left: auto; flex: none; color: var(--accent-blue); }
+.card.sched .card-title { font-size: 14px; }
+.card.sched .last { font-size: 13px; line-height: 1.45; color: var(--text-secondary); text-wrap: pretty; }
+.card.sched .last.none { color: var(--text-muted); }
+.card.sched .foot, .card .schrow { margin-top: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.card.sched .foot > .run { margin-left: auto; display: flex; }
+.schip { flex: none; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; background: transparent; border: 1px solid var(--border-default); border-radius: 2px; font-family: var(--font-mono); font-size: 11px; white-space: nowrap; color: var(--text-secondary); }
+.schip > svg:first-child { color: var(--accent-blue); }
+.schip.lane { color: var(--accent-blue); background: var(--tint-blue); border-color: var(--line-blue); }
+.schip.amber, .schip.amber > svg:first-child { color: var(--accent-amber); background: var(--tint-amber); border-color: var(--line-amber); }
+.schip.muted, .schip.muted > svg:first-child { color: var(--text-muted); border-color: var(--border-subtle); }
+.schip:hover { filter: brightness(1.15); }
+.hchip.sch { height: 26px; font-size: 12px; }
+.fromb { flex: none; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; cursor: pointer; background: transparent; border: 1px solid var(--border-default); border-radius: 2px; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.fromb:hover { border-color: var(--accent-lime); color: var(--text-primary); }
+.nextup { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nextup > button { height: 22px; padding: 0 7px; display: flex; align-items: center; gap: 6px; cursor: pointer; background: transparent; border: 1px solid var(--border-subtle); border-radius: 2px; font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); white-space: nowrap; }
+.nextup > button:hover { border-color: var(--border-strong); }
+.nextup > button > span:last-child { color: var(--accent-blue); }
+.sched-ed { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px 12px; align-items: center; }
+.sched-ed .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); }
+.sched-ed .d { width: 30px; height: 30px; cursor: pointer; background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.sched-ed .d[aria-pressed="true"] { background: var(--interactive-primary); border-color: var(--interactive-primary); color: var(--text-on-primary); }
+.sched-ed .linkb { padding: 0 4px; cursor: pointer; background: none; border: none; font-size: 12px; color: var(--text-secondary); text-decoration: underline; text-underline-offset: 3px; }
+.sched-ed .linkb:hover { color: var(--text-primary); }
+.sched-ed .seg > button { height: 24px; padding: 0 10px; }
+.tbox { height: 30px; display: inline-flex; align-items: center; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
+.tbox > input { width: 58px; height: 100%; padding: 0 8px; background: transparent; border: none; outline: none; color: var(--text-primary); font-family: var(--font-mono); font-size: 13px; }
+.tbox > .u { padding-right: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.tbox > button { width: 24px; height: 100%; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; background: transparent; border: none; border-left: 1px solid var(--border-subtle); color: var(--text-muted); }
+.addt { height: 30px; padding: 0 10px; cursor: pointer; background: transparent; border: 1px dashed var(--border-default); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.preset { height: 26px; padding: 0 8px; cursor: pointer; background: transparent; border: 1px solid var(--border-subtle); border-radius: 2px; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+.preset.on, .preset:hover, .addt:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.repeat { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.schedpop { width: 500px; max-width: calc(100vw - 48px); padding: 14px; display: flex; flex-direction: column; gap: 12px; white-space: normal; }
+.schedpop .hd { display: flex; align-items: center; gap: 8px; }
+.schedpop .hd > .t { font-family: var(--font-display); font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.schedpop .hd > .mb-iconbtn { margin-left: auto; }
+.schedpop .sec2 { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.schedpop .lr { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.schedpop .ft { display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.schedpop .quiet { margin-left: auto; height: 28px; padding: 0 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); font-size: 13px; color: var(--text-muted); }
+.schedpop .quiet:hover { border-color: var(--border-default); color: var(--text-primary); }
+.tool-link { padding: 0 0 4px 30px; }
 /* backlog rows: one card, rows separated by a line */
 .rows { display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); box-shadow: var(--shadow-1); overflow: hidden; }
 .rows > * + * { border-top: 1px solid var(--border-subtle); }
@@ -1022,6 +1071,11 @@ pre.cmd > .dollar { color: var(--accent-lime); }
         <div style="flex:1 1 260px; display:flex; flex-direction:column; gap:6px"><span class="ml">Background tasks</span><span style="font-size:14px; line-height:1.55; color:var(--text-secondary)">When the agent ends a turn with background tasks still running (a long test run), the TODO stays Running and the agent waits for them. When one finishes, the agent follows up and the TODO asks for your attention. After this long the agent process is closed and the tasks end with it.</span></div>
         <div style="display:flex; align-items:center; gap:8px"><input id="bgHours" class="mb-input" type="number" min="0.25" max="48" step="0.25" style="width:96px" aria-label="Hours to wait for background tasks"><span class="small">hours</span></div>
       </div>
+      <!-- Item 145: the cap on TODOs one agent turn starts with create_todo -->
+      <div class="scard" style="flex-direction:row; flex-wrap:wrap; align-items:center; gap:16px 24px">
+        <div style="flex:1 1 260px; display:flex; flex-direction:column; gap:6px"><span class="ml">Started TODOs per turn</span><span style="font-size:14px; line-height:1.55; color:var(--text-secondary)">How many TODOs one agent turn may start with create_todo. More are refused; the agent can still add them to the backlog.</span></div>
+        <div style="display:flex; align-items:center; gap:8px"><input id="startedPerTurn" class="mb-input" type="number" min="1" max="100" step="1" style="width:96px" aria-label="Started TODOs per turn"><span class="small">TODOs</span></div>
+      </div>
     </div>
     <div id="secAppearance" class="set-main" hidden>
       <div class="set-title"><h2>Appearance</h2><span>The sun and moon in the title bar flip between dark and light.</span></div>
@@ -1066,6 +1120,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
       <span id="newNote" class="mb-field__hint">Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.</span>
       <div id="newFiles" class="atts"></div>
     </div>
+    <div id="newRepeat"></div>
     <div class="foot">
       <div id="newAgentField" class="mb-field" style="width:180px" hidden><label class="mb-field__label" for="newAgent">Agent</label><span class="mb-select-wrap"><select id="newAgent" class="mb-select"></select></span></div>
       <button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="pick-files" data-id="new" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)" style="margin-bottom:4px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
@@ -1253,6 +1308,7 @@ const S = {
   removedOpen: false,                   // the Removed list under the backlog
   openWork: new Map(),                  // work group key -> open/closed as the user set it (default: open while live or with the transcript on)
   showAll: new Set(),                   // live work groups showing all their steps
+  rep: null,                            // the New TODO dialog's Repeat row (item 144), see REP0
 };
 try { S.opOpen = localStorage.getItem("switchboard-operator-open") === "1"; } catch (e) {}
 try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catch (e) {}
@@ -1280,7 +1336,11 @@ const filterProject = () => (S.filter === "none" ? { id: "none", name: "No topic
 const inFilter = (t) => { const p = filterProject(); return !p || (p.id === "none" ? t.project_id == null : t.project_id === p.id); };
 // P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf),
 // and so does one that waits only for background tasks after the agent raised attention itself (item 136).
-const laneOf = (t) => (t.status === "running" && (t.permission || (t.background_wait && t.attention_by === "agent")) ? "waiting" : t.status);
+// Item 144: a scheduled TODO that is idle or not started is in the Scheduled lane.
+const laneOf = (t) => (t.status === "running" && (t.permission || (t.background_wait && t.attention_by === "agent")) ? "waiting"
+  : t.schedule && (t.status === "idle" || t.status === "not_started") ? "scheduled" : t.status);
+// The backlog: not started and not scheduled (a scheduled one starts on its own, so it is on the board).
+const isIdea = (t) => t.status === "not_started" && !t.schedule;
 const waitingList = () => live().filter((t) => laneOf(t) === "waiting" && inFilter(t)).sort((a, b) => a.updated_at.localeCompare(b.updated_at));
 // P5: the agents (Settings › Agents); only the found ones can run. Claude is the default everywhere.
 const agentsAll = () => S.meta?.agents ?? [{ id: "claude", name: "Claude", builtin: true, found: true }];
@@ -1579,11 +1639,14 @@ async function addTodo(start = false) {
   const files = uploads.new ?? [];
   try {
     const agent = agentsFound().length > 1 ? newAgent.value : null;   // "": the topic's default, once routing picks it
-    const t = await call("POST", "/api/todos", { instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}) });
+    const schedule = S.rep?.on ? schedOut(S.rep) : null;   // item 144: Repeat
+    const t = await call("POST", "/api/todos", { instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}), ...(schedule ? { schedule } : {}) });
     newText.value = "";
     S.newOpen = false;
+    S.rep = null;
     uploads.new = (uploads.new ?? []).filter((u) => !files.includes(u));   // keeps files added while this was sending
     if (start) startedToast(t.id, instruction);
+    else if (schedule) toast("success", "Scheduled", `${short(instruction, 48)}.${t.next_run_at ? ` First run ${dayAt(t.next_run_at)}.` : ""}`, ["Open", () => select(t.id)]);
     else toast("success", "Added to the backlog.", short(instruction, 48));
     need("todos");
   } catch (e) { toast("danger", "Not added", e.message); }
@@ -1907,7 +1970,7 @@ function render() {
 function renderHeader() {
   const lv = live();
   const n = lv.filter((t) => laneOf(t) === "waiting").length;   // R41: only "waiting on you" counts, not unread
-  const ideas = lv.filter((t) => t.status === "not_started").length;   // all projects, whatever the filter (item 63)
+  const ideas = lv.filter(isIdea).length;   // all projects, whatever the filter (item 63)
   $("cBacklog").textContent = ideas;
   $("cBoard").textContent = lv.length - ideas;
   $("waitTodos").hidden = !n;
@@ -1953,7 +2016,6 @@ function renderOverview() {
   $("ov").classList.toggle("backlog", backlog);
   // Not-started TODOs have no topic yet (801), so the backlog shows them all, without the filter.
   const lv = live(), fp = backlog ? null : filterProject();
-  const isIdea = (t) => t.status === "not_started";
   const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
   const view = lv.filter(inView), rows = view.filter((t) => backlog || inFilter(t)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first
   // Item 63, 90: one select; its counts are the board's. While a topic is picked, the rest is "hidden by the filter".
@@ -1970,6 +2032,10 @@ function renderOverview() {
     body = `<div class="board-empty"><span>No started TODOs${fp ? " in " + esc(fp.name) : ""}. ${ideas ? `${plural(ideas, "idea")} in the backlog.` : "The backlog is empty too."}</span><span style="margin-left:auto">${btn("Open backlog", "board", { id: "backlog" })}</span></div>`;
   } else {
     const wait = rows.filter((t) => laneOf(t) === "waiting"), run = rows.filter((t) => laneOf(t) === "running"), idle = rows.filter((t) => laneOf(t) === "idle");
+    // Item 144: soonest next run first, paused ones last.
+    const nextOf = (t) => (t.schedule.paused ? "~" : t.next_run_at ?? "}");
+    const sched = rows.filter((t) => laneOf(t) === "scheduled").sort((a, b) => (nextOf(a) < nextOf(b) ? -1 : nextOf(a) > nextOf(b) ? 1 : 0));   // code order: "~" after any date
+    const nextUp = sched.filter((t) => !t.schedule.paused && t.next_run_at).slice(0, 3);
     body = `<section class="sec" aria-label="Waiting on you">
         <div class="sec-head"><span class="sq8" style="background:var(--accent-amber)"></span><h2>Waiting on you</h2><span class="cnt" style="color:var(--accent-amber)">${wait.length}</span><span class="sub">${keys("Answer from here, or open one and press ⌘J for the next.")}</span></div>
         ${wait.length ? `<div class="grid-wait">${wait.map(waitCard).join("")}</div>` : `<span class="empty">${fp ? `Nothing in ${esc(fp.name)} needs you.` : "Nothing needs you."}</span>`}
@@ -1981,6 +2047,11 @@ function renderOverview() {
       <section class="sec" aria-label="Idle">
         <div class="sec-head"><span class="sq8" style="background:var(--text-muted)"></span><h2>Idle</h2><span class="cnt" style="color:var(--text-secondary)">${idle.length}</span><span class="sub">Turn ended. Pick it up again or remove it when it's done.</span></div>
         ${idle.length ? `<div class="grid-run">${idle.map(idleCard).join("")}</div>` : '<span class="empty">Nothing idle.</span>'}
+      </section>
+      <section class="sec" aria-label="Scheduled">
+        <div class="sec-head"><span class="sq8" style="background:var(--accent-blue)"></span><h2>Scheduled</h2><span class="cnt" style="color:var(--accent-blue)">${sched.length}</span><span class="sub">Runs on its own. Next run first.</span>
+          ${nextUp.length ? `<span class="nextup"><span class="ml">Next up</span>${nextUp.map((t) => `<button type="button" data-act="open" data-id="${t.id}" title="${esc(t.title)} · next run ${esc(longAt(t.next_run_at))}"><span>${tNum(t)}</span><span>${esc(slotAt(t.next_run_at))}</span></button>`).join("")}</span>` : ""}</div>
+        ${sched.length ? `<div class="grid-run">${sched.map(schedCard).join("")}</div>` : '<span class="empty">Nothing scheduled.</span>'}
       </section>`;
   }
   setHtml($("ov"), `<div class="toolbar">${filter}${hiddenNote}${newBtn}</div>${body}`);
@@ -2035,9 +2106,9 @@ function waitCard(t) {
     if (last) box = `<div class="askbox"><span class="ml b" style="color:${color}">${esc(who)}</span><span class="t clamp3">${esc(last.body || last.files)}</span></div>`;
     acts = pillsHtml(t, "card") || `<span class="reply">Reply →</span>`;
   }
-  const chips = pr && (pr.tone === "red" || pr.tone === "amber") ? `<span class="chips">${pr.html}</span>` : "";
+  const chips = (pr && (pr.tone === "red" || pr.tone === "amber")) || t.schedule ? `<span class="chips">${schedChip(t)}${pr && (pr.tone === "red" || pr.tone === "amber") ? pr.html : ""}</span>` : "";
   return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo">${esc(repoName(t))}</span>${branchHtml(t)}${agentBadge(t)}<span class="time">${hm(t.updated_at)}</span></div>
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo">${esc(repoName(t))}</span>${branchHtml(t)}${fromBadge(t)}${agentBadge(t)}<span class="time">${hm(t.updated_at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     ${box}
     <div class="card-acts">${acts}${chips}</div>
@@ -2067,12 +2138,13 @@ function planSegs(t) {
 function runCard(t) {
   const [kind, text] = activityOf(t);
   return `<div class="card run" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Goes to the agent after its current step">${t.queued_count} queued</span>` : ""}
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${fromBadge(t)}${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Goes to the agent after its current step">${t.queued_count} queued</span>` : ""}
       <span class="right"><span class="ticker"><span class="live-dot"></span>${t.run_started_at ? `<span class="timer" data-since="${esc(t.run_started_at)}"></span>` : ""}</span>
         <span class="stop" title="Stop · interrupts the agent, like Esc in Claude Code">${btn("Stop", "stop", { id: t.id })}</span></span></div>
     <div class="card-title clamp2">${esc(t.title)}</div>
     <div class="activity" title="${esc(text)}">${ico(kind, 13, "var(--accent-cyan)")}<span class="ellipsis">${esc(text)}</span></div>
     ${planSegs(t)}
+    ${t.schedule ? `<div class="schrow">${schedChip(t)}</div>` : ""}
   </div>`;
 }
 function idleCard(t) {
@@ -2080,11 +2152,101 @@ function idleCard(t) {
   const sub = [repoName(t), t.branch, agentsFound().length > 1 ? agentLabel(t.agent) : ""].filter(Boolean).join(" · ");
   const when = fmtTime(last?.at ?? t.updated_at);
   return `<div class="card idle" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="sub" title="${esc(sub)}">${esc(sub)}</span>
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="sub" title="${esc(sub)}">${esc(sub)}</span>${fromBadge(t)}
       <span class="right"><span class="when">${esc(when)}</span><span title="Remove · restore it from the backlog" style="display:contents"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO">${SVG(TRASH, 15)}</button></span></span></div>
     <div class="tline">${t.unread ? '<span class="sq" title="Unread"></span>' : ""}<span class="card-title clamp2">${esc(t.title)}</span></div>
     ${last ? `<div class="last clamp2" title="${esc(last.body)}">${esc(last.body || last.files)}</div>` : ""}
     ${pills || chip ? `<div class="foot">${pills}${chip ? `<span class="chip">${chip}</span>` : ""}</div>` : ""}
+  </div>`;
+}
+
+// ---------- schedules (item 144, design v9) ----------
+const DAYN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], DAYF = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const REPEAT = '<path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>';
+const dayAt = (iso) => `${DAYN[new Date(iso).getDay()]} ${hm(iso)}`;
+const slotAt = (iso) => (new Date(iso).toDateString() === new Date().toDateString() ? hm(iso) : dayAt(iso));   // "14:30", "Mon 08:00"
+const longAt = (iso) => { const d = new Date(iso); return `${DAYN[d.getDay()]} ${d.getDate()} ${MONN[d.getMonth()]} ${hm(iso)}`; };
+const relAt = (iso) => { const m = Math.max(1, Math.round((new Date(iso) - Date.now()) / 60000)); return m < 60 ? `in ${m} min` : m < 1440 ? `in ${Math.floor(m / 60)} h` : `in ${Math.round(m / 1440)} d`; };
+// The last firing was skipped: its event's detail is "Tue 13 Oct 09:00 · waiting on you".
+const skippedAt = (t) => (t.schedule_last?.kind === "schedule skipped" && !t.schedule.paused ? t.schedule_last.detail.split(" · ") : null);
+// The schedule chip on every card (`lane`: the Scheduled lane's blue one) and in the Focus header, where it opens the popover.
+function schedChip(t, lane = false, head = false) {
+  const s = t.schedule;
+  if (!s) return "";
+  const sk = skippedAt(t), next = t.next_run_at ? (s.every ? slotAt(t.next_run_at) : longAt(t.next_run_at)) : null;
+  const title = s.paused ? "Paused. Resume in the schedule popover." : sk ? `Skipped ${sk[0].slice(-5)}: ${sk[1]}.${t.next_run_at ? ` Next run ${slotAt(t.next_run_at)}.` : ""}` : next ? `Next run ${next}` : "No next run.";
+  const cls = s.paused ? "muted" : sk ? "amber" : lane ? "lane" : "";
+  const text = esc(s.paused ? "paused" : t.schedule_text + (sk ? " · skipped" : ""));
+  if (head) return `<button type="button" class="hchip sch schip ${cls}" data-act="pop" data-id="sched" data-fk="pop:sched" aria-expanded="${S.pop === "sched"}" title="${esc(title)}">${SVG(REPEAT, 12)}${text}${SVG(CHEV_D, 12)}</button>`;
+  return `<button type="button" class="schip ${cls}" data-act="sched-open" data-id="${t.id}" title="${esc(title)} · Click to edit the schedule.">${SVG(REPEAT, 11)}${text}${SVG('<path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 10)}</button>`;
+}
+// Item 145: a TODO another TODO's agent created; the badge opens that TODO.
+const fromBadge = (t) => (t.parent_id ? `<button type="button" class="fromb" data-act="open" data-id="${t.parent_id}" title="Created by T-${t.parent_id}'s agent · open T-${t.parent_id}">from&nbsp;T-${t.parent_id}</button>` : "");
+function schedCard(t) {
+  const s = t.schedule, last = t.session_id ? lastWord(t) : null, next = !s.paused && t.next_run_at;
+  return `<div class="card sched${s.paused ? " paused" : ""}" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="sub" title="${esc(repoName(t))}">${esc(repoName(t) || "no topic yet")}</span>${fromBadge(t)}${next ? `<span class="next" title="Next run ${esc(longAt(t.next_run_at))}">${relAt(t.next_run_at)}</span>` : ""}</div>
+    <div class="card-title clamp2">${esc(t.title)}</div>
+    <div class="last clamp2${last ? "" : " none"}"${last ? ` title="${esc(last.body)}"` : ""}>${esc(last ? last.body || last.files : "Not run yet.")}</div>
+    <div class="foot">${schedChip(t, true)}<span class="run" title="Start a run now. It opens a new session.">${btn("Run now", "run-now", { id: t.id })}</span></div>
+  </div>`;
+}
+// The schedule editor's state: days, "times" or "every", the times, the minutes, the window. REP0 is the dialog's default.
+const REP0 = () => ({ on: false, days: [1, 2, 3, 4, 5], mode: "times", times: ["09:00"], every: 30, from: "08:00", to: "18:00" });
+const edOf = (s) => ({ days: s.days, mode: s.every ? "every" : "times", times: s.times ?? ["09:00"], every: s.every ?? 30, from: s.from ?? "", to: s.to ?? "", prompt: s.prompt, paused: s.paused });
+const schedOut = (e) => ({ days: e.days, ...(e.mode === "every" ? { every: Number(e.every), from: e.from || undefined, to: e.to || undefined } : { times: e.times }), prompt: e.prompt ?? null, paused: !!e.paused });
+// Days, At times / Every, the times or the minutes and window. `ctx` is "new" (the dialog) or the TODO's id (the popover).
+function schedEditor(e, ctx) {
+  const days = [1, 2, 3, 4, 5, 6, 0].map((d) => `<button type="button" class="d" aria-pressed="${e.days.includes(d)}" aria-label="${DAYF[d]}" title="${DAYF[d]}" data-act="sch-day" data-id="${ctx}|${d}" data-fk="sch-day:${ctx}:${d}">${DAYF[d][0]}</button>`).join("");
+  const mode = `<div class="seg" role="radiogroup" aria-label="When">${[["times", "At times"], ["every", "Every"]].map(([m, l]) => `<button type="button" role="radio" aria-checked="${e.mode === m}" data-act="sch-mode" data-id="${ctx}|${m}" data-fk="sch-mode:${ctx}:${m}">${l}</button>`).join("")}</div>`;
+  const inp = (label, change, value, extra = "") => `<input aria-label="${label}" inputmode="numeric" maxlength="5" placeholder="--:--" value="${esc(value)}" data-change="${change}" data-id="${ctx}"${extra}>`;
+  const times = e.times.map((v, i) => `<span class="tbox">${inp("Time", "sch-time", v, ` data-i="${i}"`)}${e.times.length > 1 ? `<button type="button" aria-label="Remove time" title="Remove time" data-act="sch-rm-time" data-id="${ctx}|${i}">${SVG(CLOSE, 11)}</button>` : ""}</span>`).join("")
+    + `<button type="button" class="addt" data-act="sch-add-time" data-id="${ctx}">+ time</button>`;
+  const every = `<span class="tbox"><input aria-label="Minutes between runs" inputmode="numeric" maxlength="4" value="${esc(e.every)}" data-change="sch-every" data-id="${ctx}" style="width:48px; text-align:right"><span class="u">min</span></span>`
+    + [[15, "15 min"], [30, "30 min"], [60, "1 h"]].map(([n, l]) => `<button type="button" class="preset${Number(e.every) === n ? " on" : ""}" data-act="sch-preset" data-id="${ctx}|${n}">${l}</button>`).join("");
+  return `<div class="sched-ed"><span class="ml">Days</span><div class="row">${days}<button type="button" class="linkb" data-act="sch-days" data-id="${ctx}|1,2,3,4,5">Weekdays</button><button type="button" class="linkb" data-act="sch-days" data-id="${ctx}|0,1,2,3,4,5,6">Every day</button></div>
+    <span class="ml">When</span><div class="row">${mode}${e.mode === "times" ? times : ""}</div>
+    ${e.mode === "every" ? `<span></span><div class="row">${every}</div><span></span><div class="row">from <span class="tbox">${inp("From", "sch-from", e.from)}</span> to <span class="tbox">${inp("To", "sch-to", e.to)}</span><span class="small">Optional. Empty runs all day.</span></div>` : ""}</div>`;
+}
+// A change in the editor: the dialog keeps it until Add; a TODO's schedule is saved at once.
+function patchSched(ctx, patch) {
+  if (ctx === "new") { Object.assign(S.rep, patch); return render(); }
+  const t = cur()?.id === Number(ctx) ? cur() : S.todos.find((x) => x.id === Number(ctx));
+  if (t?.schedule) saveSched(t.id, schedOut(Object.assign(edOf(t.schedule), patch)));
+}
+async function saveSched(id, schedule, done) {
+  try {
+    const t = await call("PUT", `/api/todos/${id}/schedule`, { schedule });
+    for (const x of [S.todos.find((y) => y.id === id), S.detail?.todo.id === id ? S.detail.todo : null]) if (x) Object.assign(x, t);
+    done?.(t);
+  } catch (e) { toast("danger", "Schedule not saved", e.message); }
+  render();
+}
+// The popover's Last runs: the last five firings, each with the session it opened and how long its run took.
+function lastRuns(d) {
+  return d.events.filter((e) => e.kind === "scheduled run" || e.kind === "schedule skipped").slice(-5).reverse().map((e) => {
+    // A skip shows its slot ("Tue 13 Oct 09:00" in the detail), a run the time it ran.
+    if (e.kind === "schedule skipped") { const [slot, why] = e.detail.split(" · "); return { at: `${slot.slice(0, 3)} ${slot.slice(-5)}`, text: `skipped · ${why}`, color: "var(--accent-amber)" }; }
+    const s = d.sessions.find((x) => x.started_at >= e.at);
+    const end = s && d.events.find((x) => x.kind === "run ended" && x.session_no === s.no);
+    const mins = end ? Math.max(1, Math.round((new Date(end.at) - new Date(s.started_at)) / 60000)) + " min" : s ? "running" : "starting";
+    const how = e.detail.startsWith("catch-up") ? "catch-up" : e.detail.startsWith("run now") ? "run now" : "";
+    return { at: dayAt(e.at), text: [s ? `session ${s.no}` : "", mins, how].filter(Boolean).join(" · "), color: "var(--text-secondary)" };
+  });
+}
+function schedPop(t, d) {
+  const s = t.schedule, first = d?.messages[0]?.body ?? t.title, lane = laneOf(t);
+  const busy = lane === "running" ? "Running · it can't start again until this run ends" : lane === "waiting" ? "Waiting on you · answer it first" : "";
+  const runs = d ? lastRuns(d) : [];
+  return `<div class="popover schedpop" role="dialog" aria-label="Schedule" data-act="noop">
+    <div class="hd"><span class="t">Schedule</span><button type="button" class="mb-iconbtn" data-act="pop" data-id="sched" aria-label="Close" title="Close · Esc">${SVG(CLOSE, 14)}</button></div>
+    ${schedEditor(edOf(s), t.id)}
+    <div class="sched-ed"><span class="ml" style="align-self:start; padding-top:10px">Prompt</span><div class="mb-field"><textarea class="mb-textarea" rows="3" aria-label="Prompt" data-change="sch-prompt" data-id="${t.id}">${esc(s.prompt ?? first)}</textarea><span class="mb-field__hint">Sent as the first message of each run's new session.</span></div>
+      <span class="ml">Next run</span><span class="mono" style="font-size:13px; color:${s.paused || !t.next_run_at ? "var(--text-muted)" : "var(--accent-blue)"}">${s.paused ? "Paused" : t.next_run_at ? esc(longAt(t.next_run_at)) : "None. Pick a day and a time."}</span></div>
+    <div class="sec2"><span class="ml">Last runs</span>${runs.length ? runs.map((r) => `<div class="lr"><span>${esc(r.at)}</span><span style="color:${r.color}">${esc(r.text)}</span></div>`).join("") : '<span class="small">No runs yet. The first run starts it.</span>'}</div>
+    <div class="ft"><span title="${esc(busy || "Start a run now. It opens a new session.")}" style="display:flex">${btn("Run now", "run-now", { id: t.id, dis: !!busy })}</span>${btn(s.paused ? "Resume" : "Pause", "sch-pause", { v: "ghost", id: t.id })}
+      <button type="button" class="quiet" data-act="sch-remove" data-id="${t.id}" title="The TODO stays. Only the repeat goes.">Remove schedule</button></div>
   </div>`;
 }
 
@@ -2099,7 +2261,7 @@ function backlogHtml(rows) {
       return `<div class="bl-row" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
         <span class="num">${tNum(t)}</span>
         <div style="display:flex; flex-direction:column; gap:2px; min-width:0"><span class="t clamp2">${esc(t.title)}</span><span class="mono muted" style="font-size:11px" title="${esc(new Date(t.created_at).toLocaleString())}">${esc(meta)}</span></div>
-        <div class="acts">${agentBadge(t)}${t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
+        <div class="acts">${agentBadge(t)}${t.parent_id ? fromBadge(t) : t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
           <span title="Remove · no confirmation, nothing is running" style="display:flex"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove">${SVG(CLOSE, 15)}</button></span></div>
       </div>`;
     }).join("")}</div>`;
@@ -2157,7 +2319,10 @@ function renderNew() {
   const akey = found.map((a) => a.id).join("|");
   if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(""); newAgent.dataset.key = akey; }
   newAgent.value = S.newAgent ?? "";
-  $("newNote").textContent = keys("Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.");
+  S.rep ??= REP0();
+  $("newNote").textContent = keys(S.rep.on ? "Paste images with ⌘V. Lands in the Scheduled lane. The operator picks the topic at the first run." : "Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.");
+  setHtml($("newRepeat"), `<div class="repeat"><label class="mb-switch" style="align-self:flex-start"><input type="checkbox" data-act="rep-toggle"${S.rep.on ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Repeat</span></label>
+    ${S.rep.on ? schedEditor(S.rep, "new") + '<span class="mb-field__hint">Runs as a new session at each time. The first run starts it.</span>' : ""}</div>`);
   $("addBtn").disabled = $("addStartBtn").disabled = !newText.value.trim() || adding;
   setHtml($("newFiles"), uploadChips("new"));
 }
@@ -2281,6 +2446,9 @@ function renderFocusHead(t, d) {
         : `<div class="foot">${t.git ? "local · uncommitted plus commits since the merge base with origin/HEAD" : t.worktree_path ? "The topic is fixed once a worktree exists." : "The agent registers a worktree with set_worktree."}</div>`}
     </div>` : "";
   let chips = `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="repo" data-fk="pop:repo" aria-expanded="${repoOpen}" title="Topic and branch"><span class="pri">${esc(repoName(t) || "topic not picked")}</span>${t.branch ? `${SVG(BRANCH, 12)}<span>${esc(t.branch)}</span>` : ""}${g ? `<span class="mut">·</span><span style="color:${g.text === "pushed" ? "var(--status-success)" : g.color}">${esc(g.text)}</span>` : ""}</button>${repoPop}</span>`;
+  // Item 144: the schedule chip opens the schedule popover.
+  if (t.schedule) chips += `<span class="hwrap">${schedChip(t, false, true)}${S.pop === "sched" ? schedPop(t, d) : ""}</span>`;
+  if (t.parent_id) chips += fromBadge(t).replace('class="fromb"', 'class="hchip"');
   // P5: the agent, editable until the start
   if (t.status === "not_started" && agentsFound().length > 1) chips += `<span class="mb-select-wrap" style="width:150px">${agentSelect(t.agent, `class="mb-select" style="height:26px; font-size:12px" aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}</span>`;
   const pr = t.pr;
@@ -2304,7 +2472,11 @@ function renderFocusHead(t, d) {
   const steps = d ? d.events.length : 0;
   const tabsRow = `<div class="fh3"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", (d ? d.files.length : t.file_count) || undefined], ["terminal", "Terminal", termCount(t.id) || undefined]], S.tab, "tab")}</div>
     ${S.tab === "chat" ? `<label class="mb-switch" title="Show every step the agent took, plus app events. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Transcript · ${steps}</span></label>` : ""}</div>`;
+  // A live update rebuilds the header: the schedule popover's field being typed in keeps its text and focus.
+  const a = document.activeElement, keep = a?.closest?.("#focusHead") && a.dataset.change ? { sel: `[data-change="${a.dataset.change}"]${a.dataset.i ? `[data-i="${a.dataset.i}"]` : ""}`, v: a.value, p: a.selectionStart } : null;
   setHtml($("focusHead"), row1 + `<div class="fh2">${chips}</div>` + ghLine + tabsRow);
+  const b = keep && document.activeElement !== a && $("focusHead").querySelector(keep.sel);
+  if (b) { b.value = keep.v; b.focus(); b.setSelectionRange?.(keep.p, keep.p); }
 }
 
 // ---------- chat (design v6): sessions, messages and the agent's turns as work groups ----------
@@ -2319,7 +2491,11 @@ function msgHtml(m, t) {
   else if (m.via) { [who, color] = [m.via, "var(--accent-violet)"]; sub = '<span class="mono muted" style="font-size:11px">terminal · separate session</span>'; }
   else [who, color] = [agentLabel(t.agent), "var(--accent-cyan)"];
   const flags = [];
-  if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
+  // Item 145: the first message of a TODO another TODO's agent created. Item 144: the prompt of a scheduled run.
+  const from = /^T-(\d+)$/.exec(m.via ?? "");
+  if (from) flags.push(`<button type="button" class="fromb" data-act="open" data-id="${from[1]}" title="Written by T-${from[1]}'s agent · open T-${from[1]}">From T-${from[1]}</button>`);
+  else if (m.author === "user via operator") flags.push(badge("Via operator", "violet"));
+  if (user && (m.via === "schedule" || m.via === "run now")) flags.push(badge(`${m.via === "schedule" ? "Scheduled" : "Run now"} · ${hm(m.at)}`, "blue"));
   if (m.state === "queued") flags.push(badge(t.status === "running" ? "Queued · after the current step" : "Queued", "blue", true));
   if (m.state === "pending") flags.push(badge("Delivers at start", "violet", true));
   if (m.state === "sending") flags.push(badge(["idle", "waiting"].includes(t.status) ? "Resuming" : "Sending", "blue", true));
@@ -2395,8 +2571,12 @@ function toolRow(e, t, live) {
     if (m.output) parts.push(`<div><span class="ml">${m.status === "failed" ? "Failed" : "Output"}</span><pre class="io out">${esc(m.output)}</pre></div>`);
     panel = `<div class="tool-panel">${parts.join("") || '<span class="empty">No details yet.</span>'}</div>`;
   }
+  // Item 145: create_todo reads "create_todo · T-60 · started" with a link to the TODO, from the tool's answer.
+  const made = /create_todo$/.test(m.name) && /^(?:Created (T-(\d+)) · (\w+)|Not created: (T-(\d+)))/.exec(m.output ?? "");
+  const ttl = made ? (made[1] ? `create_todo · ${made[1]} · ${made[3] === "in" ? "in the backlog" : made[3]}` : `create_todo · not created · exists: ${made[4]}`) : title;
+  const link = made ? `<div class="op-links tool-link"><button type="button" class="op-link" data-act="open" data-id="${made[2] ?? made[5]}">${made[1] ?? made[4]} →</button></div>` : "";
   return `<div class="rail"><button type="button" class="tool${st === "ask" ? " ask" : ""}" data-act="ev-toggle" data-id="${e.id}" data-fk="ev:${e.id}" aria-expanded="${open}">
-    <span class="dot" style="background:${dot}" title="${st}"></span>${ico(m.kind)}<span class="ttl">${esc(title)}</span>${statHtml(stat)}${meta[0] ? `<span class="meta" style="color:${meta[1]}">${meta[0]}</span>` : ""}${SVG(open ? CHEV_D : CHEV_R, 13, "var(--text-muted)")}</button>${panel}</div>`;
+    <span class="dot" style="background:${dot}" title="${st}"></span>${ico(m.kind)}<span class="ttl">${esc(ttl)}</span>${statHtml(stat)}${meta[0] ? `<span class="meta" style="color:${meta[1]}">${meta[0]}</span>` : ""}${SVG(open ? CHEV_D : CHEV_R, 13, "var(--text-muted)")}</button>${link}${panel}</div>`;
 }
 function planHtml(entries) {
   const done = entries.filter((x) => x.status === "completed").length;
@@ -2484,6 +2664,11 @@ function streamHtml(t, msgs, evs, liveSession) {
   const lastWork = liveSession && t.status === "running" ? out.findLastIndex((x) => x.work && !x.end) : -1;
   return out.map((x, i) => x.msg ? msgHtml(x.msg, t) : x.ev ? (S.events ? evRow(x.ev, true) : "") : workHtml(x, t, i === lastWork, `${t.id}:${x.start.id}`)).join("");
 }
+// The firing that opened session `s` (item 144): the last "scheduled run" before it started, after the session before it.
+const firingOf = (d, s) => {
+  const e = d.events.filter((x) => x.kind === "scheduled run" && x.at <= s.started_at).at(-1), prev = d.sessions.find((x) => x.no === s.no - 1);
+  return e && (!prev || e.at >= prev.started_at) ? e : null;
+};
 // Item 76: every session in one timeline. Earlier sessions fold to a summary line; the live one has a divider.
 function chatHtml(t, d) {
   const sessions = d.sessions, last = sessions.length, path = S.projects.find((p) => p.id === t.project_id)?.local_path ?? "the project folder";
@@ -2493,10 +2678,12 @@ function chatHtml(t, d) {
     const isLive = s.no === last, key = `${t.id}:${s.no}`;
     const msgs = d.messages.filter((m) => (m.session_no ?? (isLive ? last : -1)) === s.no);
     const agent = esc(s.agent_name || agentLabel(s.agent));
-    if (isLive) return `<div class="ses-div"><i></i><span class="ml">Session ${s.no} · ${agent} · ${esc(sessRange(s))}</span><i></i></div>` + streamHtml(t, msgs, evsOf(s.no), true);
+    // Item 144: a session a firing opened is labelled by it, "scheduled 09:00" or "run now 11:02".
+    const f = firingOf(d, s), how = f && (f.detail.startsWith("run now") ? "run now" : "scheduled");
+    if (isLive) return `<div class="ses-div"><i></i><span class="ml">Session ${s.no} · ${agent} · ${esc(f ? `${how} ${hm(f.at)}` : sessRange(s))}</span><i></i></div>` + streamHtml(t, msgs, evsOf(s.no), true);
     const open = S.openSess.has(key), lastAgent = [...msgs].reverse().find((m) => m.author === "agent");
     const files = d.files.filter((f) => f.session_no === s.no);
-    return `<div class="ses-old"><button type="button" data-act="sess-toggle" data-id="${key}" aria-expanded="${open}">${SVG(open ? CHEV_D : CHEV_R, 14)}<span class="no">Session ${s.no}</span>${sessions.some((x) => x.agent !== "claude") ? `<span class="ml">${agent}</span>` : ""}<span class="lbl">${esc(sessLabel(msgs))}</span><span class="rng">${esc(sessRange(s))}</span></button>
+    return `<div class="ses-old"><button type="button" data-act="sess-toggle" data-id="${key}" aria-expanded="${open}">${SVG(open ? CHEV_D : CHEV_R, 14)}<span class="no">Session ${s.no}</span>${sessions.some((x) => x.agent !== "claude") ? `<span class="ml">${agent}</span>` : ""}<span class="lbl">${esc(f ? `${how} ${dayAt(f.at)}${f.detail.startsWith("catch-up") ? " · catch-up" : ""}` : sessLabel(msgs))}</span><span class="rng">${esc(sessRange(s))}</span></button>
       ${open ? `<div class="body"><span class="sum"><span class="ml">Agent</span>${lastAgent ? esc(lastAgent.body) : "No agent message in this session."}</span>
         ${files.length ? `<div class="flags">${files.map((f) => `<button type="button" class="file-chip" data-act="open-file" data-id="${f.id}">${SVG(FILE, 13)}${esc(f.name)}</button>`).join("")}</div>` : ""}
         <span class="resume">${esc(s.session_id.slice(0, 8))}${s.resume ? ` · ${esc(s.resume)} from ${esc(path)}` : ""} · read-only here</span>
@@ -2953,6 +3140,7 @@ function renderSettings() {
   $("secAppearance").hidden = S.setSec !== "appearance";
   $("secRuns").hidden = S.setSec !== "runs";
   if (document.activeElement !== $("bgHours")) $("bgHours").value = S.meta?.background_wait_hours ?? 2;
+  if (document.activeElement !== $("startedPerTurn")) $("startedPerTurn").value = S.meta?.started_todos_per_turn ?? 10;
   $("secAgents").hidden = S.setSec !== "agents";
   $("cAgents").textContent = agentsAll().length;
   if (S.setSec === "projects") renderProjects();
@@ -2997,6 +3185,10 @@ async function agentLogin(key) {
 $("bgHours").addEventListener("change", async (e) => {
   try { S.meta.background_wait_hours = (await call("PUT", "/api/settings", { background_wait_hours: Number(e.target.value) })).background_wait_hours; }
   catch (err) { toast("danger", "Not saved", err.message); e.target.value = S.meta?.background_wait_hours ?? 2; }
+});
+$("startedPerTurn").addEventListener("change", async (e) => {
+  try { S.meta.started_todos_per_turn = (await call("PUT", "/api/settings", { started_todos_per_turn: Number(e.target.value) })).started_todos_per_turn; }
+  catch (err) { toast("danger", "Not saved", err.message); e.target.value = S.meta?.started_todos_per_turn ?? 10; }
 });
 $("agentForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -3102,6 +3294,22 @@ const ACTIONS = {
   "open-ns": (id) => { S.nsMode[Number(id)] = true; S.tab = "chat"; S.pop = null; render(); composer.focus(); },
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
+  // Item 144: Run now, the schedule chip on a card (opens the TODO with its popover), and the schedule editor.
+  "run-now": (id) => { S.pop = null; act(call("POST", `/api/todos/${id}/run-now`).then(() => toast("info", `Started T-${id}`, "· a new session. It goes back to Scheduled when the run ends.")), "Can't run now"); },
+  "sched-open": (id) => { select(Number(id)); S.pop = "sched"; render(); },
+  "rep-toggle": (id, el) => { S.rep.on = el.checked; render(); },
+  "sch-day": (id) => { const [ctx, d] = id.split("|"), e = ctx === "new" ? S.rep : edOf(cur().schedule), n = Number(d); patchSched(ctx, { days: e.days.includes(n) ? e.days.filter((x) => x !== n) : [...e.days, n] }); },
+  "sch-days": (id) => { const [ctx, ds] = id.split("|"); patchSched(ctx, { days: ds.split(",").map(Number) }); },
+  "sch-mode": (id) => { const [ctx, mode] = id.split("|"); patchSched(ctx, { mode }); },
+  "sch-preset": (id) => { const [ctx, n] = id.split("|"); patchSched(ctx, { every: Number(n) }); },
+  "sch-add-time": (ctx) => {
+    const e = ctx === "new" ? S.rep : edOf(cur().schedule), last = e.times.filter((v) => /^\d\d:\d\d$/.test(v)).sort().at(-1);
+    const m = last ? Math.min(1380, Number(last.slice(0, 2)) * 60 + Number(last.slice(3)) + 300) : 540;   // five hours after the last, at most 23:00
+    patchSched(ctx, { times: [...e.times, `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`] });
+  },
+  "sch-rm-time": (id) => { const [ctx, i] = id.split("|"), e = ctx === "new" ? S.rep : edOf(cur().schedule); patchSched(ctx, { times: e.times.filter((_, j) => j !== Number(i)) }); },
+  "sch-pause": (id) => { const t = cur(); saveSched(t.id, { ...t.schedule, paused: !t.schedule.paused }, (x) => toast("muted", x.schedule.paused ? "Paused" : "Resumed", x.schedule.paused ? "· no runs until you resume it." : `· next run ${slotAt(x.next_run_at)}.`)); },
+  "sch-remove": (id) => { S.pop = null; saveSched(Number(id), null, () => toast("muted", "Schedule removed", "· the TODO stays.")); },
   clear: (id) => { S.pop = null; act(call("POST", `/api/todos/${id}/clear-attention`).then(() => toast("muted", "Attention cleared."))); },
   // P3: "<todo id>|<option id>"; the server answers 409 when the request is gone (the agent moved on or was stopped)
   perm: (id) => {
@@ -3282,6 +3490,17 @@ document.addEventListener("change", (e) => {
   if (el?.dataset.change === "set-repo") setRepo(Number(el.dataset.id), el.value === "none" ? null : Number(el.value));
   if (el?.dataset.change === "todo-agent") act(call("POST", `/api/todos/${el.dataset.id}/edit`, { agent: el.value }).then(() => need("detail", "todos")), "Agent not changed");
   if (el?.dataset.change === "ns-agent") { S.nsAgent[el.dataset.id] = el.value; render(); }
+  // Item 144: the schedule editor's fields. Times are kept as typed; the server refuses one that is not HH:MM.
+  const ch = el?.dataset.change, ctx = el?.dataset.id;
+  if (ch?.startsWith("sch-")) {
+    const e = ctx === "new" ? S.rep : edOf(cur().schedule), v = el.value.trim();
+    if (ch === "sch-time") patchSched(ctx, { times: e.times.map((x, i) => (i === Number(el.dataset.i) ? v : x)) });
+    else if (ch === "sch-every") patchSched(ctx, { every: Number(v) || 0 });
+    else if (ch === "sch-from") patchSched(ctx, { from: v });
+    else if (ch === "sch-to") patchSched(ctx, { to: v });
+    else if (ch === "sch-prompt") patchSched(ctx, { prompt: v === (S.detail?.messages[0]?.body ?? "").trim() ? null : v || null });
+    return;
+  }
   // A change the live agent did not take (a mode the model lacks) is stored anyway and comes back as a warning.
   const t = cur(), label = el?.selectedOptions?.[0]?.textContent ?? "";
   const warn = (r) => r?.warning ? toast("warning", "Saved, but the agent did not take it", r.warning)
