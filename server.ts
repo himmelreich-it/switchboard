@@ -378,15 +378,16 @@ async function projectOut(p: Project) {
 // `agent` is the agent of the first session (P5); when not given, routing takes the topic's default.
 // Item 145: an agent's TODO (`actor` agent) records its creator in parent_id, and its first message says "From T-12"
 // (via); `project_id` given (null: no topic) decides the topic now, so Start skips routing. Item 144: `schedule`.
+// `title`, from an agent's create_todo, replaces the first instruction as the title; session 1 is told to keep it.
 export function createTodo(instruction: string, actor: "user" | "operator" | "agent", uploads: Upload[] = [], agent: string | null = null,
-  o: { parent_id?: number | null; key?: string | null; project_id?: number | null; schedule?: Schedule | null } = {}) {
+  o: { parent_id?: number | null; key?: string | null; project_id?: number | null; schedule?: Schedule | null; title?: string | null } = {}) {
   const routed = o.project_id !== undefined, p = projectRow(o.project_id ?? null);
   const id = db.transaction(() => {
     const at = now();
     const id = Number(db.run(
       `INSERT INTO todos (title, status, created_at, updated_at, agent, parent_id, key, project_id, routed_at, schedule, next_run_at)
        VALUES (?, 'not_started', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [instruction, at, at, agent ?? (routed ? p?.default_agent ?? null : null), o.parent_id ?? null, o.key ?? null, p?.id ?? null, routed ? at : null,
+      [o.title || instruction, at, at, agent ?? (routed ? p?.default_agent ?? null : null), o.parent_id ?? null, o.key ?? null, p?.id ?? null, routed ? at : null,
         o.schedule ? JSON.stringify(o.schedule) : null, o.schedule && !o.schedule.paused ? nextRun(o.schedule, new Date())?.toISOString() ?? null : null],
     ).lastInsertRowid);
     const mid = addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending", null, o.parent_id ? `T-${o.parent_id}` : null);
@@ -396,6 +397,18 @@ export function createTodo(instruction: string, actor: "user" | "operator" | "ag
   addEvent(id, "created", actor, [o.parent_id && `by T-${o.parent_id}`, routed && `topic ${p?.name ?? "none"}`, o.schedule && `scheduled · ${scheduleText(o.schedule)}`, "not started yet"].filter(Boolean).join(" · "));
   emit({ type: "todos" });
   return id;
+}
+
+// Removes a live TODO, for the user or the operator's remove_todo. Like Esc in Claude Code; queued messages stay queued.
+// The agent process ends with the run, or now when idle. Routing that asks ends here; routing that runs ends with its run.
+// Either way the TODO is not started again.
+export function removeTodo(id: number, by: "user" | "operator") {
+  setTodo(id, { removed_at: now(), removed_by: by, suggestions: null });
+  addEvent(id, "removed", by);
+  if (isRunning(id)) interrupt(id);
+  else { closeAgent(id); cancelRouting(id); }
+  closeTerms(id); // restoring does not bring them back (item 115)
+  emit({ type: "todos" });
 }
 
 // ---------- migration from auto-coder (only when this database is new) ----------
@@ -1118,14 +1131,7 @@ async function api(req: Request, path: string): Promise<Response> {
       }
     } else if (action === "remove") {
       liveTodo(id);
-      setTodo(id, { removed_at: now(), removed_by: "user", suggestions: null });
-      addEvent(id, "removed", "user");
-      // Like Esc in Claude Code; queued messages stay queued. The agent process ends with the run, or now when idle.
-      // Routing that asks ends here; routing that runs ends with its run. Either way the TODO is not started again.
-      if (isRunning(id)) interrupt(id);
-      else { closeAgent(id); cancelRouting(id); }
-      closeTerms(id); // restoring does not bring them back (item 115)
-      emit({ type: "todos" });
+      removeTodo(id, "user");
     } else if (action === "restore") {
       const t = todoOr404(id);
       if (!t.removed_at) return fail("this TODO is not removed", 409);

@@ -20,7 +20,7 @@ import {
 // GET /api/meta shows it with the placeholder; each run fills in the TODO's own folder.
 export const CONTRACT = `You are running inside switchboard, a local app where the user tracks this work as a TODO and steers it with short chat messages. A TODO can span several agent sessions, one after another; this session is one of them.
 
-- Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file, mcp__app__set_worktree, mcp__app__set_pr and mcp__app__suggest_follow_ups. On your first turn, call mcp__app__set_title with a short title for this TODO, unless the prompt starts with a hand-over header.
+- Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file, mcp__app__set_worktree, mcp__app__set_pr and mcp__app__suggest_follow_ups. On your first turn, call mcp__app__set_title with a short title for this TODO, unless the prompt names a title to keep (a hand-over header does).
 - A prompt that starts with "This TODO continues earlier work" is a hand-over from earlier sessions. Keep the title it names, work in the worktree it names instead of creating a new one, and read the listed files you need before you start.
 - Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
 - The TODO text and the user's committed messages are your go-ahead for local edits within this TODO's scope. Outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user.
@@ -57,11 +57,11 @@ const instructionsText = (contract: string, prompt: string) =>
 
 const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
 
-- Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, and never start a TODO on your own: start one with mcp__app__create_todo(start: true) only when the user says so. When the user presses Start, a separate routing run of yours decides which topic the TODO belongs to.
+- Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, never remove a TODO on your own, and never start a TODO on your own: start one with mcp__app__create_todo(start: true) only when the user says so. When the user presses Start, a separate routing run of yours decides which topic the TODO belongs to.
 - Get the state of the TODOs from your tools every time (mcp__app__list_todos, mcp__app__read_todo, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh operator session at any time.
 - A TODO with status not_started is in the user's backlog, unless it has a schedule: then it is in the board's Scheduled lane and starts at its first slot. The others are on the board. A TODO can span several sessions; only the latest is live.
 - TODOs are numbered: T-42 is TODO 42. Use that form when you name one. Jira keys such as AI-1234 are something else.
-- mcp__app__create_todo creates a TODO: in the backlog by default, started with start: true, in a topic you name with topic (else routing picks it at the start). With schedule it is a scheduled TODO that runs a new session at each slot. mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". Use them only when the user asks, and start or schedule only when the user's words say so.
+- mcp__app__create_todo creates a TODO: in the backlog by default, started with start: true, in a topic you name with topic (else routing picks it at the start). With schedule it is a scheduled TODO that runs a new session at each slot. Give it a short title with title. mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". mcp__app__remove_todo removes a TODO: its run stops and it moves to the Removed fold, where the user can restore it. Use them only when the user asks, and start or schedule only when the user's words say so.
 - TODO artifact files live under ${home}/data/<todo-id>/. You can also read them with Read, Grep and Glob.
 - A topic is what the user files TODOs under: one folder on disk (often a git repository, not always), with its own prompt and profile. Say "topic" to the user; name its folder only when the path matters.
 - Your replies are shown in full and rendered as markdown. Brainstorming with the user here is fine.`;
@@ -693,8 +693,13 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
 
     let error = "", stop = "";
     const started = performance.now();
-    // Item 145: session 1 of a TODO another TODO's agent created says so first, for the contract's rule on its authority.
-    const created = open?.no === 1 && cur.parent_id ? [`This TODO was created by the agent of T-${cur.parent_id}, not typed by the user.`] : [];
+    // Item 145: session 1 of a TODO another TODO's agent created says so first, for the contract's rule on its authority,
+    // and names the title create_todo gave it (the title differs from the first instruction only then).
+    const first = open?.no === 1 ? (db.query("SELECT body FROM messages WHERE todo_id = ? ORDER BY id LIMIT 1").get(todoId) as { body: string } | null)?.body : null;
+    const created = [
+      open?.no === 1 && cur.parent_id && `This TODO was created by the agent of T-${cur.parent_id}, not typed by the user.`,
+      first != null && cur.title !== first && `Title: ${cur.title}. Keep this title.`,
+    ].filter((x): x is string => !!x);
     const text = (open && !isClaude(agentId) ? instructionsText(contract, prompt) : "")
       + deliveryPrompt(cur.worktree_path, [...created, ...takeBodies()], open?.header ?? "");
     addEvent(todoId, "prompt", "app");
