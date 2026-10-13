@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule,
@@ -451,4 +451,12 @@ test("migrateDb: create_todo keys are unique, also over removed TODOs (item 145)
   expect(() => add("pr:a#1")).toThrow();
   expect(handOver({ no: 7, title: "T", worktree: null, pr: null, last: null, files: [], scheduled: "Weekdays 09:00, this one at Tue 13 Oct 09:00" }))
     .toBe("This TODO continues earlier work (session 7). Title: T. Keep this title.\nScheduled run: Weekdays 09:00, this one at Tue 13 Oct 09:00.");
+});
+
+test("descendants", () => {
+  // 10 -> 11 -> 13, 10 -> 12; 20 is not below 10; a blank line and a header-like line are skipped
+  const ps = "  10     1\n   11    10\n   12    10\n   13    11\n   20     1\n\n  PID  PPID\n";
+  expect(descendants(ps, 10)).toEqual([11, 12, 13]);
+  expect(descendants(ps, 13)).toEqual([]);
+  expect(descendants("", 10)).toEqual([]);
 });
