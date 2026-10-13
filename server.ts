@@ -4,15 +4,15 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, slugify, statusAfterRun, tokenOk, uniqueSlug,
-  type ConfigOption, type Pr, type Status,
+  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  type ConfigOption, type Pr, type Schedule, type Status,
 } from "./lib";
 import { authenticate, describe, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
-  CONTRACT, DEFAULT_BACKGROUND_HOURS, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, cancelRouting, changeRepo, closeAgent, metaKey, commandsOf, commitMessage,
-  commitOperatorMessage, deliver, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
+  CONTRACT, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, cancelRouting, changeRepo, closeAgent, metaKey, commandsOf, commitMessage,
+  commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
 // No login on this server: it must only ever listen on 127.0.0.1.
@@ -35,6 +35,7 @@ export type Todo = {
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
   agent: string | null; suggestions: string | null; run_started_at: string | null; routing: string | null; routed_at: string | null;
+  schedule: string | null; next_run_at: string | null; parent_id: number | null; key: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
 export type Project = {
@@ -282,7 +283,9 @@ SELECT t.*, p.name AS project_name,
    WHERE m.todo_id = t.id ORDER BY m.id DESC LIMIT 1) AS last_message,
   (SELECT json_object('body', body, 'at', committed_at) FROM messages m
    WHERE m.todo_id = t.id AND m.author = 'agent' ORDER BY m.id DESC LIMIT 1) AS last_agent_message,
-  (SELECT json_group_array(path) FROM (SELECT path FROM files f WHERE f.todo_id = t.id ORDER BY f.id)) AS file_paths
+  (SELECT json_group_array(path) FROM (SELECT path FROM files f WHERE f.todo_id = t.id ORDER BY f.id)) AS file_paths,
+  (SELECT json_object('kind', kind, 'detail', detail, 'at', at) FROM events e
+   WHERE e.todo_id = t.id AND e.kind IN ('scheduled run', 'schedule skipped') ORDER BY e.id DESC LIMIT 1) AS schedule_last
 FROM todos t LEFT JOIN projects p ON p.id = t.project_id`;
 
 // Item 136: the TODO shows running only for the agent's background tasks, between turns.
@@ -292,7 +295,7 @@ const backgroundWait = (r: { id: number; status: string }) => r.status === "runn
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, suggestions, routing, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, suggestions, routing, schedule, schedule_last, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -306,6 +309,9 @@ export async function summaries(where = "1", args: any[] = []) {
       permission: permission ? JSON.parse(permission) : null,
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {},
       suggestions: suggestions ? JSON.parse(suggestions) : null, routing: routing ? JSON.parse(routing) : null,
+      // Item 144: the schedule, its chip text, and its last firing (run or skipped) for the chip's amber state.
+      schedule: schedule ? JSON.parse(schedule) : null, schedule_text: schedule ? scheduleText(JSON.parse(schedule)) : null,
+      schedule_last: schedule_last ? JSON.parse(schedule_last) : null,
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
       // Item 136: the agent's background tasks still running, and whether the TODO shows running only for them.
@@ -370,19 +376,39 @@ async function projectOut(p: Project) {
 
 // One transaction, so a failed file write leaves no TODO behind. A new TODO has no topic: routing picks it at Start (801).
 // `agent` is the agent of the first session (P5); when not given, routing takes the topic's default.
-export function createTodo(instruction: string, actor: "user" | "operator", uploads: Upload[] = [], agent: string | null = null) {
+// Item 145: an agent's TODO (`actor` agent) records its creator in parent_id, and its first message says "From T-12"
+// (via); `project_id` given (null: no topic) decides the topic now, so Start skips routing. Item 144: `schedule`.
+// `title`, from an agent's create_todo, replaces the first instruction as the title; session 1 is told to keep it.
+export function createTodo(instruction: string, actor: "user" | "operator" | "agent", uploads: Upload[] = [], agent: string | null = null,
+  o: { parent_id?: number | null; key?: string | null; project_id?: number | null; schedule?: Schedule | null; title?: string | null } = {}) {
+  const routed = o.project_id !== undefined, p = projectRow(o.project_id ?? null);
   const id = db.transaction(() => {
     const at = now();
     const id = Number(db.run(
-      "INSERT INTO todos (title, status, created_at, updated_at, agent) VALUES (?, 'not_started', ?, ?, ?)",
-      [instruction, at, at, agent],
+      `INSERT INTO todos (title, status, created_at, updated_at, agent, parent_id, key, project_id, routed_at, schedule, next_run_at)
+       VALUES (?, 'not_started', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [o.title || instruction, at, at, agent ?? (routed ? p?.default_agent ?? null : null), o.parent_id ?? null, o.key ?? null, p?.id ?? null, routed ? at : null,
+        o.schedule ? JSON.stringify(o.schedule) : null, o.schedule && !o.schedule.paused ? nextRun(o.schedule, new Date())?.toISOString() ?? null : null],
     ).lastInsertRowid);
-    saveAttachments(id, addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending"), uploads);
+    const mid = addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending", null, o.parent_id ? `T-${o.parent_id}` : null);
+    saveAttachments(id, mid, uploads);
     return id;
   })();
-  addEvent(id, "created", actor, "not started yet");
+  addEvent(id, "created", actor, [o.parent_id && `by T-${o.parent_id}`, routed && `topic ${p?.name ?? "none"}`, o.schedule && `scheduled · ${scheduleText(o.schedule)}`, "not started yet"].filter(Boolean).join(" · "));
   emit({ type: "todos" });
   return id;
+}
+
+// Removes a live TODO, for the user or the operator's remove_todo. Like Esc in Claude Code; queued messages stay queued.
+// The agent process ends with the run, or now when idle. Routing that asks ends here; routing that runs ends with its run.
+// Either way the TODO is not started again.
+export function removeTodo(id: number, by: "user" | "operator") {
+  setTodo(id, { removed_at: now(), removed_by: by, suggestions: null });
+  addEvent(id, "removed", by);
+  if (isRunning(id)) interrupt(id);
+  else { closeAgent(id); cancelRouting(id); }
+  closeTerms(id); // restoring does not bring them back (item 115)
+  emit({ type: "todos" });
 }
 
 // ---------- migration from auto-coder (only when this database is new) ----------
@@ -712,14 +738,24 @@ async function api(req: Request, path: string): Promise<Response> {
     // P5: the agents, and per agent its last seen config options.
     return json({ contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
       shell: basename(SHELL).replace(/\.exe$/i, ""), login_shell: LOGIN_SHELL,
-      background_wait_hours: Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS });
+      background_wait_hours: Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS,
+      started_todos_per_turn: Number(getMeta("started_todos_per_turn")) || DEFAULT_STARTED_PER_TURN });
   }
-  // Settings › Runs (item 136): how long an agent may wait for its background tasks between turns.
+  // Settings › Runs: how long an agent may wait for its background tasks between turns (item 136), and how many TODOs
+  // one agent turn may start with create_todo (item 145). Each field is optional.
   if (path === "/api/settings" && method === "PUT") {
-    const h = Number(body.background_wait_hours);
-    if (!(h >= 0.25 && h <= 48)) return fail("background tasks: between 0.25 and 48 hours");
-    setMeta("background_wait_hours", String(h));
-    return json({ background_wait_hours: h });
+    if (body.background_wait_hours !== undefined) {
+      const h = Number(body.background_wait_hours);
+      if (!(h >= 0.25 && h <= 48)) return fail("background tasks: between 0.25 and 48 hours");
+      setMeta("background_wait_hours", String(h));
+    }
+    if (body.started_todos_per_turn !== undefined) {
+      const n = Number(body.started_todos_per_turn);
+      if (!Number.isInteger(n) || n < 1 || n > 100) return fail("started TODOs per turn: a whole number from 1 to 100");
+      setMeta("started_todos_per_turn", String(n));
+    }
+    return json({ background_wait_hours: Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS,
+      started_todos_per_turn: Number(getMeta("started_todos_per_turn")) || DEFAULT_STARTED_PER_TURN });
   }
 
   // ----- projects -----
@@ -789,9 +825,27 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!instruction) return fail("the first instruction is required");
     const agent = agentIn(body.agent);
     if (agent === undefined) return fail(`no agent ${body.agent}`);
-    const id = createTodo(instruction, "user", uploadsIn(body.attachments), agent);
+    const schedule = body.schedule == null ? null : scheduleIn(body.schedule);   // item 144: Repeat in the New TODO dialog
+    if (typeof schedule === "string") return fail(schedule);
+    const id = createTodo(instruction, "user", uploadsIn(body.attachments), agent, { schedule });
     if (body.start === true) start(id);   // Add & start (item 92): one request, so the TODO never sits in the backlog
     return json((await summaries("t.id = ?", [id]))[0]);
+  }
+
+  // Item 144: set, change, pause or remove (null) a TODO's schedule. The next slot counts from now.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/schedule$/)) && method === "PUT") {
+    const t = liveTodo(Number(m[1]));
+    const s = body.schedule == null ? null : scheduleIn(body.schedule);
+    if (typeof s === "string") return fail(s);
+    setTodo(t.id, { schedule: s && JSON.stringify(s), next_run_at: s && !s.paused ? nextRun(s, new Date())?.toISOString() ?? null : null });
+    addEvent(t.id, "schedule", "user", !s ? "removed" : s.paused ? "paused" : scheduleText(s));
+    emit({ type: "todos" });
+    return json((await summaries("t.id = ?", [t.id]))[0]);
+  }
+  // Item 144: Run now, with the skip rules of a firing; the refusal says why.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/run-now$/)) && method === "POST") {
+    const why = fireSchedule(liveTodo(Number(m[1])).id, "run now");
+    return why ? fail(`Not started: ${why}.`, 409) : json({});
   }
 
   // Items 94-97: the first instruction and the agent can change until the TODO starts. The topic has its own route below.
@@ -1077,14 +1131,7 @@ async function api(req: Request, path: string): Promise<Response> {
       }
     } else if (action === "remove") {
       liveTodo(id);
-      setTodo(id, { removed_at: now(), removed_by: "user", suggestions: null });
-      addEvent(id, "removed", "user");
-      // Like Esc in Claude Code; queued messages stay queued. The agent process ends with the run, or now when idle.
-      // Routing that asks ends here; routing that runs ends with its run. Either way the TODO is not started again.
-      if (isRunning(id)) interrupt(id);
-      else { closeAgent(id); cancelRouting(id); }
-      closeTerms(id); // restoring does not bring them back (item 115)
-      emit({ type: "todos" });
+      removeTodo(id, "user");
     } else if (action === "restore") {
       const t = todoOr404(id);
       if (!t.removed_at) return fail("this TODO is not removed", 409);
@@ -1098,7 +1145,9 @@ async function api(req: Request, path: string): Promise<Response> {
           return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
         if (!existsSync(folder)) return json({ warning: `The topic's folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
       }
-      setTodo(id, { removed_at: null, removed_by: null });
+      // A scheduled TODO gets its next slot from now (item 144); the slots missed while removed are skipped.
+      const s = t.schedule ? (JSON.parse(t.schedule) as Schedule) : null;
+      setTodo(id, { removed_at: null, removed_by: null, ...(s ? { next_run_at: s.paused ? null : nextRun(s, new Date())?.toISOString() ?? null } : {}) });
       addEvent(id, "restored", "user");
       emit({ type: "todos" });
       // A never-started TODO goes back to not started with its pending messages; nothing launches.
@@ -1292,6 +1341,10 @@ for (const t of db.query("SELECT id, attention, attention_by, permission FROM to
 }
 refreshAllPrs();
 setInterval(refreshAllPrs, 120_000);
+// Item 144: one catch-up run per scheduled TODO whose slot passed while the app was closed, after the reset above and
+// the bind (a second copy must not fire the live app's schedules); then the slots every 30 seconds.
+fireDue(true);
+setInterval(fireDue, 30_000);
 
 // Interrupts every running agent so none keeps working unseen; a second Ctrl-C exits at once.
 let stopping = false;
