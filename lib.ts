@@ -491,7 +491,7 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 // A schedule from a request body or a tool call, or the error the user or agent reads.
 export function scheduleIn(v: any): Schedule | string {
   if (!v || typeof v !== "object" || Array.isArray(v)) return "schedule must be an object";
-  const days = [...new Set(Array.isArray(v.days) ? v.days : [])].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).sort() as number[];
+  const days = ([...new Set(Array.isArray(v.days) ? v.days : [])] as any[]).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).sort() as number[];
   if (!days.length) return "Pick at least one day (days: 0 = Sunday … 6 = Saturday).";
   const prompt = typeof v.prompt === "string" && v.prompt.trim() ? v.prompt.trim() : null;
   const base = { days, prompt, paused: v.paused === true };
