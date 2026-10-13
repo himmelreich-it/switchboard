@@ -1482,8 +1482,11 @@ function select(id) {
   chatLog.dataset.sig = "";   // scroll the chat to the newest message
   render();
   need("detail", "terms");   // the Terminal count and Remove's question need the terminals
-  // Back on the card: the file it showed opens again, also after Esc closed it.
-  const f = S.lastFile[id];
+  reopenLastFile();
+}
+// Back on the card's Files tab: the file it showed last opens again, also after Esc closed it.
+function reopenLastFile() {
+  const f = S.lastFile[S.sel];
   if (f && S.tab === "files" && !S.file) f.deleted ? openDeleted(f.rel) : openFile(f.id, f.root, f.rel, f.mode);
 }
 // ⌘J: from a waiting TODO the next one, wrapping around; otherwise the first.
@@ -3090,7 +3093,7 @@ const ACTIONS = {
   "agent-check": () => need("meta", "projects"),
   back: goOverview,
   next: nextWaiting,
-  tab: (id) => { S.tab = id; render(); },
+  tab: (id) => { S.tab = id; render(); reopenLastFile(); },
   events: (id, el) => { S.events = el.checked; try { localStorage.setItem("switchboard-chat-events", S.events ? "1" : "0"); } catch (e) {} render(); },
   "ev-loc": (path) => {
     const t = cur(), proj = S.projects.find((p) => p.id === t.project_id)?.local_path;
