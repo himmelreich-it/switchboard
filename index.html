@@ -1259,6 +1259,7 @@ try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catc
 try { S.board = localStorage.getItem("switchboard-board-view") === "backlog" ? "backlog" : "board"; } catch (e) {}
 S.editing = null;   // first instruction being edited (items 94-97): {todoId, msgId, text, err}
 S.fileRoot = {};      // TODO id -> "todo" | "worktree" | "project" (item 101), until reload
+S.tabOf = {}; S.lastFile = {};   // TODO id -> its tab and its last opened file, restored when the card is opened again; until reload
 S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
 S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
 S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // terminals per TODO (item 111)
@@ -1475,12 +1476,15 @@ function goOverview() { flushDraft(); if (S.mode === "focus" && S.focusFrom) S.b
 function select(id) {
   flushDraft();
   if (!(S.view === "todos" && S.mode === "focus")) S.focusFrom = S.board;   // ⌘J inside Focus keeps where you came from
-  if (S.sel !== id) { S.detail = null; dropFile(); S.tab = "chat"; S.cform = null; }
+  if (S.sel !== id) { S.tabOf[S.sel] = S.tab; S.detail = null; dropFile(); S.tab = S.tabOf[id] ?? "chat"; S.cform = null; }
   S.sel = id; S.view = "todos"; S.mode = "focus"; S.pop = null;
   composer.value = drafts[draftKey()] ?? "";
   chatLog.dataset.sig = "";   // scroll the chat to the newest message
   render();
   need("detail", "terms");   // the Terminal count and Remove's question need the terminals
+  // Back on the card: the file it showed opens again, also after Esc closed it.
+  const f = S.lastFile[id];
+  if (f && S.tab === "files" && !S.file) f.deleted ? openDeleted(f.rel) : openFile(f.id, f.root, f.rel, f.mode);
 }
 // ⌘J: from a waiting TODO the next one, wrapping around; otherwise the first.
 function nextWaiting() {
@@ -1688,10 +1692,10 @@ async function openFile(fid, root = "todo", rel = null, mode = null) {
       mode: mode ?? (e ? "edit" : "read"),
     });
     dropFile();
-    S.file = f; S.tab = "files"; S.fileRoot[id] = root;
+    S.file = S.lastFile[id] = f; S.tab = "files"; S.fileRoot[id] = root;
     if (f.mode === "diff") await loadDiff(f);
     render();
-  } catch (e) { toast("danger", "Can't open file", e.message); }
+  } catch (e) { if (S.lastFile[id]?.rel === rel && S.lastFile[id]?.id === f.id) delete S.lastFile[id]; toast("danger", "Can't open file", e.message); }   // a gone file is not tried again on the next visit
 }
 async function openTreeFile(rel) {
   const t = cur(), root = S.fileRoot[t.id], mark = S.trees[`${t.id}:${root}`]?.marks?.[rel];
@@ -1703,7 +1707,7 @@ async function openDeleted(rel) {
   const t = cur(), root = S.fileRoot[t.id];
   const f = { todoId: t.id, root, id: null, rel, name: basename(rel), abs: null, size: 0, binary: false, image: false, large: false, content: null, text: "", mtime: null, mark: "D", mode: "diff", deleted: true };
   dropFile();
-  S.file = f;
+  S.file = S.lastFile[t.id] = f;
   await loadDiff(f);
   render();
 }
@@ -3127,7 +3131,7 @@ const ACTIONS = {
   "open-file": (id) => openFile(Number(id)),
   "open-tree": (id) => openTreeFile(id),
   "tree-dir": (id) => { const k = `${S.sel}:${S.fileRoot[S.sel]}`, o = (S.treeOpen[k] ??= new Set()); o.has(id) ? o.delete(id) : o.add(id); render(); },
-  "file-root": (id) => { S.fileRoot[S.sel] = id; if (S.file?.todoId === S.sel) closeFile(); need("tree"); render(); },
+  "file-root": (id) => { S.fileRoot[S.sel] = id; delete S.lastFile[S.sel]; if (S.file?.todoId === S.sel) closeFile(); need("tree"); render(); },
   changed: () => { S.changedOnly = !S.changedOnly; render(); },
   "copy-path": () => S.file?.abs && copyText(S.file.abs, "Copied", S.file.abs),
   "open-folder": () => { const f = S.file; f?.abs && act(call("POST", f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}/reveal` : fsUrl(f, "fs/reveal")), "Can't open folder"); },
