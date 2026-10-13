@@ -1485,9 +1485,11 @@ function select(id) {
   reopenLastFile();
 }
 // Back on the card's Files tab: the file it showed last opens again, also after Esc closed it.
-function reopenLastFile() {
+async function reopenLastFile() {
   const f = S.lastFile[S.sel];
-  if (f && S.tab === "files" && !S.file) f.deleted ? openDeleted(f.rel) : openFile(f.id, f.root, f.rel, f.mode);
+  if (!f || S.tab !== "files" || S.file) return;
+  await (f.deleted ? openDeleted(f.rel) : openFile(f.id, f.root, f.rel, f.mode));
+  if (S.file?.id === f.id && S.file.rel === f.rel) restoreScroll(f.scroll);
 }
 // ⌘J: from a waiting TODO the next one, wrapping around; otherwise the first.
 function nextWaiting() {
@@ -1729,7 +1731,7 @@ async function reloadFile(f) {
     if (S.file === f) render();
   } catch (e) { /* gone from disk: keep showing the last version */ }
 }
-function closeFile() { S.file = null; destroyEditor(); render(); }   // unsaved text stays in `edits` and comes back when the file is reopened
+function closeFile() { dropFile(); render(); }   // unsaved text stays in `edits` and comes back when the file is reopened
 const fileLocked = (f) => f.root !== "project" && cur()?.status === "running";   // item 108
 function setFileMode(m) {
   const f = S.file;
@@ -1790,7 +1792,21 @@ let editorLib = null;
 const loadScript = (src) => new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => no(new Error("could not load " + src)); document.head.append(el); });
 function loadEditor() { return (editorLib ??= loadScript("/vendor/editor.js").then(() => window.SBEditor)); }
 function destroyEditor() { S.cm?.handle?.destroy(); S.cm = null; }
-function dropFile() { S.file = null; destroyEditor(); }
+function dropFile() { saveScroll(); S.file = null; destroyEditor(); }
+// The file view's scroll offsets, per kind of scroller, kept on the file so it reopens where it was.
+// The editor keeps its own: a snapshot anchored to a line, since wrapped lines have estimated heights until drawn.
+const SCROLLERS = [".md-read", ".preview-in", "#fileDiff"];
+const shownScroller = (sel) => [...$("fileView").querySelectorAll(sel)].find((el) => el.offsetParent);
+function saveScroll() {
+  if (!S.file || $("fileView").hidden) return;
+  S.file.scroll = Object.fromEntries(SCROLLERS.map((sel) => [sel, shownScroller(sel)?.scrollTop ?? 0]));
+  S.file.scroll.cm = S.cm?.handle?.view.scrollSnapshot();
+}
+function restoreScroll(sc) {
+  if (!sc) return;
+  if (sc.cm) S.cm?.handle?.view.dispatch({ effects: sc.cm });
+  requestAnimationFrame(() => SCROLLERS.forEach((sel) => { const el = shownScroller(sel); if (el && sc[sel]) el.scrollTop = sc[sel]; }));
+}
 
 // ---------- projects ----------
 const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
