@@ -3109,7 +3109,7 @@ const ACTIONS = {
   "agent-check": () => need("meta", "projects"),
   back: goOverview,
   next: nextWaiting,
-  tab: (id) => { S.tab = id; render(); reopenLastFile(); },
+  tab: (id) => { if (S.tab === "files") saveScroll(); S.tab = id; render(); reopenLastFile(); },   // a hidden file view reads as scrolled to the top
   events: (id, el) => { S.events = el.checked; try { localStorage.setItem("switchboard-chat-events", S.events ? "1" : "0"); } catch (e) {} render(); },
   "ev-loc": (path) => {
     const t = cur(), proj = S.projects.find((p) => p.id === t.project_id)?.local_path;
