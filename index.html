@@ -455,7 +455,8 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .rm-toggle { align-self: flex-start; height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
 .rm-toggle:hover { border-color: var(--border-default); color: var(--text-primary); }
 .rows.removed { background: var(--bg-base); box-shadow: none; }
-.rm-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; gap: 16px; align-items: center; min-height: 44px; padding: 6px 12px 6px 16px; }
+.rm-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; gap: 16px; align-items: center; min-height: 44px; padding: 6px 12px 6px 16px; cursor: pointer; transition: background var(--fast); }
+.rm-row:hover { background: var(--surface-2); }
 .rm-row .num { color: var(--text-muted); }
 .rm-row .t { font-size: 13px; color: var(--text-secondary); }
 .rm-row .when { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
@@ -1457,7 +1458,6 @@ const loaders = {
     try { d = await call("GET", `/api/todos/${id}`); }
     catch (e) { if (e.status === 404 && S.sel === id) { toast("info", "TODO not found", e.message); goOverview(); } return; }
     if (S.sel !== id) return;   // you moved on while it loaded
-    if (d.todo.removed_at) return goOverview();
     const key = `todo:${id}`;
     if (drafts[key] === undefined) {
       drafts[key] = d.draft; composer.value = d.draft;
@@ -2288,10 +2288,10 @@ function backlogHtml(rows) {
           <span title="Remove · no confirmation, nothing is running" style="display:flex"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove">${SVG(CLOSE, 15)}</button></span></div>
       </div>`;
     }).join("")}</div>`;
-  // Item 13: removed TODOs, newest first, each with Restore.
+  // Item 13: removed TODOs, newest first, each with Restore. A click opens it read-only in Focus.
   const removed = S.todos.filter((t) => t.removed_at).sort((a, b) => b.removed_at.localeCompare(a.removed_at));
   const rm = !removed.length ? "" : `<button type="button" class="rm-toggle" data-act="removed-toggle" data-fk="removed-toggle" aria-expanded="${S.removedOpen}">${SVG(S.removedOpen ? CHEV_D : CHEV_R, 13)}Removed · ${removed.length}</button>
-    ${S.removedOpen ? `<div class="rows removed">${removed.map((r) => `<div class="rm-row">
+    ${S.removedOpen ? `<div class="rows removed">${removed.map((r) => `<div class="rm-row" role="button" tabindex="0" data-act="open" data-id="${r.id}" data-fk="open:${r.id}">
         <span class="num">${tNum(r)}</span>
         <div style="display:flex; flex-direction:column; gap:2px; min-width:0"><span class="t ellipsis">${esc(r.title)}</span><span class="mono muted ellipsis" style="font-size:11px">${esc([tNum(r), repoName(r), r.session_id ? `session ${r.session_id.slice(0, 8)}${r.session_count > 1 ? ` · ${r.session_count} sessions` : ""}` : "not started", plural(r.message_count, "message"), plural(r.file_count, "file")].join(" · "))}</span></div>
         <span class="when" title="removed by ${esc(r.removed_by)}">${esc(ago(r.removed_at))}</span>
@@ -2354,6 +2354,7 @@ function renderFocus() {
   const t = cur();
   if (!t) { setHtml($("focusHead"), '<span class="empty" style="padding-bottom:14px">Loading…</span>'); return; }
   const d = S.detail?.todo.id === S.sel ? S.detail : null;
+  if (t.removed_at && S.tab === "terminal") S.tab = "chat";   // item 119: a removed TODO has no terminals
   const tab = S.tab;
   const fileOpen = tab === "files" && S.file?.todoId === t.id;
   renderFocusHead(t, d);
@@ -2451,6 +2452,8 @@ function renderFocusHead(t, d) {
       ${t.attention ? `<button type="button" role="menuitem" data-act="clear" data-id="${t.id}"><span class="l">Clear attention</span></button>` : ""}
       ${t.session_id || t.attention ? '<span class="hr"></span>' : ""}
       <button type="button" role="menuitem" data-act="remove" data-id="${t.id}"><span class="l" style="color:var(--accent-red)">Remove TODO</span></button></div>` : ""}</span>`;
+  // A removed TODO opens read-only: Restore is its only action.
+  if (t.removed_at) status = `<span title="removed by ${esc(t.removed_by)}" style="display:flex">${badge(`Removed ${ago(t.removed_at)}`, "neutral", true)}</span>${btn("Restore", "restore", { v: "primary", id: t.id })}`;
   const wl = waitingList(), pos = wl.findIndex((x) => x.id === t.id);
   status += `<span class="vsep"></span><button type="button" class="navq${wl.length ? "" : " none"}" data-act="next" data-fk="next" title="${keys("Next waiting · ⌘J")}"><span class="sq"></span>${pos >= 0 ? `${pos + 1}/${wl.length}` : wl.length}${SVG(I.down, 13)}</button>`;
   const row1 = `<div class="fh1"><span title="${from} · Esc" style="display:flex"><button type="button" class="mb-iconbtn" data-act="back" data-fk="back" aria-label="Back to ${from.toLowerCase()}">${SVG(I.back, 16)}</button></span>
@@ -2473,7 +2476,7 @@ function renderFocusHead(t, d) {
   if (t.schedule) chips += `<span class="hwrap">${schedChip(t, false, true)}${S.pop === "sched" ? schedPop(t, d) : ""}</span>`;
   if (t.parent_id) chips += fromBadge(t).replace('class="fromb"', 'class="hchip"');
   // P5: the agent, editable until the start
-  if (t.status === "not_started" && agentsFound().length > 1) chips += `<span class="mb-select-wrap" style="width:150px">${agentSelect(t.agent, `class="mb-select" style="height:26px; font-size:12px" aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}</span>`;
+  if (t.status === "not_started" && !t.removed_at && agentsFound().length > 1) chips += `<span class="mb-select-wrap" style="width:150px">${agentSelect(t.agent, `class="mb-select" style="height:26px; font-size:12px" aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}</span>`;
   const pr = t.pr;
   if (pr) {
     const pf = prFactsOf(pr, true), head = prFactsOf(pr, false)[0] ?? pf[0], err = t.gh_error, age = t.pr_checked_at ? ago(t.pr_checked_at) : "";
@@ -2487,13 +2490,13 @@ function renderFocusHead(t, d) {
     chips += `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="session" data-fk="pop:session" aria-expanded="${sesOpen}" title="Session settings"><span class="mut">S${n || 1}</span>${parts.join('<span class="mut">·</span>')}${rows.some((r) => r.own != null) ? '<span class="setsq" title="Set for this TODO"></span>' : ""}${SVG(CHEV_D, 12)}</button>${sesOpen ? sessionPop(t, d) : ""}</span>`;
   }
   chips += ctxHtml(t.ctx, `session ${n || 1}`, running);
-  if (t.status === "not_started") chips += `<span class="notstarted">Not started · instruction editable until you start</span>`;
+  if (t.status === "not_started" && !t.removed_at) chips += `<span class="notstarted">Not started · instruction editable until you start</span>`;
   const err = t.gh_error;
   const ghLine = err && (t.pr || t.pr_number || t.git?.push === "pushed")
     ? `<div class="gh-line"><span style="text-wrap:pretty">${esc(err.why)} Showing the last result. Retrying every 2 min; the git line is local and stays current.</span>${btn(S.ghRetrying ? "Retrying…" : "Retry now", "gh-retry", { v: "ghost" })}</div>` : "";
   // Row 3: tabs and the transcript switch
   const steps = d ? d.events.length : 0;
-  const tabsRow = `<div class="fh3"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", (d ? d.files.length : t.file_count) || undefined], ["terminal", "Terminal", termCount(t.id) || undefined]], S.tab, "tab")}</div>
+  const tabsRow = `<div class="fh3"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", (d ? d.files.length : t.file_count) || undefined], ...(t.removed_at ? [] : [["terminal", "Terminal", termCount(t.id) || undefined]])], S.tab, "tab")}</div>
     ${S.tab === "chat" ? `<label class="mb-switch" title="Show every step the agent took, plus app events. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Transcript · ${steps}</span></label>` : ""}</div>`;
   // A live update rebuilds the header: the schedule popover's field being typed in keeps its text and focus.
   const a = document.activeElement, keep = a?.closest?.("#focusHead") && a.dataset.change ? { sel: `[data-change="${a.dataset.change}"]${a.dataset.i ? `[data-i="${a.dataset.i}"]` : ""}`, v: a.value, p: a.selectionStart } : null;
@@ -2505,7 +2508,7 @@ function renderFocusHead(t, d) {
 // ---------- chat (design v6): sessions, messages and the agent's turns as work groups ----------
 function msgHtml(m, t) {
   const editing = S.editing?.msgId === m.id;   // stays after a start, so a refused save keeps the text
-  const firstOf = t.status === "not_started" && S.detail?.messages[0]?.id === m.id;   // items 94-98
+  const firstOf = t.status === "not_started" && !t.removed_at && S.detail?.messages[0]?.id === m.id;   // items 94-98
   if (m.author === "app") return `<div class="appcard">${SVG(I.info, 15, "var(--text-muted)")}<div><span class="ml">App · ${esc(hm(m.at))}</span><span class="t">${esc(m.body)}</span></div></div>`;
   const user = m.author.startsWith("user");
   let who, color, sub = "";
@@ -2748,6 +2751,7 @@ function renderChat(t, d) {
   if (chatLog.dataset.sig !== sig || atBottom) chatLog.scrollTop = chatLog.scrollHeight;
   chatLog.dataset.sig = sig;
 
+  $("chatView").querySelector(".composer").hidden = !!t.removed_at;
   const appr = $("approval"), perm = running && t.permission;
   appr.hidden = !perm;
   setHtml(appr, perm ? approvalHtml(t) : "");
