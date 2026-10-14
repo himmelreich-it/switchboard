@@ -434,6 +434,18 @@ export function revealCommand(platform: string, file: string): string[] {
   return ["xdg-open", dirname(file)];
 }
 
+// The processes below `root` in `ps -A -o pid=,ppid=` output (lines "pid ppid"), children before grandchildren.
+export function descendants(ps: string, root: number): number[] {
+  const kids = new Map<number, number[]>();
+  for (const line of ps.split("\n")) {
+    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+    if (pid && ppid !== undefined && !Number.isNaN(ppid)) kids.set(ppid, [...(kids.get(ppid) ?? []), pid]);
+  }
+  const out: number[] = [];
+  for (let i = -1; i < out.length; i++) for (const k of kids.get(i < 0 ? root : out[i]!) ?? []) if (k !== root && !out.includes(k)) out.push(k);
+  return out;
+}
+
 // True when `version` ("1.3.14") is at least `min` ("1.3.5").
 export function versionAtLeast(version: string, min: string): boolean {
   const a = version.split(".").map(Number), b = min.split(".").map(Number);
