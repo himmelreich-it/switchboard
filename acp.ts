@@ -119,8 +119,13 @@ export function killTree(pid: number, signal: NodeJS.Signals) {
   try { pids = [pid, ...descendants(Bun.spawnSync(["/bin/ps", "-A", "-o", "pid=,ppid="]).stdout.toString(), pid)]; } catch {}
   const send = (s: NodeJS.Signals) => { for (const p of pids) try { process.kill(p, s); } catch {} };
   send(signal);
-  setTimeout(() => send("SIGKILL"), 5000);
+  const kill = () => { clearTimeout(timer); pendingKills.delete(kill); send("SIGKILL"); };
+  const timer = setTimeout(kill, 5000);
+  pendingKills.add(kill);
 }
+// The SIGKILLs killTree has not sent yet. The server's shutdown sends them at once: its exit would drop the timers.
+const pendingKills = new Set<() => void>();
+export const killNow = () => { for (const kill of [...pendingKills]) kill(); };
 
 function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, configOptions: any[] | null | undefined): Live {
   let alive = true;
