@@ -7,11 +7,11 @@ import {
   MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status,
 } from "./lib";
-import { authenticate, describe, sessionExists } from "./acp";
+import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
-  CONTRACT, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, cancelRouting, changeRepo, closeAgent, metaKey, commandsOf, commitMessage,
+  CONTRACT, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
@@ -674,8 +674,9 @@ function killTerm(x: Term) {
   const p = x.proc;
   x.proc = null;
   endGrant(x);
-  // Windows has no SIGHUP (Bun throws on it): the default kill ends the process there.
-  try { process.platform === "win32" ? p?.kill() : p?.kill("SIGHUP"); p?.terminal?.close(); } catch {}
+  // SIGHUP, as when a terminal window closes; the processes started in it end too, also nohup or disowned ones.
+  if (p && p.exitCode === null && !p.signalCode) killTree(p.pid, "SIGHUP");   // an ended shell's pid may be reused
+  try { p?.terminal?.close(); } catch {}
 }
 export function closeTerms(todoId: number | null) {
   for (const x of [...terms.values()]) if (todoId === null || x.todoId === todoId) {
@@ -1357,6 +1358,11 @@ async function shutdown() {
   httpServer.stop(true);
   closeTerms(null);
   await Promise.race([stopAll(), Bun.sleep(5000)]);
+  // A run that did not end in the 5 s still has its agent process. One second for SIGTERM and SIGHUP, then SIGKILL to
+  // every process of the terminals and agents still there.
+  closeAgents();
+  await Bun.sleep(1000);
+  killNow();
   try { if (readFileSync(TOKEN_FILE, "utf8") === TOKEN) unlinkSync(TOKEN_FILE); } catch {}
   process.exit(0);
 }

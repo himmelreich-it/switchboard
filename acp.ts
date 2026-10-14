@@ -1,6 +1,7 @@
 // The agent driver: Agent Client Protocol (ACP) over stdio, one agent process per live session.
 // Nothing about TODOs here; runner.ts decides what a session is for. See designs/acp/ (investigation, design, spike).
 import * as acp from "@agentclientprotocol/sdk";
+import { descendants } from "./lib";
 
 export type Update = acp.SessionUpdate & { _meta?: Record<string, any> };
 export type PermissionRequest = acp.RequestPermissionRequest;
@@ -108,6 +109,24 @@ async function spawnAgent(spec: Spec, handlers: { h: Handlers | null }, extraEnv
 
 const lastLine = (log: string) => log.trim().split("\n").at(-1)!.slice(0, 300);
 
+// Ends a process and every process below it: `signal` now, SIGKILL 5 s later to the ones still there. The tree is read
+// first, because a shell's jobs, nohup or disowned commands and Claude Code's background shells (item 136) each run in
+// their own process group, and move to pid 1 once their parent ends. Windows has no signals: taskkill /T /F at once.
+// ponytail: a daemon that already left the tree (parent pid 1) is missed; the SIGKILL goes to the pids read at the start.
+export function killTree(pid: number, signal: NodeJS.Signals) {
+  if (process.platform === "win32") return void Bun.spawnSync(["taskkill", "/PID", String(pid), "/T", "/F"], { windowsHide: true });
+  let pids = [pid];
+  try { pids = [pid, ...descendants(Bun.spawnSync(["/bin/ps", "-A", "-o", "pid=,ppid="]).stdout.toString(), pid)]; } catch {}
+  const send = (s: NodeJS.Signals) => { for (const p of pids) try { process.kill(p, s); } catch {} };
+  send(signal);
+  const kill = () => { clearTimeout(timer); pendingKills.delete(kill); send("SIGKILL"); };
+  const timer = setTimeout(kill, 5000);
+  pendingKills.add(kill);
+}
+// The SIGKILLs killTree has not sent yet. The server's shutdown sends them at once: its exit would drop the timers.
+const pendingKills = new Set<() => void>();
+export const killNow = () => { for (const kill of [...pendingKills]) kill(); };
+
 function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, configOptions: any[] | null | undefined): Live {
   let alive = true;
   a.proc.exited.then(() => (alive = false));
@@ -143,12 +162,9 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     },
     close() {
       if (!alive) return;
+      // Before the connection closes: the agent may exit on it, and its children would no longer be found below it.
+      killTree(a.proc.pid, "SIGTERM");
       a.conn.close();
-      // Windows has no SIGTERM: the kill below ends the agent at once, and the shells it started (background tasks,
-      // item 136) would live on. taskkill /T ends the whole tree while it is still linked.
-      if (process.platform === "win32") Bun.spawnSync(["taskkill", "/PID", String(a.proc.pid), "/T", "/F"], { windowsHide: true });
-      a.proc.kill("SIGTERM");
-      setTimeout(() => alive && a.proc.kill("SIGKILL"), 5000);
     },
     // Dead as soon as either its process exited or its connection closed, whichever is seen first.
     get alive() { return alive && !a.conn.signal.aborted && a.proc.exitCode === null; },

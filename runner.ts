@@ -277,8 +277,9 @@ export async function stopAll() {
   const runs = [...running.values()];
   for (const key of running.keys()) interrupt(key, "app");
   await Promise.allSettled(runs.map((r) => r.done));
-  for (const key of [...agents.keys()]) closeAgent(key);
+  closeAgents();
 }
+export const closeAgents = () => { for (const key of [...agents.keys()]) closeAgent(key); };
 
 // Marks the messages delivered to the live session and returns their bodies with the paths of their attachments, oldest first.
 function take(todoId: number | null, state: "pending" | "queued") {
