@@ -405,9 +405,11 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .card.sched .last { font-size: 13px; line-height: 1.45; color: var(--text-secondary); text-wrap: pretty; }
 .card.sched .last.none { color: var(--text-muted); }
 .card.sched .foot, .card .schrow { margin-top: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.card.sched .foot > .run { margin-left: auto; display: flex; }
-.schip { flex: none; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; background: transparent; border: 1px solid var(--border-default); border-radius: 2px; font-family: var(--font-mono); font-size: 11px; white-space: nowrap; color: var(--text-secondary); }
+.card.sched .foot > .run { margin-left: auto; flex: none; display: flex; }
+.schip { flex: 0 1 auto; min-width: 0; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; background: transparent; border: 1px solid var(--border-default); border-radius: 2px; font-family: var(--font-mono); font-size: 11px; white-space: nowrap; color: var(--text-secondary); }
 .schip > svg:first-child { color: var(--accent-blue); }
+.schip > svg { flex: none; }
+.schip > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .schip.lane { color: var(--accent-blue); background: var(--tint-blue); border-color: var(--line-blue); }
 .schip.amber, .schip.amber > svg:first-child { color: var(--accent-amber); background: var(--tint-amber); border-color: var(--line-amber); }
 .schip.muted, .schip.muted > svg:first-child { color: var(--text-muted); border-color: var(--border-subtle); }
@@ -2203,8 +2205,8 @@ function schedChip(t, lane = false, head = false) {
   const title = s.paused ? "Paused. Resume in the schedule popover." : sk ? `Skipped ${sk[0].slice(-5)}: ${sk[1]}.${t.next_run_at ? ` Next run ${slotAt(t.next_run_at)}.` : ""}` : next ? `Next run ${next}` : "No next run.";
   const cls = s.paused ? "muted" : sk ? "amber" : lane ? "lane" : "";
   const text = esc(s.paused ? "paused" : t.schedule_text + (sk ? " · skipped" : ""));
-  if (head) return `<button type="button" class="hchip sch schip ${cls}" data-act="pop" data-id="sched" data-fk="pop:sched" aria-expanded="${S.pop === "sched"}" title="${esc(title)}">${SVG(REPEAT, 12)}${text}${SVG(CHEV_D, 12)}</button>`;
-  return `<button type="button" class="schip ${cls}" data-act="sched-open" data-id="${t.id}" title="${esc(title)} · Click to edit the schedule.">${SVG(REPEAT, 11)}${text}${SVG('<path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 10)}</button>`;
+  if (head) return `<button type="button" class="hchip sch schip ${cls}" data-act="pop" data-id="sched" data-fk="pop:sched" aria-expanded="${S.pop === "sched"}" title="${esc(title)}">${SVG(REPEAT, 12)}<span class="t">${text}</span>${SVG(CHEV_D, 12)}</button>`;
+  return `<button type="button" class="schip ${cls}" data-act="sched-open" data-id="${t.id}" title="${esc(title)} · Click to edit the schedule.">${SVG(REPEAT, 11)}<span class="t">${text}</span>${SVG('<path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 10)}</button>`;
 }
 // Item 145: a TODO another TODO's agent created; the badge opens that TODO.
 const fromBadge = (t) => (t.parent_id ? `<button type="button" class="fromb" data-act="open" data-id="${t.parent_id}" title="Created by T-${t.parent_id}'s agent · open T-${t.parent_id}">from&nbsp;T-${t.parent_id}</button>` : "");
