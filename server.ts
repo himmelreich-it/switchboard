@@ -4,7 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status,
 } from "./lib";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
@@ -155,8 +155,8 @@ export function setEvent(id: number, todoId: number, detail: string | null, meta
 
 // ---------- shell ----------
 
-async function sh(cmd: string[], opts: { env?: Record<string, string>; timeout?: number } = {}) {
-  const p = Bun.spawn(cmd, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: opts.env && { ...process.env, ...opts.env }, timeout: opts.timeout });
+async function sh(cmd: string[], opts: { env?: Record<string, string>; timeout?: number; verbatim?: boolean } = {}) {
+  const p = Bun.spawn(cmd, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: opts.env && { ...process.env, ...opts.env }, timeout: opts.timeout, windowsVerbatimArguments: opts.verbatim });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { ok: code === 0, code, out: out.trim(), err: err.trim() || out.trim() };
 }
@@ -892,6 +892,18 @@ async function api(req: Request, path: string): Promise<Response> {
     if (termsOf(t.id).some((x) => !x.exited)) return fail("close this TODO's terminals first; they run in the old topic's folder", 409);
     changeRepo(t.id, to?.id ?? null);
     return json((await summaries("t.id = ?", [t.id]))[0]);
+  }
+
+  // Opens the TODO's folder in VS Code: its worktree, else its topic folder, else its own folder (no topic).
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/vscode$/)) && method === "POST") {
+    const t = todoOr404(Number(m[1]));
+    const dir = [t.worktree_path, projectRow(t.project_id)?.local_path, artifactDir(t.id)].find((d) => d && existsSync(d));
+    if (!dir) return fail("this TODO has no folder on disk yet", 404);
+    let r;
+    try { r = await sh(vscodeCommand(process.platform, dir), { timeout: 15_000, verbatim: true }); }
+    catch (e: any) { r = { ok: false, err: e.message }; }
+    if (!r.ok) return fail(`could not open VS Code. Install it and its \`code\` command (VS Code: Shell Command: Install 'code' command in PATH). ${r.err}`.trim(), 500);
+    return json({ ok: true, dir });
   }
 
   if ((m = path.match(/^\/api\/todos\/(\d+)\/files\/(\d+)(?:\/(reveal))?$/))) {

@@ -434,6 +434,16 @@ export function revealCommand(platform: string, file: string): string[] {
   return ["xdg-open", dirname(file)];
 }
 
+// The command that opens a folder in VS Code. macOS finds the app by its bundle id, so the `code` shell command need
+// not be installed. Linux runs `code` from PATH. On Windows `code` is code.cmd, which only cmd.exe runs; /s makes cmd
+// drop the outer quotes, and the caller spawns it with windowsVerbatimArguments so Bun adds none of its own.
+// ponytail: a % in a Windows path would expand as a variable; such folder names are rare.
+export function vscodeCommand(platform: string, dir: string): string[] {
+  if (platform === "darwin") return ["open", "-b", "com.microsoft.VSCode", dir];
+  if (platform === "win32") return ["cmd.exe", "/d", "/s", "/c", `"code "${dir.replaceAll("/", "\\")}""`];
+  return ["code", dir];
+}
+
 // The processes below `root` in `ps -A -o pid=,ppid=` output (lines "pid ppid"), children before grandchildren.
 export function descendants(ps: string, root: number): number[] {
   const kids = new Map<number, number[]>();

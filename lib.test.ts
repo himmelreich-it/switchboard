@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule,
@@ -355,6 +355,12 @@ test("revealCommand", () => {
   expect(revealCommand("darwin", "/a/b c.md")).toEqual(["open", "-R", "/a/b c.md"]);
   expect(revealCommand("win32", "C:/code/a b/c.md")).toEqual(["explorer.exe", '/select,"C:\\code\\a b\\c.md"']);
   expect(revealCommand("linux", "/a/b/c.md")).toEqual(["xdg-open", "/a/b"]);
+});
+
+test("vscodeCommand", () => {
+  expect(vscodeCommand("darwin", "/a/b c")).toEqual(["open", "-b", "com.microsoft.VSCode", "/a/b c"]);
+  expect(vscodeCommand("win32", "C:/code/a b")).toEqual(["cmd.exe", "/d", "/s", "/c", '"code "C:\\code\\a b""']);
+  expect(vscodeCommand("linux", "/a/b c")).toEqual(["code", "/a/b c"]);
 });
 
 test("followUpError", () => {
