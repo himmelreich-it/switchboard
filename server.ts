@@ -902,7 +902,8 @@ async function api(req: Request, path: string): Promise<Response> {
     let r;
     try { r = await sh(vscodeCommand(process.platform, dir), { timeout: 15_000, verbatim: true }); }
     catch (e: any) { r = { ok: false, err: e.message }; }
-    if (!r.ok) return fail(`could not open VS Code. Install it and its \`code\` command (VS Code: Shell Command: Install 'code' command in PATH). ${r.err}`.trim(), 500);
+    const hint = process.platform === "darwin" ? "Is VS Code installed?" : "Is VS Code's code command on PATH?";
+    if (!r.ok) return fail(`could not open VS Code. ${hint} ${r.err}`.trim(), 500);
     return json({ ok: true, dir });
   }
 
