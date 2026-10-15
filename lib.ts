@@ -465,13 +465,23 @@ export function versionAtLeast(version: string, min: string): boolean {
 
 // What the worker is told about where it runs, between the contract and the topic prompt. The user files TODOs under
 // topics; the agent needs a folder, so the intro names both, and where worktrees go (`worktrees`: null outside git).
-export function topicIntro(p: { name: string; local_path: string } | null, worktrees: string | null) {
+export function topicIntro(p: { name: string; local_path: string; independent?: number | boolean | null } | null, worktrees: string | null) {
   if (!p) return "This TODO has no topic: it is thinking only, with no code changes. Your working directory is its artifact folder. Do not create a worktree.";
   const head = `This TODO belongs to the topic "${p.name}". The user knows it by that name; its folder on disk, ${p.local_path}, is your working directory.`;
-  return worktrees
+  const intro = worktrees
     ? `${head} The folder is a git repository. Before you start work, pull the latest main: \`git pull --ff-only\` when the folder is on main, else \`git fetch origin main:main\`. Worktrees go under ${worktrees}, e.g. \`git worktree add -b <branch> ${worktrees}/<name> main\`; the topic prompt may say more.`
     : `${head} The folder is not a git repository: work in it directly, without a worktree, branches or a pull request, and do not run git init.`;
+  return p.independent ? `${intro}\n\n${independentText(!!worktrees)}` : intro;
 }
+
+// Independent mode: the user's standing go-ahead to ship work in this topic without them. It overrides the contract's
+// "outward actions need an explicit message" for push, pull request and merge only; Jira, Slack and the rest still ask.
+const independentText = (git: boolean) => [
+  `Independent mode is on for this topic. The user turned it on so work here ships without them. It is their standing go-ahead for the steps below, also in a TODO another TODO's agent created, and it is the confirmation that the contract above and your own instructions ask for before these steps.`,
+  ...(git ? [`- Ship your change yourself once you trust it: the tests pass, you read the whole diff, and it does what the TODO asks. Commit, push the branch and open a pull request. When the repository has checks, wait for them (\`gh pr checks --watch\`; \"no checks reported\" means there are none) and fix a failing one, or ask. Then squash-merge it with \`gh pr merge <number> --squash\` and pull the latest main. A merge the repository refuses (branch protection, review required): ask.`] : []),
+  `- On a design question with a recommended option you are confident in, pick it and go on. Post one line naming the choice and why. Not confident: ask, as usual.`,
+  `- Still ask before anything destructive or hard to undo (force-push, history rewrite, deleting data) and before anything outside this topic's repository (Jira, Slack, other repositories).`,
+].join("\n");
 
 // Item 114: what a Claude terminal reads first, written to <artifact folder>/terminal/context.md at each launch.
 export function contextFile(c: {
@@ -637,6 +647,7 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("projects", "profile", "TEXT");      // what lives in the repo, written by a scan or the user, for routing
   addColumn("projects", "profile_at", "TEXT");   // when the last scan wrote the profile
   addColumn("projects", "profile_edited", "INTEGER"); // 1 once the user edited the profile; a Rescan asks first
+  addColumn("projects", "independent", "INTEGER");   // 1: Independent mode, the agent may push, open and squash-merge its PR
   addColumn("todos", "schedule", "TEXT");        // the repeat rule (JSON Schedule), item 144; null: not scheduled
   addColumn("todos", "next_run_at", "TEXT");     // the next slot; null when paused or not scheduled
   addColumn("todos", "parent_id", "INTEGER");    // the TODO whose agent created this one (item 145)

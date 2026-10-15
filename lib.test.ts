@@ -393,6 +393,13 @@ test("topicIntro: the user's topic, the agent's folder, and whether a worktree i
   expect(plain).toContain("not a git repository: work in it directly, without a worktree");
   expect(none).toContain("has no topic");
   expect(none).toContain("Do not create a worktree");
+  for (const s of [git, plain]) expect(s).not.toContain("Independent mode");
+  const ind = topicIntro({ ...p, independent: 1 }, "/home/u/worktrees"), indPlain = topicIntro({ ...p, independent: 1 }, null);
+  expect(ind).toContain("Independent mode is on");
+  expect(ind).toContain("gh pr merge <number> --squash");
+  expect(indPlain).toContain("Independent mode is on");
+  expect(indPlain).not.toContain("gh pr merge");   // no pull request outside git
+  expect(indPlain).toContain("recommended option");
 });
 
 test("scheduleIn, scheduleText and nextRun (item 144), across a DST change", () => {
