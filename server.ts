@@ -399,15 +399,23 @@ export function createTodo(instruction: string, actor: "user" | "operator" | "ag
   return id;
 }
 
-// Removes a live TODO, for the user or the operator's remove_todo. Like Esc in Claude Code; queued messages stay queued.
+// Removes a live TODO, for the user, the operator's remove_todo or a worker's remove_todo on a TODO it created (`T-<id>`). Like Esc in Claude Code; queued messages stay queued.
 // The agent process ends with the run, or now when idle. Routing that asks ends here; routing that runs ends with its run.
 // Either way the TODO is not started again.
-export function removeTodo(id: number, by: "user" | "operator") {
+export function removeTodo(id: number, by: "user" | "operator" | `T-${number}`) {
   setTodo(id, { removed_at: now(), removed_by: by, suggestions: null });
-  addEvent(id, "removed", by);
+  addEvent(id, "removed", by.startsWith("T-") ? "agent" : by, by.startsWith("T-") ? `by ${by}` : null);
   if (isRunning(id)) interrupt(id);
   else { closeAgent(id); cancelRouting(id); }
   closeTerms(id); // restoring does not bring them back (item 115)
+  emit({ type: "todos" });
+}
+
+// Item 144: sets, changes, pauses or removes (null) a TODO's schedule, for the user or a worker's set_schedule (`T-<id>`).
+// The next slot counts from now.
+export function setSchedule(id: number, s: Schedule | null, by: "user" | `T-${number}`) {
+  setTodo(id, { schedule: s && JSON.stringify(s), next_run_at: s && !s.paused ? nextRun(s, new Date())?.toISOString() ?? null : null });
+  addEvent(id, "schedule", by === "user" ? "user" : "agent", [!s ? "removed" : s.paused ? "paused" : scheduleText(s), by !== "user" && `by ${by}`].filter(Boolean).join(" · "));
   emit({ type: "todos" });
 }
 
@@ -833,14 +841,12 @@ async function api(req: Request, path: string): Promise<Response> {
     return json((await summaries("t.id = ?", [id]))[0]);
   }
 
-  // Item 144: set, change, pause or remove (null) a TODO's schedule. The next slot counts from now.
+  // Item 144: set, change, pause or remove (null) a TODO's schedule.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/schedule$/)) && method === "PUT") {
     const t = liveTodo(Number(m[1]));
     const s = body.schedule == null ? null : scheduleIn(body.schedule);
     if (typeof s === "string") return fail(s);
-    setTodo(t.id, { schedule: s && JSON.stringify(s), next_run_at: s && !s.paused ? nextRun(s, new Date())?.toISOString() ?? null : null });
-    addEvent(t.id, "schedule", "user", !s ? "removed" : s.paused ? "paused" : scheduleText(s));
-    emit({ type: "todos" });
+    setSchedule(t.id, s, "user");
     return json((await summaries("t.id = ?", [t.id]))[0]);
   }
   // Item 144: Run now, with the skip rules of a firing; the refusal says why.
