@@ -11,10 +11,10 @@ import { deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "
 import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOST, PORT, addEvent, addMessage, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setTodo, summaries, todoRow,
+  HOST, PORT, addEvent, addMessage, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
-export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "read_todo", "read_file", "create_todo", "remove_todo"].map((n) => `mcp__app__${n}`);
+export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule"].map((n) => `mcp__app__${n}`);
 export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "remove_todo"].map((n) => `mcp__app__${n}`);
 // The operator's routing run for one TODO (801): read other TODOs, then decide.
 export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"].map((n) => `mcp__app__${n}`);
@@ -98,6 +98,20 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     removeTodo(todo_id, `T-${todoId}`);
     addEvent(todoId, "remove_todo", "agent", [g.via && `from ${g.via}`, `T-${todo_id}`].filter(Boolean).join(" · "));
     return ok(`Removed T-${todo_id}. The user can restore it from the Removed fold.`);
+  });
+  s.registerTool("set_schedule", {
+    description: `Set, change, pause or remove (schedule null) the schedule of a TODO this TODO created with create_todo, only when the user's instruction says to. schedule: {days: [1,2,3,4,5], times: ["09:00"]} or {days, every: 30, from: "08:00", to: "18:00"} (days 0 = Sunday, local time), optional prompt (each run's first message; left out, the TODO's first instruction) and paused.`,
+    inputSchema: { todo_id: z.number().int(), schedule: z.any() },
+  }, async ({ todo_id, schedule }) => {
+    const t = todoRow(todo_id);
+    if (!t || t.removed_at) return err(`no live TODO T-${todo_id}`);
+    if (t.parent_id !== todoId) return err(`T-${todo_id} was not created by this TODO (T-${todoId}); only the user changes its schedule.`);
+    const sched = schedule == null ? null : scheduleIn(schedule);
+    if (typeof sched === "string") return err(sched);
+    setSchedule(todo_id, sched, `T-${todoId}`);
+    addEvent(todoId, "set_schedule", "agent", [g.via && `from ${g.via}`, `T-${todo_id}`].filter(Boolean).join(" · "));
+    const next = todoRow(todo_id)!.next_run_at;
+    return ok(!sched ? `Removed the schedule of T-${todo_id}.` : `T-${todo_id} ${sched.paused ? "is paused" : `runs next at ${next ?? "no slot"}`}.`);
   });
   s.registerTool("set_title", { description: "Set this TODO's title: a short summary of the task.", inputSchema: { title: z.string() } }, async ({ title }) => {
     if (!title.trim()) return err("title is empty");
