@@ -1320,6 +1320,8 @@ S.tabOf = {}; S.lastFile = {};   // TODO id -> its tab and its last opened file,
 S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
 S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
 S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // terminals per TODO (item 111)
+S.termFocus = false;   // the Terminal tab was just opened: the selected terminal takes the keys once it has loaded
+try { S.termSel = JSON.parse(localStorage.getItem("switchboard-term-sel") || "{}"); } catch (e) {}   // TODO id -> selected terminal id; terminals outlive a reload
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
@@ -2957,6 +2959,10 @@ function mountEditor(f, host, rw, locked) {
 const termCount = (todoId) => (S.terms[todoId] ?? []).length;   // exited tabs count too (design v4)
 const liveTerms = (todoId) => (S.terms[todoId] ?? []).filter((x) => !x.exited).length;
 const xterms = new Map();   // terminal id -> {todoId, info, term, fit, ws, host, ...}; kept while the page lives
+function pickTerm(todoId, tid) {
+  S.termSel[todoId] = tid;
+  try { localStorage.setItem("switchboard-term-sel", JSON.stringify(S.termSel)); } catch (e) {}   // ponytail: entries of removed TODOs stay, a few bytes each
+}
 let termLib = null;
 function loadTermLib() {
   if (!termLib) {
@@ -2996,7 +3002,7 @@ async function newTerm(kind, root, message = "") {
   try {
     const x = await call("POST", `/api/todos/${t.id}/terminals`, { kind, root, message, cols: 100, rows: 30 });
     (S.terms[t.id] ??= []).push(x);
-    S.termSel[t.id] = x.id;
+    pickTerm(t.id, x.id);
     render();
     setTimeout(() => xterms.get(x.id)?.term?.focus(), 60);
   } catch (e) { toast("danger", "No terminal", e.message); render(); }
@@ -3099,6 +3105,7 @@ function ensureXterm(x, t) {
     // Refits on every size change of the host: shown again (tab, TODO), window resize, panes dragged, operator panel.
     v.ro = new ResizeObserver(() => fitTerm(v));
     v.ro.observe(v.host);
+    if (S.termFocus) render();   // the Terminal tab was opened before this terminal had loaded
   });
   return v;
 }
@@ -3114,7 +3121,7 @@ function renderTerminals(t, d) {
   const list = S.terms[t.id] ?? [];
   if (S.terms[t.id] === undefined) need("terms");
   let sel = S.termSel[t.id];
-  if (!list.some((x) => x.id === sel)) sel = S.termSel[t.id] = list.at(-1)?.id;
+  if (S.terms[t.id] && !list.some((x) => x.id === sel)) sel = S.termSel[t.id] = list.at(-1)?.id;   // not before the list loads: a reload keeps the pick
   const dirs = termDirs(t), def = dirs[0];
   // Design v6: the terminals as a list on the left, Shell and Claude below it; the selected one on the right.
   const items = list.map((x) => `<div class="titem" role="tab" tabindex="0" aria-selected="${!S.cform && x.id === sel}" data-act="term-sel" data-id="${x.id}" data-fk="term:${x.id}" title="${esc(x.cwd)}">
@@ -3149,6 +3156,8 @@ claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append
     if (v.host.hidden === show) v.host.hidden = !show;
   }
   const v = sel && xterms.get(sel), x = v?.info, exitEl = $("termExit");
+  // A click on the Terminal tab gives the selected terminal the keys; waits while the list or xterm.js still loads.
+  if (S.termFocus && S.terms[t.id] && (!v || v.term)) { S.termFocus = false; if (v && !S.cform) setTimeout(() => v.term.focus(), 60); }
   const ended = v?.ended, exited = x?.exited || v?.exit;
   exitEl.hidden = !!S.cform || !(ended || exited);
   if (!exitEl.hidden) {
@@ -3305,7 +3314,7 @@ const ACTIONS = {
   "agent-check": () => need("meta", "projects"),
   back: goOverview,
   next: nextWaiting,
-  tab: (id) => { if (S.tab === "files") saveScroll(); S.tab = id; render(); reopenLastFile(); },   // a hidden file view reads as scrolled to the top
+  tab: (id) => { if (S.tab === "files") saveScroll(); S.tab = id; S.termFocus = id === "terminal"; render(); reopenLastFile(); },   // a hidden file view reads as scrolled to the top
   events: (id, el) => { S.events = el.checked; try { localStorage.setItem("switchboard-chat-events", S.events ? "1" : "0"); } catch (e) {} render(); },
   "ev-loc": (path) => {
     const t = cur(), proj = S.projects.find((p) => p.id === t.project_id)?.local_path;
@@ -3369,7 +3378,7 @@ const ACTIONS = {
   "add-path": addPathToMessage,
   "md-tool": (id) => S.cm?.handle?.format(id),
   "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
-  "term-sel": (id) => { const t = cur(); S.termSel[t.id] = Number(id); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
+  "term-sel": (id) => { const t = cur(); pickTerm(t.id, Number(id)); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
   "term-close": (id) => askCloseTerm(Number(id)),
   "term-restart": (id) => restartTerm(Number(id)),
   "cform-cancel": () => { S.cform = null; render(); },
