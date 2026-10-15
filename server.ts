@@ -411,6 +411,14 @@ export function removeTodo(id: number, by: "user" | "operator" | `T-${number}`) 
   emit({ type: "todos" });
 }
 
+// Item 144: sets, changes, pauses or removes (null) a TODO's schedule, for the user or a worker's set_schedule (`T-<id>`).
+// The next slot counts from now.
+export function setSchedule(id: number, s: Schedule | null, by: "user" | `T-${number}`) {
+  setTodo(id, { schedule: s && JSON.stringify(s), next_run_at: s && !s.paused ? nextRun(s, new Date())?.toISOString() ?? null : null });
+  addEvent(id, "schedule", by === "user" ? "user" : "agent", [!s ? "removed" : s.paused ? "paused" : scheduleText(s), by !== "user" && `by ${by}`].filter(Boolean).join(" · "));
+  emit({ type: "todos" });
+}
+
 // ---------- migration from auto-coder (only when this database is new) ----------
 
 function migrate() {
@@ -833,14 +841,12 @@ async function api(req: Request, path: string): Promise<Response> {
     return json((await summaries("t.id = ?", [id]))[0]);
   }
 
-  // Item 144: set, change, pause or remove (null) a TODO's schedule. The next slot counts from now.
+  // Item 144: set, change, pause or remove (null) a TODO's schedule.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/schedule$/)) && method === "PUT") {
     const t = liveTodo(Number(m[1]));
     const s = body.schedule == null ? null : scheduleIn(body.schedule);
     if (typeof s === "string") return fail(s);
-    setTodo(t.id, { schedule: s && JSON.stringify(s), next_run_at: s && !s.paused ? nextRun(s, new Date())?.toISOString() ?? null : null });
-    addEvent(t.id, "schedule", "user", !s ? "removed" : s.paused ? "paused" : scheduleText(s));
-    emit({ type: "todos" });
+    setSchedule(t.id, s, "user");
     return json((await summaries("t.id = ?", [t.id]))[0]);
   }
   // Item 144: Run now, with the skip rules of a firing; the refusal says why.
