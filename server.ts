@@ -41,6 +41,7 @@ export type Session = { no: number; session_id: string; started_at: string; ende
 export type Project = {
   id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string; mode: string | null; defaults: string | null;
   default_agent: string | null; profile: string | null; profile_at: string | null; profile_edited: number | null;
+  independent: number | null;
 };
 
 export const now = () => new Date().toISOString();
@@ -369,7 +370,7 @@ async function projectOut(p: Project) {
   const c = db.query(`SELECT EXISTS (SELECT 1 FROM todos WHERE project_id = ? AND session_id IS NOT NULL) AS locked,
     (SELECT COUNT(*) FROM todos WHERE project_id = ? AND removed_at IS NULL) AS todo_count`).get(p.id, p.id) as any;
   return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, git: g.ok, locked: !!c.locked, todo_count: c.todo_count,
-    profile_edited: !!p.profile_edited, scanning: isScanning(p.id), scan_error: scanError(p.id) };
+    profile_edited: !!p.profile_edited, independent: !!p.independent, scanning: isScanning(p.id), scan_error: scanError(p.id) };
 }
 
 // ---------- writes shared with runner.ts ----------
@@ -781,8 +782,8 @@ async function api(req: Request, path: string): Promise<Response> {
     if (defaults && typeof defaults === "object") return fail(defaults.error);
     if (agent === undefined) return fail(`no agent ${body.default_agent}`);
     const id = Number(db.run(
-      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, defaults, default_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), defaults, agent === DEFAULT_AGENT ? null : agent],
+      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, defaults, default_agent, independent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), defaults, agent === DEFAULT_AGENT ? null : agent, body.independent ? 1 : null],
     ).lastInsertRowid);
     scanRepo(id);   // the profile routing reads (801)
     emit({ type: "projects" });
@@ -803,8 +804,9 @@ async function api(req: Request, path: string): Promise<Response> {
     if (defaults && typeof defaults === "object") return fail(defaults.error);
     const agent = body.default_agent === undefined ? p.default_agent : agentIn(body.default_agent);
     if (agent === undefined) return fail(`no agent ${body.default_agent}`);
-    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, defaults = ?, default_agent = ? WHERE id = ?",
-      [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), defaults, agent === DEFAULT_AGENT ? null : agent, p.id]);
+    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, defaults = ?, default_agent = ?, independent = ? WHERE id = ?",
+      [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), defaults, agent === DEFAULT_AGENT ? null : agent,
+        body.independent === undefined ? p.independent : body.independent ? 1 : null, p.id]);
     // 801: a profile the user edits is marked edited, so a Rescan asks before it overwrites it.
     if (body.profile !== undefined && String(body.profile).trim() !== (p.profile ?? ""))
       db.run("UPDATE projects SET profile = ?, profile_edited = 1 WHERE id = ?", [String(body.profile).trim() || null, p.id]);
