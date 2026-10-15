@@ -1542,6 +1542,7 @@ function select(id) {
   if (!(S.view === "todos" && S.mode === "focus")) S.focusFrom = S.board;   // ⌘J inside Focus keeps where you came from
   if (S.sel !== id) { S.tabOf[S.sel] = S.tab; S.detail = null; dropFile(); S.tab = S.tabOf[id] ?? "chat"; S.cform = null; }
   S.sel = id; S.view = "todos"; S.mode = "focus"; S.pop = null;
+  S.termFocus = S.tab === "terminal";   // a TODO that opens on its Terminal tab gives the selected terminal the keys
   composer.value = drafts[draftKey()] ?? "";
   chatLog.dataset.sig = "";   // scroll the chat to the newest message
   render();
