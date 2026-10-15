@@ -3332,7 +3332,7 @@ const ACTIONS = {
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
   // Item 144: Run now, the schedule chip on a card (opens the TODO with its popover), and the schedule editor.
-  vscode: (id) => { S.pop = null; render(); act(call("POST", `/api/todos/${id}/vscode`), "Can't open VS Code"); },
+  vscode: (id) => { S.pop = null; render(); act(call("POST", `/api/todos/${id}/vscode`).then((r) => toast("info", "Opened in VS Code", "· " + r.dir)), "Can't open VS Code"); },
   "run-now": (id) => { S.pop = null; act(call("POST", `/api/todos/${id}/run-now`).then(() => toast("info", `Started T-${id}`, "· a new session. It goes back to Scheduled when the run ends.")), "Can't run now"); },
   "sched-open": (id) => { select(Number(id)); S.pop = "sched"; render(); },
   "rep-toggle": (id, el) => { S.rep.on = el.checked; render(); },
