@@ -399,12 +399,12 @@ export function createTodo(instruction: string, actor: "user" | "operator" | "ag
   return id;
 }
 
-// Removes a live TODO, for the user or the operator's remove_todo. Like Esc in Claude Code; queued messages stay queued.
+// Removes a live TODO, for the user, the operator's remove_todo or a worker's remove_todo on a TODO it created (`T-<id>`). Like Esc in Claude Code; queued messages stay queued.
 // The agent process ends with the run, or now when idle. Routing that asks ends here; routing that runs ends with its run.
 // Either way the TODO is not started again.
-export function removeTodo(id: number, by: "user" | "operator") {
+export function removeTodo(id: number, by: "user" | "operator" | `T-${number}`) {
   setTodo(id, { removed_at: now(), removed_by: by, suggestions: null });
-  addEvent(id, "removed", by);
+  addEvent(id, "removed", by.startsWith("T-") ? "agent" : by, by.startsWith("T-") ? `by ${by}` : null);
   if (isRunning(id)) interrupt(id);
   else { closeAgent(id); cancelRouting(id); }
   closeTerms(id); // restoring does not bring them back (item 115)
