@@ -297,6 +297,14 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - The server resolves the real path and accepts only paths inside the repo's local folder or its worktree root (item 47). Symlinks the worktree skill makes, such as `.env` or `CLAUDE.local.md` pointing into the main folder, therefore open, and nothing outside the repo opens.
      - Writes go to the resolved file, so symlinks are kept.
      - Writes inside `.git/` are refused.
+146. **Comments on selected text.** Built 2026-10-16. In the Files tab, selecting text in a file's Read view, its markdown preview or its editor (any file, read or edit mode) shows a "Comment" button next to the selection. It opens a box at the top of a Comments column on the right of the file; ⌘Enter or Comment saves, Escape or Cancel drops it.
+     - A comment is stored in the `comments` table with its TODO, root, path inside the root, the resolved disk path, the selected text (quote, at most 2000 characters), the line the selection starts on, the comment, the agent's reply and a state: `open`, `replied` (the agent replied) or `resolved` (only the user resolves). A comment belongs to the TODO the file was opened from.
+     - Each render finds the quote again in the file's text, skipping whitespace and markdown signs (`` *_`#>~|\ ``), so a quote picked in the rendered view matches the source. Of several matches the one nearest the stored line wins. The quote is highlighted amber: in the editor with marks, in rendered markdown with the CSS Custom Highlight API (no element is added to the sanitized markdown). A quote no longer found (the file changed) shows the comment as Outdated, its quote struck through.
+     - The column lists the file's comments, resolved ones only after "Show resolved (N)". A card shows the quote, its state, Outdated, the line, the comment, the agent's reply ("Agent", as markdown), and Edit, Resolve or Reopen, and Delete (which asks first). A click on a card or on highlighted text makes that comment active: the card is outlined, its text underlined and scrolled to.
+     - Editing a comment sets it back to `open`, so the agent sees the new text with its earlier reply.
+     - "Ask agent · N" (N open comments) puts "Look at my comments." into the TODO's message box and switches to Chat; the user sends it. The agent is not told about comments otherwise.
+     - Files with open or replied comments show an amber dot in the file list.
+     - The worker tools (also in Claude terminals): `list_comments()` returns the TODO's open comments (id, disk path, line, quote, comment, `your_earlier_reply` after an edit); `reply_comment(id, reply)` stores the reply and sets `replied`. The app contract says to call them when the user asks to look at the comments, to apply what a comment asks and reply "Applied: <what changed>", and to answer a question without an edit.
 
 ### Terminals
 

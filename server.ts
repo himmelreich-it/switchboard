@@ -50,6 +50,9 @@ export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = 
 export const projectRow = (id: number | null) => (id == null ? null : db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null);
 export const filesOf = (todoId: number) =>
   db.query("SELECT id, path, session_no FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null }[];
+export type Comment = { id: number; todo_id: number; root: string; rel: string; path: string; quote: string; line: number | null; body: string; reply: string | null; state: "open" | "replied" | "resolved"; created_at: string; replied_at: string | null };
+export const commentsOf = (todoId: number, where = "1") =>
+  db.query(`SELECT * FROM comments WHERE todo_id = ? AND ${where} ORDER BY path, line, id`).all(todoId) as Comment[];
 // Since 801 the folder no longer depends on the topic, so it exists before routing and never moves.
 export const artifactDir = (todoId: number) => join(HOME, "data", String(todoId));
 export const attachmentsOf = (messageId: number) =>
@@ -931,6 +934,37 @@ async function api(req: Request, path: string): Promise<Response> {
     }
   }
 
+  // Item 146: comments on selected text of a file the TODO shows. The agent reads them with list_comments.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/comments(?:\/(\d+))?$/))) {
+    const t = todoOr404(Number(m[1]));
+    if (!m[2] && method === "POST") {
+      const quote = String(body.quote ?? ""), text = String(body.body ?? "").trim();
+      if (!quote.trim() || !text) return fail("quote and body are required");
+      let file: string, rel: string;
+      if (body.root === "todo") {
+        const f = db.query("SELECT path FROM files WHERE id = ? AND todo_id = ?").get(Number(body.file_id), t.id) as { path: string } | null;
+        if (!f) return fail("no such file", 404);
+        file = f.path; rel = String(body.file_id);
+      } else { file = fsTarget(t, String(body.root), String(body.path)).real; rel = String(body.path); }
+      const line = Number.isInteger(body.line) && body.line > 0 ? body.line : null;
+      const r = db.run("INSERT INTO comments (todo_id, root, rel, path, quote, line, body, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)",
+        [t.id, String(body.root), rel, file, quote, line, text, now()]);
+      changed(t.id);
+      return json({ id: Number(r.lastInsertRowid) });
+    }
+    const c = m[2] ? db.query("SELECT * FROM comments WHERE id = ? AND todo_id = ?").get(Number(m[2]), t.id) as Comment | null : null;
+    if (!c) return fail("no such comment", 404);
+    if (method === "DELETE") { db.run("DELETE FROM comments WHERE id = ?", [c.id]); changed(t.id); return json({ ok: true }); }
+    if (method === "PATCH") {
+      // An edited comment is open again: the agent's next list_comments returns the new text with its earlier reply.
+      if (typeof body.body === "string" && body.body.trim()) db.run("UPDATE comments SET body = ?, state = 'open' WHERE id = ?", [body.body.trim(), c.id]);
+      else if (body.state === "resolved" || body.state === "open") db.run("UPDATE comments SET state = ? WHERE id = ?", [body.state, c.id]);
+      else return fail("body or state (resolved, open) is required");
+      changed(t.id);
+      return json({ ok: true });
+    }
+  }
+
   if ((m = path.match(/^\/api\/todos\/(\d+)\/(tree|fs|fs\/raw|fs\/reveal|diff)$/))) {
     const t = todoOr404(Number(m[1])), what = m[2];
     const url = new URL(req.url), root = url.searchParams.get("root") ?? body?.root, rel = url.searchParams.get("path") ?? body?.path;
@@ -1049,6 +1083,7 @@ async function api(req: Request, path: string): Promise<Response> {
       artifact_dir: artifactDir(id) + "/",
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
+      comments: commentsOf(id),
       events: (db.query("SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").all(id) as any[])
         .map((e) => ({ ...e, meta: e.meta ? JSON.parse(e.meta) : null })),
       draft: getDraft(`todo:${id}`),

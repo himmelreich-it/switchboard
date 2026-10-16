@@ -1,7 +1,7 @@
 // CodeMirror 6 for every file the app opens (item 107), as one global for index.html. Colors come from the
 // design tokens, so Auto, Dark and Light need no extra code.
-import { EditorState, Compartment, Annotation, Transaction, type Extension } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars } from "@codemirror/view";
+import { EditorState, Compartment, Annotation, Transaction, StateEffect, StateField, type Extension } from "@codemirror/state";
+import { EditorView, Decoration, type DecorationSet, keymap, lineNumbers, drawSelection, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
 import { syntaxHighlighting, HighlightStyle, StreamLanguage, bracketMatching, indentOnInput } from "@codemirror/language";
@@ -74,6 +74,8 @@ const theme = EditorView.theme({
   "&.cm-focused .cm-activeLine": { backgroundColor: "var(--tint-neutral)" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text-secondary)" },
   ".cm-selectionMatch": { backgroundColor: "var(--tint-cyan)" },
+  ".sb-cmt": { backgroundColor: "var(--tint-amber)", borderBottom: "1px solid var(--line-amber)", cursor: "pointer" },
+  ".sb-cmt.sb-cmt-on": { outline: "1px solid var(--accent-amber)" },
   ".cm-matchingBracket": { backgroundColor: "var(--tint-violet)", outline: "1px solid var(--line-violet)" },
   ".cm-searchMatch": { backgroundColor: "var(--tint-amber)", outline: "1px solid var(--line-amber)" },
   ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "var(--tint-lime)" },
@@ -91,6 +93,20 @@ const theme = EditorView.theme({
 
 const external = Annotation.define<boolean>();
 
+// Item 146: the comment highlights. The ranges move with edits; setMarks replaces them all.
+type Mark = { from: number; to: number; id: number; active?: boolean };
+const setMarksFx = StateEffect.define<Mark[]>();
+const marksField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(set, tr) {
+    set = set.map(tr.changes);
+    for (const e of tr.effects) if (e.is(setMarksFx)) set = Decoration.set(e.value.filter((m) => m.to > m.from).map((m) =>
+      Decoration.mark({ class: m.active ? "sb-cmt sb-cmt-on" : "sb-cmt", attributes: { "data-cid": String(m.id) } }).range(m.from, m.to)), true);
+    return set;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 export type Handle = {
   view: EditorView;
   setDoc(text: string): void;
@@ -98,6 +114,8 @@ export type Handle = {
   focus(): void;
   search(): void;
   format(kind: string): void;
+  setMarks(marks: Mark[]): void;
+  reveal(pos: number): void;
   destroy(): void;
 };
 
@@ -116,7 +134,7 @@ function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: 
         md ? EditorView.editorAttributes.of({ class: "sb-md" }) : [],
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
         language(o.name), syntaxHighlighting(style), theme,
-        ro.of(roExt(!!o.readOnly)),
+        ro.of(roExt(!!o.readOnly)), marksField,
         EditorView.updateListener.of((u) => { if (u.docChanged && !u.transactions.some((tr) => tr.annotation(external))) o.onChange?.(u.state.doc.toString()); }),
       ],
     }),
@@ -135,6 +153,8 @@ function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: 
     focus() { view.focus(); },
     search() { openSearchPanel(view); },
     format(kind) { formatMd(view, kind); view.focus(); },
+    setMarks(marks) { view.dispatch({ effects: setMarksFx.of(marks) }); },
+    reveal(pos) { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) }); },
     destroy() { view.destroy(); },
   };
 }
