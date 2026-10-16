@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-16 · Rendered markdown uses the full width; Comments column resizable
+- Where: Focus › Files tab, a markdown file in Read view or in the preview; the Comments column right of the file.
+- Now: the rendered markdown fills the width of its pane instead of stopping at about 760 pixels. Tables fit that width: a long code value in a cell, such as a path or a URL, wraps inside its cell, so the table no longer scrolls sideways. A drag bar sits between the file and the Comments column, like the other splitters: drag to resize (200 pixels up to 60% of the file area), double-click to reset to 280 pixels, arrow keys move it. The width is kept across reloads.
+- Why: wide tables in plans were cut off and needed a sideways scroll, and long comments were hard to read in the fixed narrow column.
+- Design question: should long prose keep a maximum line length (centered or left-aligned) while tables use the full width?
+
 ### 2026-10-16 · Comments on selected text in the Files tab
 - Where: Focus › Files tab, any open file (Read view, markdown preview, editor); a new Comments column on the right of the file; the file list.
 - Now: selecting text in a file shows a small "Comment" button next to the selection. It opens a box at the top of a Comments column right of the file ("Comment · ⌘Enter saves"; Cancel, Comment). The commented text gets an amber highlight. Each comment card shows the selected text in small mono type with an amber bar, a state badge (Open amber, Replied cyan, Resolved grey), "line N", the comment, the agent's reply in a darker box labelled "Agent", and the buttons Edit, Resolve (Reopen when resolved) and Delete (asks first). When the text is gone from the file the card shows "Outdated" and the quote struck through. Clicking a card or highlighted text outlines the card and underlines the text. The column header reads "Comments · N" with a button "Ask agent · N" that puts "Look at my comments." in the chat box and switches to Chat. Resolved comments hide behind a link "Show resolved (N)". Files with open comments get an amber dot in the file list.
