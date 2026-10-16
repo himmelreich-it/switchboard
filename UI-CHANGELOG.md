@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-16 · Comments on selected text in the Files tab
+- Where: Focus › Files tab, any open file (Read view, markdown preview, editor); a new Comments column on the right of the file; the file list.
+- Now: selecting text in a file shows a small "Comment" button next to the selection. It opens a box at the top of a Comments column right of the file ("Comment · ⌘Enter saves"; Cancel, Comment). The commented text gets an amber highlight. Each comment card shows the selected text in small mono type with an amber bar, a state badge (Open amber, Replied cyan, Resolved grey), "line N", the comment, the agent's reply in a darker box labelled "Agent", and the buttons Edit, Resolve (Reopen when resolved) and Delete (asks first). When the text is gone from the file the card shows "Outdated" and the quote struck through. Clicking a card or highlighted text outlines the card and underlines the text. The column header reads "Comments · N" with a button "Ask agent · N" that puts "Look at my comments." in the chat box and switches to Chat. Resolved comments hide behind a link "Show resolved (N)". Files with open comments get an amber dot in the file list.
+- Why: the user wanted to comment on parts of a plan or a code file and later have the agent apply each comment or answer it.
+- Design question: should the Comments column be collapsible, or open only from a counter in the file header? Where does the "Comment" button sit best: next to the selection, or in the file header?
+
 ### 2026-10-16 · Independent mode switch in topic settings (dccc271, PR #4)
 - Where: Settings › Topics › topic form, under Topic prompt.
 - Now: a switch "Independent mode", off by default, with the hint "The agent pushes, opens and squash-merges its pull request once it trusts its work, and picks the recommended design option when confident. It still asks before anything destructive or outside this repository." Turning it on marks the form unsaved.
