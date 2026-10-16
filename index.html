@@ -783,7 +783,8 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .file-main { flex: 1; min-height: 0; display: flex; }
 .file-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 /* item 146: comments on selected text, in a column right of the file */
-.fnotes { flex: none; width: 280px; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--surface-1); border-left: 1px solid var(--border-subtle); }
+.pane-sep:has(+ #fileNotes[hidden]) { display: none; }
+.fnotes { flex: none; width: var(--pane-notes, 280px); max-width: 60%; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--surface-1); border-left: 1px solid var(--border-subtle); }
 .fnotes .nh { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .fnotes .nh .ml { margin-right: auto; }
 .fnotes .shr { font-size: 11px; color: var(--text-secondary); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
@@ -864,7 +865,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .term-foot .right { margin-left: auto; }
 
 /* rendered markdown (files and operator replies) */
-.md { color: var(--text-primary); font-size: 14px; line-height: 1.65; max-width: 760px; overflow-wrap: anywhere; }
+.md { color: var(--text-primary); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md h1, .md h2, .md h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: .01em; margin: 1.4em 0 .5em; }
@@ -879,9 +880,11 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .md blockquote { margin: 0 0 .8em; padding: 8px 12px; border-left: 2px solid var(--accent-violet); background: var(--tint-violet); }
 .md table { display: block; overflow: auto; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; margin: 0 0 .8em; }
 .md th, .md td { border: 1px solid var(--border-default); padding: 6px 10px; overflow-wrap: break-word; }
+/* a long code token (a path, a URL) may break, so the table fits the width; plain words keep their column wide enough */
+.md :is(td, th) code { overflow-wrap: anywhere; }
 .md hr { border: none; border-top: 1px solid var(--border-subtle); }
 /* operator replies in the side panel: same markdown, sized like the text around it */
-.op-msg .md { font-size: 13px; line-height: 1.55; max-width: none; }
+.op-msg .md { font-size: 13px; line-height: 1.55; }
 .op-msg .md :is(h1, h2, h3) { font-size: inherit; color: var(--text-primary); margin: 0 0 .3em; padding: 0; border: none; }
 .op-msg .md :is(p, ul, ol, pre, blockquote, table) { margin: 0 0 .5em; }
 
@@ -1005,7 +1008,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
               <div id="fileCode" class="code-host" hidden></div>
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
-            </div><aside id="fileNotes" class="fnotes" aria-label="Comments" hidden></aside></div>
+            </div><div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize comments" title="Drag to resize · double-click to reset" tabindex="0" data-pane="notes"></div><aside id="fileNotes" class="fnotes" aria-label="Comments" hidden></aside></div>
             <button type="button" id="cmtAdd" class="mb-btn mb-btn--primary mb-btn--sm cmt-add" hidden>Comment</button>
             <span id="fileFoot" class="ffoot"></span>
           </div>
@@ -3640,14 +3643,14 @@ document.addEventListener("click", (e) => {
   if (!el || el.disabled) return;
   ACTIONS[el.dataset.act]?.(el.dataset.id, el, e);
 });
-// Splitters (design v7): the widths of the file list, editor and preview, terminal list and operator panel. They live
+// Splitters (design v7): the widths of the file list, editor and preview, comments column, terminal list and operator panel. They live
 // in CSS variables on :root, so a re-render keeps them, and in localStorage. split is the editor's share of the row.
-const PANE_DEF = { tree: 260, split: 0.5, term: 220, op: 360 };
+const PANE_DEF = { tree: 260, split: 0.5, term: 220, op: 360, notes: 280 };
 const panes = { ...PANE_DEF };
 try { Object.assign(panes, JSON.parse(localStorage.getItem("switchboard-panes") || "{}")); } catch (e) {}
 function applyPanes() {
   const st = document.documentElement.style;
-  for (const k of ["tree", "term", "op"]) st.setProperty(`--pane-${k}`, Math.round(panes[k]) + "px");
+  for (const k of ["tree", "term", "op", "notes"]) st.setProperty(`--pane-${k}`, Math.round(panes[k]) + "px");
   st.setProperty("--pane-split-a", panes.split + "fr");
   st.setProperty("--pane-split-b", 1 - panes.split + "fr");
 }
@@ -3656,6 +3659,7 @@ applyPanes();
 const paneBox = (sep) => (sep.dataset.pane === "op" ? $("app") : sep.parentElement).getBoundingClientRect();
 function paneLimits(key, w) {
   if (key === "split") return [Math.min(0.5, 300 / Math.max(1, w)), Math.max(0.5, 1 - 240 / Math.max(1, w))];
+  if (key === "notes") return [200, Math.max(200, w * 0.6)];
   return key === "op" ? [280, Math.max(280, w * 0.6)] : [160, Math.max(160, w * 0.5)];
 }
 function setPane(key, v, save) {
@@ -3668,7 +3672,7 @@ document.addEventListener("pointerdown", (e) => {
   if (!sep || e.button !== 0) return;
   e.preventDefault();
   const key = sep.dataset.pane, r = paneBox(sep), [lo, hi] = paneLimits(key, r.width);
-  const move = (ev) => setPane(key, Math.max(lo, Math.min(hi, key === "op" ? r.right - ev.clientX : key === "split" ? (ev.clientX - r.left) / r.width : ev.clientX - r.left)));
+  const move = (ev) => setPane(key, Math.max(lo, Math.min(hi, (key === "op" || key === "notes") ? r.right - ev.clientX : key === "split" ? (ev.clientX - r.left) / r.width : ev.clientX - r.left)));
   const up = () => {
     removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
     document.body.style.cursor = document.body.style.userSelect = "";
@@ -3685,7 +3689,7 @@ document.addEventListener("keydown", (e) => {
   if (!sep || !d) return;
   e.preventDefault();
   const key = sep.dataset.pane, [lo, hi] = paneLimits(key, paneBox(sep).width);
-  const step = (key === "split" ? 0.02 : 16) * (e.shiftKey ? 4 : 1) * (key === "op" ? -d : d);   // the operator bar grows the panel leftwards
+  const step = (key === "split" ? 0.02 : 16) * (e.shiftKey ? 4 : 1) * (key === "op" || key === "notes" ? -d : d);   // the operator and comments bars grow their panel leftwards
   setPane(key, Math.max(lo, Math.min(hi, panes[key] + step)), true);
 });
 
