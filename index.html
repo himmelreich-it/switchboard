@@ -1027,6 +1027,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
             </div>
             <div class="mb-field"><label class="mb-field__label" for="pRepo">Git remote</label><input id="pRepo" class="mb-input" readonly><span class="mb-field__hint">Read from git remote get-url origin.</span></div>
             <div class="mb-field"><label class="mb-field__label" for="pPrompt">Topic prompt</label><textarea id="pPrompt" class="mb-textarea" rows="3"></textarea><span class="mb-field__hint">Added to every session's instructions in this topic, after the app contract.</span></div>
+            <div class="mb-field"><label class="mb-switch" style="align-self:flex-start"><input id="pIndependent" type="checkbox"><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Independent mode</span></label><span class="mb-field__hint">The agent pushes, opens and squash-merges its pull request once it trusts its work, and picks the recommended design option when confident. It still asks before anything destructive or outside this repository.</span></div>
             <div class="mb-field"><label class="mb-field__label" for="pProfile">Profile</label><textarea id="pProfile" class="mb-textarea" rows="6"></textarea><span id="pProfileHint" class="mb-field__hint"></span></div>
           </div>
           <div class="scard cyan">
@@ -1882,16 +1883,17 @@ const selProject = () => S.projects.find((p) => p.id === S.projSel) ?? null;
 const normDefaults = (d) => JSON.stringify(Object.entries(d ?? {}).map(([a, v]) => [a, Object.entries(v).filter(([k, x]) => x && !(a === "claude" && k === "mode" && x === "auto")).sort()]).filter(([, v]) => v.length).sort());
 function projDirty() {
   const p = selProject();
-  if (!p) return !!(pName.value || pPath.value || pPrompt.value);
+  if (!p) return !!(pName.value || pPath.value || pPrompt.value || $("pIndependent").checked);
   harvestDefaults();
   return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || pProfile.value !== (p.profile ?? "") || (pAgent.value || "claude") !== (p.default_agent ?? "claude")
-    || normDefaults(S.projDefs) !== normDefaults(p.defaults);
+    || $("pIndependent").checked !== !!p.independent || normDefaults(S.projDefs) !== normDefaults(p.defaults);
 }
 function fillProjForm() {
   const p = selProject();
   pName.value = p?.name ?? "";
   pPath.value = p?.local_path ?? "";
   pPrompt.value = p?.agent_prompt ?? "";
+  $("pIndependent").checked = !!p?.independent;
   pProfile.value = pProfile.dataset.base = p?.profile ?? "";
   S.projDefs = JSON.parse(JSON.stringify(p?.defaults ?? {}));
   const found = agentsFound();
@@ -1931,7 +1933,7 @@ $("projForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const p = selProject();
   harvestDefaults();
-  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, default_agent: pAgent.value || "claude", defaults: S.projDefs, ...(p ? { profile: pProfile.value } : {}) };
+  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, default_agent: pAgent.value || "claude", independent: $("pIndependent").checked, defaults: S.projDefs, ...(p ? { profile: pProfile.value } : {}) };
   try {
     const saved = await call(p ? "PUT" : "POST", p ? `/api/projects/${p.id}` : "/api/projects", body);
     S.projects = [...S.projects.filter((x) => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name));
