@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-16 · Independent mode switch in topic settings (dccc271, PR #4)
+- Where: Settings › Topics › topic form, under Topic prompt.
+- Now: a switch "Independent mode", off by default, with the hint "The agent pushes, opens and squash-merges its pull request once it trusts its work, and picks the recommended design option when confident. It still asks before anything destructive or outside this repository." Turning it on marks the form unsaved.
+- Why: let the agent ship routine work in a topic without waiting for the user at each outward step.
+- Design question: should a topic in Independent mode show it elsewhere, for example a badge on its TODO cards or in the Focus header?
+
 ### 2026-10-15 · Open in VS Code button (bf3b18e, 31ce8be)
 - Where: Focus header › topic popover.
 - Now: a button "Open in VS Code" sits in the popover when the TODO has a worktree or a topic folder. It opens that folder in VS Code and closes the popover. Success shows the toast "Opened in VS Code · ~/code/worktrees/foo". Failure shows the error toast "Can't open VS Code" with a hint for the platform.
