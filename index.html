@@ -646,7 +646,7 @@ pre.io.out { max-height: 240px; overflow: auto; color: var(--text-secondary); }
 .res-md pre code { background: none; padding: 0; }
 .res-md strong { font-weight: 600; }
 .res-md table { border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
-.res-md th, .res-md td { border: 1px solid var(--border-default); padding: 2px 8px; }
+.res-md th, .res-md td { border: 1px solid var(--border-default); padding: 2px 8px; overflow-wrap: break-word; }
 /* the diff viewer: tool panels, the approval panel and the Files tab */
 .dv { overflow: auto; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 12px; line-height: 20px; }
 .dv > div { width: max-content; min-width: 100%; }
@@ -878,7 +878,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .md pre code { background: none; padding: 0; }
 .md blockquote { margin: 0 0 .8em; padding: 8px 12px; border-left: 2px solid var(--accent-violet); background: var(--tint-violet); }
 .md table { display: block; overflow: auto; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; margin: 0 0 .8em; }
-.md th, .md td { border: 1px solid var(--border-default); padding: 6px 10px; }
+.md th, .md td { border: 1px solid var(--border-default); padding: 6px 10px; overflow-wrap: break-word; }
 .md hr { border: none; border-top: 1px solid var(--border-subtle); }
 /* operator replies in the side panel: same markdown, sized like the text around it */
 .op-msg .md { font-size: 13px; line-height: 1.55; max-width: none; }

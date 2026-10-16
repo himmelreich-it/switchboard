@@ -4,7 +4,9 @@ The UI follows the Claude Design versions in `designs/` (latest: `designs/Switch
 
 ## UI changelog
 
-Every change that alters what the UI looks like or how it reacts (`index.html`, `electron/`) gets an entry in `UI-CHANGELOG.md`, in the same commit. Fixes count too: a new button, a moved label, a changed width, a new toast, a new click target.
+An entry in `UI-CHANGELOG.md` asks Claude Design to look at a change. Add one, in the same commit, when a change to `index.html` or `electron/` makes the UI differ from the design: a new button, field, toast or click target; a moved label or panel; new UI text; a new layout or a chosen new width. Fixes count when they change the design this way.
+
+No entry for a fix that only makes the UI render as the design already intends. Examples: table columns that wrapped one letter per line, text that overflowed its box, a button that did not react to a click. Claude Design has nothing to decide there.
 
 Add the entry at the top of the "Open" section:
 
