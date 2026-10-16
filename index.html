@@ -780,7 +780,29 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fstrip .mb-badge { flex: none; }
 .flock { flex: none; padding: 6px 16px; font-size: 12px; color: var(--accent-cyan); background: var(--tint-cyan); border-bottom: 1px solid var(--line-cyan); }
 .ffoot { flex: none; padding: 6px 16px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); }
-.file-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.file-main { flex: 1; min-height: 0; display: flex; }
+.file-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* item 146: comments on selected text, in a column right of the file */
+.fnotes { flex: none; width: 280px; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--surface-1); border-left: 1px solid var(--border-subtle); }
+.fnotes .nh { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fnotes .nh .ml { margin-right: auto; }
+.fnotes .shr { font-size: 11px; color: var(--text-secondary); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+.cmt { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: 2px; font-size: 12px; cursor: pointer; }
+.cmt.on { border-color: var(--accent-amber); }
+.cmt.resolved { opacity: .65; }
+.cmt .q { padding-left: 6px; border-left: 2px solid var(--line-amber); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.cmt.outdated .q { border-left-color: var(--border-default); color: var(--text-muted); text-decoration: line-through; }
+.cmt .st { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.cmt .b { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
+.cmt .r { padding: 6px; background: var(--surface-inset); border-radius: 2px; overflow-wrap: anywhere; }
+.cmt .r .ml { display: block; margin-bottom: 2px; color: var(--accent-cyan); }
+.cmt .r .md { font-size: 12px; }
+.cmt .acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.cmt textarea { width: 100%; min-height: 64px; resize: vertical; box-sizing: border-box; font: inherit; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: 2px; padding: 6px; }
+.cmt-add { position: fixed; z-index: 30; }
+::highlight(sb-cmt) { background-color: var(--tint-amber); }
+::highlight(sb-cmt-on) { background-color: var(--tint-amber); text-decoration: underline 2px var(--accent-amber); }
+.fitem > .cdot, .tr > .cdot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent-amber); }
 .md-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .md-read { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; }
 .code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); }
@@ -971,7 +993,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
           <div id="fileView" class="fileview" hidden>
             <div id="fileHead" class="fstrip"></div>
             <span id="fileLocked" class="flock" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
-            <div class="file-body">
+            <div class="file-main"><div class="file-body">
               <div id="fileRead" class="md-host" hidden><div class="md-read"><div class="md"></div></div></div>
               <div id="fileMd" class="md-edit" hidden>
                 <div id="mdSplit" class="split">
@@ -983,7 +1005,8 @@ pre.cmd > .dollar { color: var(--accent-lime); }
               <div id="fileCode" class="code-host" hidden></div>
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
-            </div>
+            </div><aside id="fileNotes" class="fnotes" aria-label="Comments" hidden></aside></div>
+            <button type="button" id="cmtAdd" class="mb-btn mb-btn--primary mb-btn--sm cmt-add" hidden>Comment</button>
             <span id="fileFoot" class="ffoot"></span>
           </div>
         </div>
@@ -2824,11 +2847,11 @@ function renderFileList(t, d) {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
     const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
       : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
-          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
+          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}${cmtDot(t.id, "todo", f.id)}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
-        ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span>${unsaved({ todoId: t.id, root: "worktree", rel })}<span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
+        ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span>${unsaved({ todoId: t.id, root: "worktree", rel })}${cmtDot(t.id, "worktree", rel)}<span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
     return setHtml($("fileList"), seg + `<span class="ml grp">TODO files</span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
       <span class="root-note">terminal/ and uploads/ are not listed</span>`);
   }
@@ -2844,7 +2867,7 @@ function renderFileList(t, d) {
   const fileRow = (path, depth, showDir) => {
     const m = marks[path], name = showDir ? basename(path) : path.split("/").pop();
     const dir = showDir && path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" aria-selected="${f0?.root === root && f0.rel === path}" data-act="open-tree" data-id="${esc(path)}" data-fk="tree:${esc(path)}" style="padding-left:${6 + depth * 14}px"><span class="cv"></span>${SVG(FILE, 14, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${unsaved({ todoId: t.id, root, rel: path })}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main</span>' : ""}${m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : ""}</div>`;
+    return `<div class="tr${m === "D" ? " del" : ""}" role="treeitem" tabindex="0" aria-selected="${f0?.root === root && f0.rel === path}" data-act="open-tree" data-id="${esc(path)}" data-fk="tree:${esc(path)}" style="padding-left:${6 + depth * 14}px"><span class="cv"></span>${SVG(FILE, 14, "var(--text-muted)")}<span class="nm" style="${m && m !== "D" ? `color:${MARK[m][1]}` : ""}">${esc(name)}</span>${dir ? `<span class="dir">${esc(dir)}</span>` : ""}${unsaved({ todoId: t.id, root, rel: path })}${cmtDot(t.id, root, path)}${links.has(path) ? '<span class="lnk" title="Symlink into the main folder, made by the worktree skill">→ main</span>' : ""}${m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : ""}</div>`;
   };
   let rows = [];
   if (S.changedOnly) rows = Object.keys(marks).sort().map((p) => fileRow(p, 0, true));
@@ -2942,6 +2965,7 @@ function renderFile(t) {
     : f.root === "todo" ? "Saving writes to disk only. The agent isn't notified. Tell it in chat when you want it to act."
     : f.root === "worktree" ? "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it."
     : `${S.trees[`${f.todoId}:project`]?.git === false ? "Topic folder" : "Main checkout"}. Editable any time; a save warns if the file changed on disk since you opened it.`;
+  renderNotes(f, show);
 }
 const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed(1)} KB` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 // One CodeMirror view at a time, rebuilt when the file, its host or read/write changes.
@@ -3421,6 +3445,193 @@ const ACTIONS = {
   dlg: (id) => { const b = S.dlg?.buttons[Number(id)]; closeDialog(); b?.[2]?.(); },
   toast: (id) => { const t = S.toasts.find((x) => x.id === Number(id)); S.toasts = S.toasts.filter((x) => x !== t); renderToasts(); t?.action[1](); },
 };
+// ---------- comments on selected text (item 146) ----------
+// A comment stores the selected text (quote) and the line it started on. Each render finds the quote again, in the
+// source for the line and the editor marks, in the rendered markdown for its highlight. Not found: the comment is outdated.
+S.cmtDraft = null;     // {key, quote, line, text}: the new comment's box
+S.cmtEdit = null; S.cmtEditText = null;   // the comment being edited, and its text so far
+S.cmtOn = null;        // id of the comment shown active (outlined card, underlined text)
+S.cmtResolved = false; // resolved comments shown
+const fileComments = (f) => (S.detail?.todo.id === f.todoId ? S.detail.comments ?? [] : []).filter((c) => c.path === f.abs);
+const cmtDot = (todoId, root, rel) => (S.detail?.todo.id === todoId && S.detail.comments?.some((c) => c.root === root && c.rel === String(rel) && c.state !== "resolved")
+  ? '<span class="cdot" title="Open comments"></span>' : "");
+// Whitespace and markdown signs are skipped on both sides, so a quote picked in the rendered view ("bold") matches the source ("**bold**").
+// ponytail: link targets are not skipped, so a quote across a link is found only in the rendered view.
+const CMT_SKIP = /[\s*_`#>~|\\]/;
+function quoteIndex(chunks) {
+  const hay = [], pos = [];
+  chunks.forEach((s, ci) => { for (let i = 0; i < s.length; i++) if (!CMT_SKIP.test(s[i])) { hay.push(s[i]); pos.push([ci, i]); } });
+  return { hay: hay.join(""), pos };
+}
+function quoteMatches(ix, quote) {
+  const q = quote.split("").filter((ch) => !CMT_SKIP.test(ch)).join(""), out = [];
+  if (!q) return out;
+  for (let i = ix.hay.indexOf(q); i >= 0; i = ix.hay.indexOf(q, i + 1)) { const e = ix.pos[i + q.length - 1]; out.push({ from: ix.pos[i], to: [e[0], e[1] + 1] }); }
+  return out;
+}
+const lineOf = (text, off) => { let n = 1; for (let i = text.indexOf("\n"); i >= 0 && i < off; i = text.indexOf("\n", i + 1)) n++; return n; };
+// Where each comment sits in the file's text: {c, from, to, line, nth} (nth: which match of the quote), or outdated.
+function placeComments(f, list) {
+  const text = f.text ?? "", ix = quoteIndex([text]);
+  return list.map((c) => {
+    const ms = quoteMatches(ix, c.quote).map((m, nth) => ({ from: m.from[1], to: m.to[1], line: lineOf(text, m.from[1]), nth }));
+    if (!ms.length) return { c, outdated: true };
+    const best = c.line == null ? ms[0] : ms.reduce((a, b) => (Math.abs(b.line - c.line) < Math.abs(a.line - c.line) ? b : a));
+    return { c, ...best };
+  });
+}
+// The visible rendered markdown: Read mode, or the preview of Split and Preview.
+const cmtRendered = () => (!$("fileRead").hidden ? $("fileRead").querySelector(".md") : !$("fileMd").hidden && S.mdView !== "write" ? $("filePreview") : null);
+let cmtRanges = [];    // [{id, range}] in the rendered markdown, for a click on a highlight
+// Highlights with the CSS Custom Highlight API: no element is added, so the sanitized markdown stays as it is.
+function highlightRendered(placed) {
+  const host = cmtRendered(), key = host && JSON.stringify([host._src, placed.map((p) => [p.c.id, p.nth]), S.cmtOn]);
+  if (host?._cmtKey === key) return;
+  cmtRanges = [];
+  if (host) {
+    host._cmtKey = key;
+    const nodes = [], w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) nodes.push(w.currentNode);
+    const ix = quoteIndex(nodes.map((n) => n.data));
+    for (const p of placed) {
+      if (p.outdated) continue;
+      const ms = quoteMatches(ix, p.c.quote), m = ms[Math.min(p.nth, ms.length - 1)];   // the nth match in the source is the nth on screen
+      if (!m) continue;
+      const r = document.createRange();
+      r.setStart(nodes[m.from[0]], m.from[1]); r.setEnd(nodes[m.to[0]], m.to[1]);
+      cmtRanges.push({ id: p.c.id, range: r });
+    }
+  }
+  if (!window.Highlight) return;   // ponytail: no highlights without the API (Chromium and Electron have it)
+  CSS.highlights.set("sb-cmt", new Highlight(...cmtRanges.filter((x) => x.id !== S.cmtOn).map((x) => x.range)));
+  CSS.highlights.set("sb-cmt-on", new Highlight(...cmtRanges.filter((x) => x.id === S.cmtOn).map((x) => x.range)));
+}
+function renderNotes(f, show) {
+  const box = $("fileNotes"), list = fileComments(f);
+  const draft = S.cmtDraft?.key === fileKey(f) ? S.cmtDraft : null;
+  const on = (show.read || show.md || show.code) && (list.length || draft);
+  box.hidden = !on;
+  const placed = on ? placeComments(f, list.filter((c) => c.state !== "resolved")) : [];
+  highlightRendered(placed);
+  const h = S.cm?.f === f && S.cm.handle, mk = h && JSON.stringify([f.mtime, placed.map((p) => [p.c.id, p.from]), S.cmtOn]);
+  if (h && S.cm.marks !== mk) {
+    S.cm.marks = mk;
+    // Not inside the editor's own update (a keystroke renders): CodeMirror refuses a dispatch there.
+    queueMicrotask(() => S.cm?.handle === h && h.setMarks(placed.filter((p) => !p.outdated).map((p) => ({ from: p.from, to: p.to, id: p.c.id, active: p.c.id === S.cmtOn }))));
+  }
+  if (!on) return setHtml(box, "");
+  const where = new Map(placed.map((p) => [p.c.id, p]));
+  const nResolved = list.filter((c) => c.state === "resolved").length, nOpen = list.filter((c) => c.state === "open").length;
+  const STATE = { open: ["Open", "amber"], replied: ["Replied", "cyan"], resolved: ["Resolved", "neutral"] };
+  const quote = (q) => `<div class="q">${esc(q)}</div>`;
+  const card = (c) => {
+    const p = where.get(c.id), line = p && !p.outdated ? p.line : c.line;
+    if (S.cmtEdit === c.id) return `<div class="cmt on">${quote(c.quote)}<textarea id="cmtEditIn" data-fk="cmt-edit-in:${c.id}" aria-label="Edit comment"></textarea>
+      <div class="acts">${btn("Cancel", "cmt-edit-cancel", { v: "ghost" })}${btn("Save", "cmt-edit-save", { v: "primary", id: c.id })}</div></div>`;
+    return `<div class="cmt${c.id === S.cmtOn ? " on" : ""}${p?.outdated ? " outdated" : ""} ${c.state}" data-act="cmt-on" data-id="${c.id}">${quote(c.quote)}
+      <div class="st">${badge(STATE[c.state][0], STATE[c.state][1])}${p?.outdated ? badge("Outdated") : ""}${line ? `<span>line ${line}</span>` : ""}</div>
+      <div class="b">${esc(c.body)}</div>${c.reply ? `<div class="r"><span class="ml">Agent</span><div class="md">${md(c.reply)}</div></div>` : ""}
+      <div class="acts">${btn("Edit", "cmt-edit", { v: "ghost", id: c.id })}${c.state === "resolved" ? btn("Reopen", "cmt-state", { v: "ghost", id: `${c.id}:open` }) : btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}${btn("Delete", "cmt-del", { v: "ghost", id: c.id })}</div></div>`;
+  };
+  setHtml(box, `<div class="nh"><span class="ml">Comments · ${list.length - nResolved}</span>${nOpen ? btn(`Ask agent · ${nOpen}`, "cmt-ask") : ""}</div>
+    ${nResolved ? `<button type="button" class="shr" data-act="cmt-resolved" data-fk="cmt-resolved">${S.cmtResolved ? "Hide" : "Show"} resolved (${nResolved})</button>` : ""}
+    ${draft ? `<div class="cmt on">${quote(draft.quote)}<textarea id="cmtNewIn" data-fk="cmt-new-in" placeholder="Comment · ⌘Enter saves" aria-label="New comment"></textarea>
+      <div class="acts">${btn("Cancel", "cmt-cancel", { v: "ghost" })}${btn("Comment", "cmt-save", { v: "primary" })}</div></div>` : ""}
+    ${list.filter((c) => S.cmtResolved || c.state !== "resolved").map(card).join("")}`);
+  // A re-render (the agent replied meanwhile) rebuilds the boxes: what was typed comes back from S.
+  const nw = $("cmtNewIn"), ed = $("cmtEditIn");
+  if (nw && !nw._filled) { nw._filled = true; nw.value = draft.text ?? ""; }
+  if (ed && !ed._filled) { ed._filled = true; ed.value = S.cmtEditText ?? list.find((c) => c.id === S.cmtEdit)?.body ?? ""; }
+}
+// The selected text in the open file, with its line: from the editor's selection, or from the rendered markdown.
+function selectedQuote() {
+  const f = S.file, sel = getSelection();
+  if (!f || f.mode === "diff" || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const node = sel.anchorNode, v = S.cm?.f === f ? S.cm.handle?.view : null;
+  let quote, line = null;
+  if (v?.dom.contains(node)) {
+    const r = v.state.selection.main;
+    if (!r.empty) { quote = v.state.sliceDoc(r.from, r.to); line = v.state.doc.lineAt(r.from).number; }
+  } else if (!cmtRendered()?.contains(node)) return null;
+  quote ??= sel.toString();
+  if (!quote.trim()) return null;
+  if (line == null) { const m = quoteMatches(quoteIndex([f.text ?? ""]), quote)[0]; if (m) line = lineOf(f.text, m.from[1]); }
+  return { quote: quote.length > 2000 ? quote.slice(0, 2000) : quote, line, rect: sel.getRangeAt(0).getBoundingClientRect() };
+}
+let cmtSel = null;
+document.addEventListener("selectionchange", () => requestAnimationFrame(() => {
+  cmtSel = selectedQuote();
+  const b = $("cmtAdd");
+  b.hidden = !cmtSel;
+  if (cmtSel) { b.style.left = Math.min(cmtSel.rect.right, innerWidth - 100) + "px"; b.style.top = Math.min(cmtSel.rect.bottom + 6, innerHeight - 40) + "px"; }
+}));
+$("cmtAdd").addEventListener("mousedown", (e) => e.preventDefault());   // keeps the selection
+$("cmtAdd").addEventListener("click", () => {
+  const f = S.file;
+  if (!f || !cmtSel) return;
+  S.cmtDraft = { key: fileKey(f), quote: cmtSel.quote, line: cmtSel.line };
+  $("cmtAdd").hidden = true;
+  render();
+  $("cmtNewIn")?.focus();
+});
+// A click on highlighted text shows its comment: editor marks carry data-cid, rendered highlights are found by the caret.
+$("filesWrap").addEventListener("click", (e) => {
+  if (!getSelection()?.isCollapsed) return;
+  let id = Number(e.target.closest?.("[data-cid]")?.dataset.cid) || null;
+  if (!id && cmtRanges.length) {
+    const p = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+    id = p ? cmtRanges.find((x) => x.range.isPointInRange(p.startContainer, p.startOffset))?.id ?? null : null;
+  }
+  if (!id) return;
+  S.cmtOn = id; render();
+  $("fileNotes").querySelector(`[data-act=cmt-on][data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
+});
+function showComment(id) {
+  S.cmtOn = Number(id); render();
+  const f = S.file, p = f && placeComments(f, fileComments(f).filter((c) => c.id === S.cmtOn))[0];
+  if (!p || p.outdated) return;
+  const r = cmtRanges.find((x) => x.id === p.c.id)?.range;
+  if (r) r.startContainer.parentElement?.scrollIntoView({ block: "center" });
+  if (S.cm?.f === f) S.cm.handle?.reveal(p.from);
+}
+async function saveComment() {
+  const f = S.file, d = S.cmtDraft, text = $("cmtNewIn")?.value.trim();
+  if (!f || !d || !text) return;
+  try {
+    const r = await call("POST", `/api/todos/${f.todoId}/comments`, { root: f.root, file_id: f.id, path: f.rel, quote: d.quote, line: d.line, body: text });
+    S.cmtDraft = null; S.cmtOn = r.id;
+    need("detail");
+  } catch (e) { toast("danger", "Comment not saved", e.message); }
+}
+const cmtCall = (id, method, body, title) => act(call(method, `/api/todos/${S.file.todoId}/comments/${id}`, body).then(() => need("detail")), title);
+Object.assign(ACTIONS, {
+  "cmt-on": showComment,
+  "cmt-save": saveComment,
+  "cmt-cancel": () => { S.cmtDraft = null; render(); },
+  "cmt-edit": (id) => { S.cmtEdit = Number(id); S.cmtEditText = null; S.cmtOn = Number(id); render(); $("cmtEditIn")?.focus(); },
+  "cmt-edit-cancel": () => { S.cmtEdit = null; render(); },
+  "cmt-edit-save": (id) => { const v = $("cmtEditIn")?.value.trim(); if (!v) return; S.cmtEdit = null; cmtCall(id, "PATCH", { body: v }, "Comment not saved"); },
+  "cmt-state": (v) => { const [id, state] = v.split(":"); cmtCall(id, "PATCH", { state }, "Comment not changed"); },
+  "cmt-del": (id) => openDialog({ title: "Delete comment", body: "The comment and the agent's reply are deleted.", buttons: [["Cancel", "ghost"], ["Delete", "danger", () => cmtCall(id, "DELETE", undefined, "Comment not deleted")]] }),
+  "cmt-resolved": () => { S.cmtResolved = !S.cmtResolved; render(); },
+  // Like the path button: text into the TODO's message box, the user sends it.
+  "cmt-ask": () => {
+    const key = `todo:${S.file.todoId}`, cur0 = drafts[key] ?? "", ask = "Look at my comments.";
+    const next = cur0.includes(ask) ? cur0 : cur0 ? cur0.replace(/\s*$/, " ") + ask : ask;
+    saveDraftSoon(key, next);
+    if (draftKey() === key) composer.value = next;
+    S.tab = "chat"; render(); composer.focus();
+  },
+});
+document.addEventListener("input", (e) => {
+  if (e.target.id === "cmtNewIn" && S.cmtDraft) S.cmtDraft.text = e.target.value;
+  else if (e.target.id === "cmtEditIn") S.cmtEditText = e.target.value;
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && modKey(e) && e.target.id === "cmtNewIn") { e.preventDefault(); saveComment(); }
+  else if (e.key === "Enter" && modKey(e) && e.target.id === "cmtEditIn") { e.preventDefault(); ACTIONS["cmt-edit-save"](String(S.cmtEdit)); }
+  else if (e.key === "Escape" && (e.target.id === "cmtNewIn" || e.target.id === "cmtEditIn")) { e.preventDefault(); e.target.id === "cmtNewIn" ? ACTIONS["cmt-cancel"]() : ACTIONS["cmt-edit-cancel"](); }
+}, true);   // before the app's keys, which skip a key taken here
 document.addEventListener("click", (e) => {
   if (e.target.classList?.contains("mb-dialog-overlay")) return closeDialog();   // click on the backdrop
   if (e.target.id === "newDlg") return closeNew();   // click on the New TODO backdrop

@@ -11,10 +11,10 @@ import { deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "
 import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOST, PORT, addEvent, addMessage, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
+  HOST, PORT, addEvent, addMessage, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
-export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule"].map((n) => `mcp__app__${n}`);
+export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule"].map((n) => `mcp__app__${n}`);
 export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "remove_todo"].map((n) => `mcp__app__${n}`);
 // The operator's routing run for one TODO (801): read other TODOs, then decide.
 export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"].map((n) => `mcp__app__${n}`);
@@ -156,6 +156,26 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     addEvent(todoId, "set_pr", "agent", `#${number}`);
     const pid = todoRow(todoId)!.project_id;
     if (pid) refreshPrs(pid);
+    return ok();
+  });
+  // Item 146: the user's comments on selected text in the Files tab.
+  s.registerTool("list_comments", {
+    description: "List the user's open comments on files of this TODO: each has the file's path, the line where the selected text started (when known), the selected text (quote), the comment, and your earlier reply if the user edited the comment after it. Answer each with reply_comment.",
+    inputSchema: {},
+  }, async () => {
+    const open = commentsOf(todoId, "state = 'open'");
+    addEvent(todoId, "list_comments", "agent", `${open.length} open`);
+    return json(open.map((c) => ({ id: c.id, path: c.path, line: c.line, quote: c.quote, comment: c.body, ...(c.reply ? { your_earlier_reply: c.reply } : {}) })));
+  });
+  s.registerTool("reply_comment", {
+    description: "Reply to one of the user's comments from list_comments. You changed the file for it: start the reply with \"Applied\" and say what you changed in a few words. A question: answer it, no edit. Unclear: ask your question as the reply. The user resolves the comment or edits it to follow up.",
+    inputSchema: { id: z.number().int(), reply: z.string() },
+  }, async ({ id, reply }) => {
+    if (!reply.trim()) return err("reply is empty");
+    const c = db.query("SELECT id, path FROM comments WHERE id = ? AND todo_id = ?").get(id, todoId) as { id: number; path: string } | null;
+    if (!c) return err(`this TODO has no comment ${id}`);
+    db.run("UPDATE comments SET reply = ?, state = 'replied', replied_at = ? WHERE id = ?", [reply.trim(), new Date().toISOString(), id]);
+    addEvent(todoId, "reply_comment", "agent", `${basename(c.path)} · ${reply.trim().slice(0, 80)}`);
     return ok();
   });
   // Suggested follow-ups (pills): the TODO's agent only, a terminal has no chat turn to follow up on.

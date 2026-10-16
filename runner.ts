@@ -28,6 +28,7 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 - T-<n> in text (T-38) is switchboard TODO number n. Read that TODO with mcp__app__read_todo and its files with mcp__app__read_file.
 - After creating a worktree, call mcp__app__set_worktree with its absolute path and work only there. Ignore any skill instruction not to switch context.
 - As soon as you know this TODO works on an existing GitHub pull request (a review, a merge check, a fix on someone's PR), call mcp__app__set_pr with its number, also without a worktree. The app then shows the PR's state, checks and reviews on the TODO's card. A PR opened from your worktree's branch is found without it.
+- When the user asks you to look at their comments, call mcp__app__list_comments and answer each with mcp__app__reply_comment: apply what a comment asks and reply "Applied: <what changed>", answer a question without an edit.
 - When anything is unclear, ask rather than guess: post a message and raise attention with mcp__app__set_attention.
 - When auto mode blocks an action, or you are unsure how to proceed, post a message and raise attention instead of routing around the block.
 - Clear your attention flag (mcp__app__set_attention with raised false) once the user's reply resolves it.
@@ -41,6 +42,7 @@ export const TERMINAL_CONTRACT = `You are running in a terminal the user opened 
 
 The app's MCP tools write to the TODO, which the user sees on its card and in its chat:
 - mcp__app__post_message posts a one or two line message to the TODO's chat, marked as coming from this terminal. Use it for an outcome worth keeping with the TODO (a finding, a decision, a finished step), not for your replies here. Longer content goes in a markdown file in the TODO's artifact folder {artifact_dir}: register it with mcp__app__attach_file and link it from the message with file_name.
+- mcp__app__list_comments lists the user's open comments on the TODO's files; answer each with mcp__app__reply_comment, when the user asks you to look at them.
 - mcp__app__set_attention raises the TODO's attention flag when the user should come back to it; clear it once that is resolved.
 - mcp__app__set_title, mcp__app__set_worktree and mcp__app__set_pr change the TODO itself: call them only when the user asks.
 - mcp__app__create_todo creates another TODO, when the user asks for separate work here. Pass start: true only when the user says to start it.

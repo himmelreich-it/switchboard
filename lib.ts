@@ -612,7 +612,12 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, no INTEGER NOT NULL, session_id TEXT NOT NULL,
   started_at TEXT NOT NULL, ended_at TEXT, UNIQUE (todo_id, no));
+CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, root TEXT NOT NULL, rel TEXT NOT NULL, path TEXT NOT NULL,
+  quote TEXT NOT NULL, line INTEGER, body TEXT NOT NULL, reply TEXT,
+  state TEXT NOT NULL CHECK (state IN ('open','replied','resolved')), created_at TEXT NOT NULL, replied_at TEXT);
 CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
+CREATE INDEX IF NOT EXISTS comments_todo ON comments (todo_id);
 CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
 CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
 `);
