@@ -3130,6 +3130,8 @@ function ensureXterm(x, t) {
     term.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) { navigator.clipboard.writeText(term.getSelection()); return false; }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && (e.key === "V" || e.key === "v")) { navigator.clipboard.readText().then((tx) => term.paste(tx)); return false; }
+      // Shift+Enter sends what Option+Enter sends (ESC, Return): a new line in Claude Code instead of submit.
+      if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { if (e.type === "keydown") term.input("\x1b\r"); return false; }
       return !termYields(e);   // app shortcuts (⌘J, ⌘,) belong to the app; every other key goes to the terminal
     });
     term.textarea?.addEventListener("focus", renderTermFoot);
