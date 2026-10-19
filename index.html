@@ -3560,7 +3560,14 @@ function selectedQuote() {
   } else if (!cmtRendered()?.contains(node)) return null;
   quote ??= sel.toString();
   if (!quote.trim()) return null;
-  if (line == null) { const m = quoteMatches(quoteIndex([f.text ?? ""]), quote)[0]; if (m) line = lineOf(f.text, m.from[1]); }
+  if (line == null) {
+    // The same text can appear several times: count which match on screen is selected, and take that match in the source.
+    const nodes = [], w = document.createTreeWalker(cmtRendered(), NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) nodes.push(w.currentNode);
+    const r = sel.getRangeAt(0), nth = Math.max(0, quoteMatches(quoteIndex(nodes.map((n) => n.data)), quote).findIndex((m) => r.comparePoint(nodes[m.from[0]], m.from[1]) >= 0));
+    const ms = quoteMatches(quoteIndex([f.text ?? ""]), quote), m = ms[Math.min(nth, ms.length - 1)];
+    if (m) line = lineOf(f.text, m.from[1]);
+  }
   return { quote: quote.length > 2000 ? quote.slice(0, 2000) : quote, line, rect: sel.getRangeAt(0).getBoundingClientRect() };
 }
 let cmtSel = null;
