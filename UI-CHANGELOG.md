@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-20 · Line numbers in the markdown editor and the rendered markdown
+- Where: Focus › Files tab, a markdown file in Edit (Write, Split, Preview) and in Read view.
+- Now: the markdown editor shows a line-number gutter, like the code editor already does; the current line's number is brighter. The rendered markdown has a narrow gutter on the left: each heading, paragraph, list item, code block, table, quote and rule shows the source line it starts on, in small muted mono digits on the block's first line. Lines inside a code block and raw HTML blocks get no number.
+- Why: the user wanted to point at and find lines in a file in both views.
+- Design question: should the rendered view's numbers be always on, or behind a toggle (and hidden in Read view)? Is a 40-pixel gutter the right width for files with four-digit line numbers?
+
 ### 2026-10-16 · Rendered markdown uses the full width; Comments column resizable
 - Where: Focus › Files tab, a markdown file in Read view or in the preview; the Comments column right of the file.
 - Now: the rendered markdown fills the width of its pane instead of stopping at about 760 pixels. Tables fit that width: a long code value in a cell, such as a path or a URL, wraps inside its cell, so the table no longer scrolls sideways. A drag bar sits between the file and the Comments column, like the other splitters: drag to resize (200 pixels up to 60% of the file area), double-click to reset to 280 pixels, arrow keys move it. The width is kept across reloads.

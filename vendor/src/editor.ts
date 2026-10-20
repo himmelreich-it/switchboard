@@ -128,7 +128,7 @@ function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: 
     state: EditorState.create({
       doc: o.doc,
       extensions: [
-        md ? [] : [lineNumbers(), highlightActiveLineGutter()],
+        lineNumbers(), highlightActiveLineGutter(),
         highlightSpecialChars(), history(), drawSelection(), indentOnInput(), bracketMatching(), highlightActiveLine(), highlightSelectionMatches(),
         md ? EditorView.lineWrapping : [],
         md ? EditorView.editorAttributes.of({ class: "sb-md" }) : [],
