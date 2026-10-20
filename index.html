@@ -883,6 +883,15 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 /* a long code token (a path, a URL) may break, so the table fits the width; plain words keep their column wide enough */
 .md :is(td, th) code { overflow-wrap: anywhere; }
 .md hr { border: none; border-top: 1px solid var(--border-subtle); }
+/* the Files tab's rendered markdown: each block's source line in a left gutter, centered on the block's first line */
+.md.ln { position: relative; padding-left: 40px; }
+.md.ln [data-line]::before { content: attr(data-line); position: absolute; left: 0; width: 28px; text-align: right; font: 400 11px/calc(14px * 1.65) var(--font-mono); color: var(--text-muted); }
+.md.ln h1[data-line]::before { line-height: calc(24px * 1.65); }
+.md.ln h2[data-line]::before { line-height: calc(17px * 1.65); }
+.md.ln h3[data-line]::before { line-height: calc(15px * 1.65); }
+.md.ln pre[data-line]::before { line-height: calc(12.5px * 1.65); }
+.md.ln table[data-line]::before { line-height: calc(12px * 1.65); margin-top: 7px; }   /* past the cell's border and padding */
+.md.ln hr[data-line]::before { line-height: 0; }   /* on the rule, not below it */
 /* operator replies in the side panel: same markdown, sized like the text around it */
 .op-msg .md { font-size: 13px; line-height: 1.55; }
 .op-msg .md :is(h1, h2, h3) { font-size: inherit; color: var(--text-primary); margin: 0 0 .3em; padding: 0; border: none; }
@@ -997,12 +1006,12 @@ pre.cmd > .dollar { color: var(--accent-lime); }
             <div id="fileHead" class="fstrip"></div>
             <span id="fileLocked" class="flock" hidden>Edit is locked while the agent is running. Read mode updates live as it writes.</span>
             <div class="file-main"><div class="file-body">
-              <div id="fileRead" class="md-host" hidden><div class="md-read"><div class="md"></div></div></div>
+              <div id="fileRead" class="md-host" hidden><div class="md-read"><div class="md ln"></div></div></div>
               <div id="fileMd" class="md-edit" hidden>
                 <div id="mdSplit" class="split">
                   <div class="ed"><div id="mdTools" class="md-tools" role="toolbar" aria-label="Markdown"></div><div id="mdEd" class="ed-host"></div></div>
                   <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize editor and preview" title="Drag to resize · double-click to reset" tabindex="0" data-pane="split"></div>
-                  <div class="preview"><div class="fstrip sub"><span class="ml">Preview</span><span class="hint">· updates as you type</span></div><div class="preview-in"><div id="filePreview" class="md"></div></div></div>
+                  <div class="preview"><div class="fstrip sub"><span class="ml">Preview</span><span class="hint">· updates as you type</span></div><div class="preview-in"><div id="filePreview" class="md ln"></div></div></div>
                 </div>
               </div>
               <div id="fileCode" class="code-host" hidden></div>
@@ -3203,7 +3212,36 @@ claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append
   renderTermFoot();
 }
 
-function setMd(el, text) { if (el._src !== text) { el.innerHTML = md(text); el._src = text; } }
+// The Files tab's rendered markdown: each top-level block, and each item of a top-level list, gets its source line
+// (data-line), drawn in the left gutter. Blocks are rendered one by one so each one's first tag takes the attribute.
+// ponytail: raw HTML blocks and lines inside code blocks get no number.
+function mdNumbered(src) {
+  // As marked's lexer does, so each token's raw is found in s; neither change adds or drops a line.
+  const s = String(src ?? "").replace(/\r\n|\r/g, "\n").replace(/^( *)(\t+)/gm, (_, sp, tabs) => sp + "    ".repeat(tabs.length));
+  const toks = marked.lexer(s);
+  let pos = 0, ln = 1, lnPos = 0;
+  // marked drops link definitions ([x]: url) from the tokens, so positions are searched, not summed.
+  const find = (raw, from) => { const i = s.indexOf(raw, from); return i < 0 ? from : i; };
+  const lineAt = (i) => { for (; lnPos < i; lnPos++) if (s[lnPos] === "\n") ln++; return ln; };
+  const html = toks.map((t) => {
+    const i = find(t.raw, pos), out = marked.parser(Object.assign([t], { links: toks.links }));
+    pos = i + t.raw.length;
+    if (t.type === "space" || t.type === "html") return out;
+    let attr;
+    if (t.type === "list") { let p = i; attr = `data-items="${t.items.map((it) => { const j = find(it.raw, p); p = j + it.raw.length; return lineAt(j); }).join(" ")}"`; }
+    else attr = `data-line="${lineAt(i)}"`;
+    return out.replace(/^<[a-z0-9]+/, (tag) => `${tag} ${attr}`);
+  }).join("");
+  return DOMPurify.sanitize(html, { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"], ADD_ATTR: ["data-line", "data-items"] });
+}
+function setMd(el, text) {
+  if (el._src === text) return;
+  el.innerHTML = mdNumbered(text); el._src = text;
+  for (const l of el.querySelectorAll(":scope > [data-items]")) {
+    const lines = l.dataset.items.split(" ");
+    [...l.children].forEach((li, k) => { if (li.tagName === "LI" && lines[k]) li.dataset.line = lines[k]; });
+  }
+}
 function renderSettings() {
   $("cProjects").textContent = S.projects.length;
   document.querySelectorAll(".set-sec").forEach((b) => b.setAttribute("aria-current", b.dataset.id === S.setSec));
