@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-21 · Web addresses in chat messages are links
+- Where: Focus › Chat, the agent's messages and the user's own messages.
+- Now: a web address starting with http:// or https:// in a chat message shows in the link color and opens in the browser on click. A full stop, comma or closing bracket right after the address stays plain text. The rest of the message is unchanged plain text.
+- Why: the agent posts addresses such as a local test server with its access token, and the user had to select and copy them by hand.
+- Design question: should links also get a copy icon next to them, for addresses the user wants to paste elsewhere?
+
 ### 2026-10-21 · New note button in TODO files
 - Where: Focus › Files tab, the "TODO files" heading, right side.
 - Now: a small button "New note" creates an empty markdown note (notes.md, then notes-2.md, …) in the TODO's folder and opens it in Edit. The user's notes stay editable while the agent runs: no "Read-only · agent running" badge and no lock note for them. Their tooltip in the list reads "your note · editable while the agent runs". An open note has a trash icon button "Delete note" at the right end of the file header; it asks first (dialog "Delete note": "<name> is deleted from disk, with its comments. This can't be undone.", Cancel / Delete) and then shows the toast "Deleted". Agent files have no delete button.
