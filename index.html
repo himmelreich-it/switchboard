@@ -1180,6 +1180,8 @@ DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n
 // No data-* or style: markdown from a repo or an agent must not carry data-act (it would run app actions on click)
 // or cover the page.
 const md = (s) => DOMPurify.sanitize(marked.parse(String(s ?? "")), { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"] });
+// Plain-text chat: http(s) URLs become links (target="_blank"; Electron opens them in the browser). Trailing punctuation stays text.
+const linkify = (s) => String(s ?? "").split(/(https?:\/\/[^\s<>"']*[^\s<>"'.,;:!?)\]])/).map((x, i) => i % 2 ? `<a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a>` : esc(x)).join("");
 const short = (s, n = 34) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 // Key labels are written for macOS; elsewhere ⌘ reads Alt+, except paste, which stays the system's Ctrl+V.
 const keys = (s) => (MAC ? s : s.replace(/⌘V\b/g, "Ctrl+V").replace(/⌘/g, "Alt+"));
@@ -2598,7 +2600,7 @@ function msgHtml(m, t) {
         ${S.editing.err ? `<span style="font-size:12px; line-height:1.5; color:var(--accent-red)">${esc(S.editing.err)}</span>` : ""}
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap"><span class="small">Also updates the title. Attachments stay; add more as notes.</span>
           <span style="margin-left:auto; display:flex; align-items:center; gap:8px"><span class="kbd">Esc</span>${btn("Cancel", "edit-cancel", { v: "ghost" })}<span class="kbd">${keys("⌘↵")}</span>${btn("Save", "edit-save", { v: "primary" })}</span></div></div>`
-    : !m.body ? "" : user ? `<div class="bubble">${esc(m.body)}</div>` : m.author === "operator" ? `${opToolsLine(m)}<div class="said md">${md(m.body)}</div>` : `<div class="said">${esc(m.body)}</div>`;
+    : !m.body ? "" : user ? `<div class="bubble">${linkify(m.body)}</div>` : m.author === "operator" ? `${opToolsLine(m)}<div class="said md">${md(m.body)}</div>` : `<div class="said">${linkify(m.body)}</div>`;
   const files = (m.attachments ?? []).map(attachmentHtml).join("");
   const chip = m.file_id ? `<div class="flags"><button type="button" class="file-chip" data-act="open-file" data-id="${m.file_id}" data-fk="chip:${m.id}">${SVG(FILE, 13)}${esc(m.file_name ?? "file")}</button></div>` : "";
   return `<div class="msg">${head}${body}${files ? `<div class="atts">${files}</div>` : ""}${chip}</div>`;
