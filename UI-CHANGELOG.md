@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-21 · Web addresses in chat messages are links
+- Where: Focus › Chat, the agent's messages and the user's own messages.
+- Now: a web address starting with http:// or https:// in a chat message shows in the link color and opens in the browser on click. A full stop, comma or closing bracket right after the address stays plain text. The rest of the message is unchanged plain text.
+- Why: the agent posts addresses such as a local test server with its access token, and the user had to select and copy them by hand.
+- Design question: should links also get a copy icon next to them, for addresses the user wants to paste elsewhere?
+
 ### 2026-10-20 · Line numbers in the markdown editor and the rendered markdown
 - Where: Focus › Files tab, a markdown file in Edit (Write, Split, Preview) and in Read view.
 - Now: the markdown editor shows a line-number gutter, like the code editor already does; the current line's number is brighter. The rendered markdown has a narrow gutter on the left: each heading, paragraph, list item, code block, table, quote and rule shows the source line it starts on, in small muted mono digits on the block's first line. Lines inside a code block and raw HTML blocks get no number.
