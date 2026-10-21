@@ -1798,7 +1798,7 @@ async function openFile(fid, root = "todo", rel = null, mode = null) {
     const e = edits[fileKey(f)];
     const mark = root === "todo" ? null : S.trees[`${id}:${root}`]?.marks?.[rel] ?? null;
     Object.assign(f, {
-      name: root === "todo" ? r.name : basename(rel), abs: root === "todo" ? r.path : r.abs, size: r.size, binary: r.binary, image: r.image, large: r.large,
+      name: root === "todo" ? r.name : basename(rel), byUser: !!r.by_user, abs: root === "todo" ? r.path : r.abs, size: r.size, binary: r.binary, image: r.image, large: r.large,
       content: r.content, mtime: e ? e.mtime : r.mtime, text: e ? e.text : r.content, mark, saved: false,
       mode: mode ?? (e ? "edit" : "read"),
     });
@@ -1807,6 +1807,29 @@ async function openFile(fid, root = "todo", rel = null, mode = null) {
     if (f.mode === "diff") await loadDiff(f);
     render();
   } catch (e) { if (S.lastFile[id]?.rel === rel && S.lastFile[id]?.id === f.id) delete S.lastFile[id]; toast("danger", "Can't open file", e.message); }   // a gone file is not tried again on the next visit
+}
+// Item 147: New note makes an empty notes.md (notes-2.md, …) in the artifact folder and opens it in Edit.
+async function newNote() {
+  const id = S.sel;
+  try {
+    const r = await call("POST", `/api/todos/${id}/files`);
+    need("detail");
+    if (S.sel !== id) return;
+    S.focusEditor = true;   // typing goes into the note, not to the New note button
+    await openFile(r.id, "todo", null, "edit");
+  } catch (e) { toast("danger", "Can't create note", e.message); }
+}
+function deleteNote() {
+  const f = S.file;
+  if (!f?.byUser) return;
+  openDialog({ title: "Delete note", body: `${f.name} is deleted from disk, with its comments. This can't be undone.`, detail: f.abs,
+    buttons: [["Cancel", "ghost"], ["Delete", "danger", () => act(call("DELETE", `/api/todos/${f.todoId}/files/${f.id}`).then(() => {
+      delete edits[fileKey(f)];
+      if (S.lastFile[f.todoId] === f) delete S.lastFile[f.todoId];
+      if (S.file === f) closeFile();
+      need("detail");
+      toast("success", "Deleted", f.name);
+    }), "Not deleted")]] });
 }
 async function openTreeFile(rel) {
   const t = cur(), root = S.fileRoot[t.id], mark = S.trees[`${t.id}:${root}`]?.marks?.[rel];
@@ -1838,15 +1861,15 @@ async function reloadFile(f) {
   } catch (e) { /* gone from disk: keep showing the last version */ }
 }
 function closeFile() { dropFile(); render(); }   // unsaved text stays in `edits` and comes back when the file is reopened
-const fileLocked = (f) => f.root !== "project" && cur()?.status === "running";   // item 108
+const fileLocked = (f) => f.root !== "project" && !f.byUser && cur()?.status === "running";   // items 108, 147
 function setFileMode(m) {
   const f = S.file;
   if (!f || f.deleted && m !== "diff") return;
   if (m === "edit" && fileLocked(f)) return toast("info", ...RUNNING_LOCK);
   f.mode = m;
+  S.focusEditor = m === "edit";   // before render: render mounts the editor and focuses it
   if (m === "diff") loadDiff(f).then(render);
   render();
-  if (m === "edit") setTimeout(() => S.cm?.handle?.focus(), 0);
 }
 const hms = (ms) => (ms ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
 async function saveFile(force = false) {
@@ -2860,13 +2883,13 @@ function renderFileList(t, d) {
   if (root === "todo") {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
     const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
-      : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
+      : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.by_user ? "\nyour note · editable while the agent runs" : f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running && !f.by_user ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
           ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}${cmtDot(t.id, "todo", f.id)}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
         ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span>${unsaved({ todoId: t.id, root: "worktree", rel })}${cmtDot(t.id, "worktree", rel)}<span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
-    return setHtml($("fileList"), seg + `<span class="ml grp">TODO files</span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
+    return setHtml($("fileList"), seg + `<span class="ml grp">TODO files<button type="button" class="chg" data-act="new-note" data-fk="new-note" title="Write your own notes for this TODO, also while the agent runs. The agent sees them once you point it to the file.">New note</button></span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
       <span class="root-note">terminal/ and uploads/ are not listed</span>`);
   }
   // Items 102, 103: folders first; folders on the way to a change start open; Changed lists the changed files flat.
@@ -2951,7 +2974,7 @@ function renderFile(t) {
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}
     <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}
-      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}</span>`);
+      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
     destroyEditor();
@@ -2986,7 +3009,7 @@ const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed
 function mountEditor(f, host, rw, locked) {
   const key = `${fileKey(f)}:${host.id}:${rw}`;
   // Reused only for the same file object: its onChange writes into that object.
-  if (S.cm?.key === key && S.cm.f === f && S.cm.handle) { S.cm.handle.setReadOnly(locked || rw === "ro"); return; }
+  if (S.cm?.key === key && S.cm.f === f && S.cm.handle) { S.cm.handle.setReadOnly(locked || rw === "ro"); focusEditor(); return; }
   if (!window.SBEditor) { host.innerHTML = '<div style="padding:12px 16px" class="muted">Loading editor…</div>'; loadEditor().then(() => S.file === f && render(), (e) => toast("danger", "Editor not loaded", e.message)); return; }
   destroyEditor();
   host.innerHTML = "";
@@ -2997,6 +3020,11 @@ function mountEditor(f, host, rw, locked) {
     else renderFile(cur());   // header strip and preview; the editor itself is kept
   } });
   S.cm = { key, handle, f };
+  focusEditor();
+}
+// Edit asked for focus (⌘E, the Edit button, New note); done once the editor exists, which can be after its lazy load.
+function focusEditor() {
+  if (S.focusEditor && S.cm?.handle && S.file?.mode === "edit") { S.focusEditor = false; setTimeout(() => S.cm?.handle?.focus(), 0); }
 }
 
 // ---------- terminals (items 111-118) ----------
@@ -3445,6 +3473,7 @@ const ACTIONS = {
   "edit-cancel": () => { S.editing = null; render(); },
   "edit-save": saveEdit,
   "open-file": (id) => openFile(Number(id)),
+  "new-note": newNote,
   "open-tree": (id) => openTreeFile(id),
   "tree-dir": (id) => { const k = `${S.sel}:${S.fileRoot[S.sel]}`, o = (S.treeOpen[k] ??= new Set()); o.has(id) ? o.delete(id) : o.add(id); render(); },
   "file-root": (id) => { S.fileRoot[S.sel] = id; delete S.lastFile[S.sel]; if (S.file?.todoId === S.sel) closeFile(); need("tree"); render(); },
@@ -3452,6 +3481,7 @@ const ACTIONS = {
   "copy-path": () => S.file?.abs && copyText(S.file.abs, "Copied", S.file.abs),
   "open-folder": () => { const f = S.file; f?.abs && act(call("POST", f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}/reveal` : fsUrl(f, "fs/reveal")), "Can't open folder"); },
   "add-path": addPathToMessage,
+  "delete-note": deleteNote,
   "md-tool": (id) => S.cm?.handle?.format(id),
   "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
   "term-sel": (id) => { const t = cur(); pickTerm(t.id, Number(id)); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
