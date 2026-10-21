@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-21 · Worktrees section in Settings
+- Where: Settings › a new nav entry "Worktrees" (with a count after a scan) between Agents and Runs.
+- Now: the section is headed "Worktrees" with "Every git worktree of every topic, sorted by what can go. A scan only reads: nothing is deleted from here." A Scan button on the right (Scanning… while it runs, then Rescan, with "Scanned 3m ago" next to it). The result shows three groups, each led by a badge and "<count> · <size> · <hint>": "Can remove" (green, "PR merged or closed, no TODO works in it, and nothing exists only here."), "Check first" (amber, "Changed files, commits on no remote, or no PR. Open the lists below to see what.") and "Keep" (grey, "A live TODO works in it, or its PR is open."). Each row: the folder name in bold with the topic in small caps, a mono line "branch · 548 MB · last commit 2d ago", and a line of reasons such as "PR #591 merged · T-108 removed" or "no PR · no TODO · 1 changed file · 7 commits on no remote"; the PR number is a link. Rows with changed files or local-only commits have fold-outs "Changed files" and "Commits on no remote" listing them.
+- Why: worktrees took 7.5 GB, and the user wanted one list of what can go and what must stay, across all topics.
+- Design question: does this belong in Settings, or on its own screen? Next step is a delete action: a checkbox per "Can remove" row and one "Delete n worktrees · 1.6 GB" button, or a delete button per row?
+
 ### 2026-10-21 · Web addresses in chat messages are links
 - Where: Focus › Chat, the agent's messages and the user's own messages.
 - Now: a web address starting with http:// or https:// in a chat message shows in the link color and opens in the browser on click. A full stop, comma or closing bracket right after the address stays plain text. The rest of the message is unchanged plain text.

@@ -338,7 +338,7 @@ const PR_FIELDS = `fragment F on PullRequest { number url state isDraft mergeabl
 
 // One GraphQL query for a whole repository: alias b<i> finds the newest PR whose head is branch $b<i>,
 // alias n<i> reads PR number $n<i> (registered with set_pr). Values go in as variables, never into the query text.
-export function prQuery(branches: number, numbers: number) {
+export function prQuery(branches: number, numbers: number, fields = PR_FIELDS) {
   const vars = ["$o: String!", "$n: String!"], parts: string[] = [];
   for (let i = 0; i < branches; i++) {
     vars.push(`$b${i}: String!`);
@@ -348,7 +348,7 @@ export function prQuery(branches: number, numbers: number) {
     vars.push(`$n${i}: Int!`);
     parts.push(`n${i}: pullRequest(number: $n${i}) { ...F }`);
   }
-  return `query(${vars.join(", ")}) { repository(owner: $o, name: $n) { ${parts.join(" ")} } }\n${PR_FIELDS}`;
+  return `query(${vars.join(", ")}) { repository(owner: $o, name: $n) { ${parts.join(" ")} } }\n${fields}`;
 }
 
 export type Pr = {
@@ -377,6 +377,58 @@ export function prFromNode(n: any): Pr {
     base: n.baseRefName, review: REVIEW[n.reviewDecision] ?? null,
     threads: (n.reviewThreads?.nodes ?? []).filter((t: any) => !t.isResolved).length, checks,
   };
+}
+
+// ---------- worktree scan (Settings › Worktrees) ----------
+
+// The scan needs a PR's state and its commits: a squash merge or a deleted branch leaves no other trace of them.
+export const SCAN_PR_FIELDS = "fragment F on PullRequest { number url state commits(first: 250) { nodes { commit { oid } } } }";
+
+// `git worktree list --porcelain`: blocks split by a blank line, the first one the main checkout.
+//   worktree /Users/me/code/worktrees/fix-x
+//   HEAD 3f2a…
+//   branch refs/heads/fix-x        (or "detached")
+//   prunable gitdir file points to non-existent location
+export function parseWorktreeList(out: string) {
+  return out.split(/\n\s*\n/).filter((b) => b.trim()).map((block) => {
+    const w = { path: "", head: "", branch: null as string | null, prunable: false, locked: false };
+    for (const line of block.split("\n")) {
+      const i = line.indexOf(" "), k = i < 0 ? line : line.slice(0, i), v = i < 0 ? "" : line.slice(i + 1);
+      if (k === "worktree") w.path = v;
+      else if (k === "HEAD") w.head = v;
+      else if (k === "branch") w.branch = v.replace(/^refs\/heads\//, "");
+      else if (k === "prunable") w.prunable = true;
+      else if (k === "locked") w.locked = true;
+    }
+    return w;
+  });
+}
+
+export type WorktreeFacts = {
+  prunable: boolean; locked: boolean; branch: string | null;
+  changed: string[];      // `git status --porcelain` lines: uncommitted and untracked files
+  localOnly: string[];    // "<sha> <subject>" of commits on no remote branch and not in the PR
+  pr: { number: number; url: string; state: "open" | "merged" | "closed" } | null;
+  todos: { id: number; removed: boolean }[];
+};
+export type Verdict = { verdict: "remove" | "check" | "keep"; reasons: string[] };
+
+// Keep: a live TODO works in it, or its PR is open. Remove: its PR is merged or closed and nothing in it exists only
+// here (no changed file, no commit on no remote). Check: anything else. Keep rows still list what exists only here.
+export function worktreeVerdict(f: WorktreeFacts): Verdict {
+  if (f.prunable) return { verdict: "remove", reasons: ["folder is gone; git still lists it"] };
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  const live = f.todos.filter((t) => !t.removed).map((t) => `T-${t.id}`);
+  const risks = [
+    f.changed.length && n(f.changed.length, "changed file", "changed files"),
+    f.localOnly.length && n(f.localOnly.length, "commit on no remote", "commits on no remote"),
+    f.locked && "locked",
+  ].filter((r): r is string => !!r);
+  const pr = f.pr ? `PR #${f.pr.number} ${f.pr.state}` : f.branch ? "no PR" : "detached HEAD";
+  const todo = live.length ? `${live.join(", ")} live` : f.todos.length ? `${f.todos.map((t) => `T-${t.id}`).join(", ")} removed` : "no TODO";
+  const reasons = [pr, todo, ...risks];
+  if (live.length || f.pr?.state === "open") return { verdict: "keep", reasons };
+  return { verdict: f.pr && !risks.length ? "remove" : "check", reasons };
 }
 
 // How one `gh api graphql` call went. gh exits 1 on any GraphQL error but still prints the data, so a bad set_pr number

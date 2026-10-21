@@ -4,8 +4,8 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
-  type ConfigOption, type Pr, type Schedule, type Status,
+  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
 } from "./lib";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
@@ -227,12 +227,24 @@ async function fetchPrs(projectId: number) {
   const branches = [...new Set((await Promise.all(todos.flatMap((t) => (!t.pr_number && t.worktree_path ? [gitState(t.worktree_path)] : []))))
     .map((g) => g?.branch).filter((b): b is string => !!b))];
   if (!numbers.length && !branches.length) return;
-  const args = ["gh", "api", "graphql", "-f", `query=${prQuery(branches.length, numbers.length)}`, "-f", `o=${repo.owner}`, "-f", `n=${repo.name}`,
-    ...branches.flatMap((b, i) => ["-f", `b${i}=${b}`]), ...numbers.flatMap((n, i) => ["-F", `n${i}=${n}`])];
-  const slug = `${repo.owner}/${repo.name}`;
   const prev = prStore.get(projectId) ?? { at: null, byBranch: new Map(), byNumber: new Map(), error: null };
-  const fail = (error: GhError) => { prStore.set(projectId, { ...prev, error }); emit({ type: "todos" }); };
+  const o = await ghRepoQuery(projectId, repo, prQuery(branches.length, numbers.length),
+    [...branches.flatMap((b, i) => ["-f", `b${i}=${b}`]), ...numbers.flatMap((n, i) => ["-F", `n${i}=${n}`])]);
+  if ("error" in o) { prStore.set(projectId, { ...prev, error: o.error }); emit({ type: "todos" }); return; }
+  const newest = (i: number) => o.repo[`b${i}`]?.nodes?.[0]; // pullRequests(...) returns a list
+  prStore.set(projectId, {
+    at: now(), error: null,
+    byBranch: new Map(branches.flatMap((b, i) => (newest(i) ? [[b, prFromNode(newest(i))]] : []))),
+    byNumber: new Map(numbers.flatMap((n, i) => (o.repo[`n${i}`] ? [[n, prFromNode(o.repo[`n${i}`])]] : []))),
+  });
+  emit({ type: "todos" });
+}
 
+// One `gh api graphql` call on the repository, for the PR refresh and the worktree scan. Each gh account sees only its
+// own repositories, so the call runs as each logged-in account in turn; the one that worked for the project goes first.
+async function ghRepoQuery(projectId: number, repo: NonNullable<ReturnType<typeof parseGithubRemote>>, query: string, vars: string[]):
+  Promise<{ repo: any } | { error: GhError }> {
+  const args = ["gh", "api", "graphql", "-f", `query=${query}`, "-f", `o=${repo.owner}`, "-f", `n=${repo.name}`, ...vars];
   let logins: string[];
   try {
     if (!ghLogins) {
@@ -242,7 +254,7 @@ async function fetchPrs(projectId: number) {
     }
     logins = ghLogins;
   } catch {
-    return fail({ kind: "gh access failed", why: "gh is not installed or did not answer. Install it, run gh auth login, then retry." });
+    return { error: { kind: "gh access failed", why: "gh is not installed or did not answer. Install it, run gh auth login, then retry." } };
   }
   const known = ghLoginOf.get(projectId);
   for (const login of known ? [known, ...logins.filter((l) => l !== known)] : logins) {
@@ -252,21 +264,67 @@ async function fetchPrs(projectId: number) {
     const o = ghOutcome(r.code, r.out, r.err);
     if ("error" in o && o.error === "no access") continue;
     if ("error" in o)
-      return fail(o.error === "no network" ? { kind: "no network", why: "Can't reach github.com." }
-        : { kind: "unclear", why: `gh answered, but not in a form Switchboard can read (${o.detail}). Usually passes on the next try.` });
+      return { error: o.error === "no network" ? { kind: "no network", why: "Can't reach github.com." }
+        : { kind: "unclear", why: `gh answered, but not in a form Switchboard can read (${o.detail}). Usually passes on the next try.` } };
     ghLoginOf.set(projectId, login);
-    const newest = (i: number) => o.repo[`b${i}`]?.nodes?.[0]; // pullRequests(...) returns a list
-    prStore.set(projectId, {
-      at: now(), error: null,
-      byBranch: new Map(branches.flatMap((b, i) => (newest(i) ? [[b, prFromNode(newest(i))]] : []))),
-      byNumber: new Map(numbers.flatMap((n, i) => (o.repo[`n${i}`] ? [[n, prFromNode(o.repo[`n${i}`])]] : []))),
-    });
-    emit({ type: "todos" });
-    return;
+    return o;
   }
   ghLogins = null; // a `gh auth login` since then is seen on the next try
   ghLoginOf.delete(projectId);
-  fail({ kind: "gh access failed", why: `gh could not open ${slug} with any logged-in account (${logins.join(", ") || "none"}). Run gh auth login, then retry.` });
+  return { error: { kind: "gh access failed", why: `gh could not open ${repo.owner}/${repo.name} with any logged-in account (${logins.join(", ") || "none"}). Run gh auth login, then retry.` } };
+}
+
+// ---------- worktree scan (Settings › Worktrees) ----------
+
+type WorktreeRow = WorktreeFacts & Verdict & { project: string; path: string; kb: number | null; last_commit: string | null };
+let worktreeScan: { at: string; rows: WorktreeRow[]; errors: string[] } | null = null;  // the last scan, kept until the next
+let worktreeScanning: Promise<void> | null = null;
+
+// Every git worktree of every topic folder that is a git repository, except the main checkouts. Read-only: git and gh
+// only read, and `du` measures. One GraphQL call per repository finds each branch's newest PR with its commits.
+// ponytail: `du -sk` takes ~1 s on a 550 MB worktree; runs on the button only, results kept in memory.
+function scanWorktrees() {
+  return worktreeScanning ??= (async () => {
+    const errors: string[] = [], rows: WorktreeRow[] = [];
+    const todos = db.query("SELECT id, worktree_path, removed_at FROM todos WHERE worktree_path IS NOT NULL").all() as { id: number; worktree_path: string; removed_at: string | null }[];
+    const seen = new Set<string>();   // two topics on one folder list its worktrees once
+    for (const p of db.query("SELECT id, name, local_path FROM projects ORDER BY name").all() as { id: number; name: string; local_path: string }[]) {
+      const list = await sh(["git", "-C", p.local_path, "worktree", "list", "--porcelain"]);
+      if (!list.ok) continue;   // not a git repository
+      const wts = parseWorktreeList(list.out).slice(1).filter((w) => !seen.has(w.path) && seen.add(w.path));
+      if (!wts.length) continue;
+      const remote = await sh(["git", "-C", p.local_path, "remote", "get-url", "origin"]);
+      const repo = remote.ok ? parseGithubRemote(remote.out) : null;
+      const branches = [...new Set(wts.map((w) => w.branch).filter((b): b is string => !!b))];
+      const prs = new Map<string, any>();
+      if (repo && branches.length) {
+        const o = await ghRepoQuery(p.id, repo, prQuery(branches.length, 0, SCAN_PR_FIELDS), branches.flatMap((b, i) => ["-f", `b${i}=${b}`]));
+        if ("error" in o) errors.push(`${p.name}: ${o.error.why}`);
+        else branches.forEach((b, i) => { const n = o.repo[`b${i}`]?.nodes?.[0]; if (n) prs.set(b, n); });
+      }
+      rows.push(...await Promise.all(wts.map(async (w): Promise<WorktreeRow> => {
+        const node = w.branch ? prs.get(w.branch) : null;
+        const inPr = new Set<string>((node?.commits?.nodes ?? []).map((c: any) => c.commit.oid));
+        const [st, log, last, du] = w.prunable ? [] : await Promise.all([
+          sh(["git", "-C", w.path, "--no-optional-locks", "status", "--porcelain"]),
+          sh(["git", "-C", w.path, "log", "--no-merges", "--format=%H %s", "HEAD", "--not", "--remotes"]),
+          sh(["git", "-C", w.path, "log", "-1", "--format=%cI"]),
+          sh(["du", "-sk", w.path]),
+        ]);
+        const facts: WorktreeFacts = {
+          prunable: w.prunable, locked: w.locked, branch: w.branch,
+          changed: st?.ok && st.out ? st.out.split("\n") : [],
+          // A merged PR's branch is often deleted on GitHub: its commits are then on no remote, but in the PR.
+          localOnly: log?.ok && log.out ? log.out.split("\n").filter((l) => !inPr.has(l.slice(0, 40))).map((l) => l.slice(0, 8) + l.slice(40)) : [],
+          pr: node ? { number: node.number, url: node.url, state: String(node.state).toLowerCase() as "open" | "merged" | "closed" } : null,
+          todos: todos.filter((t) => t.worktree_path === w.path).map((t) => ({ id: t.id, removed: !!t.removed_at })),
+        };
+        return { ...facts, ...worktreeVerdict(facts), project: p.name, path: w.path,
+          kb: du?.ok ? Number(du.out.split(/\s/)[0]) : null, last_commit: last?.ok ? last.out : null };
+      })));
+    }
+    worktreeScan = { at: now(), rows, errors };
+  })().finally(() => { worktreeScanning = null; });
 }
 
 // ---------- read models ----------
@@ -1257,6 +1315,8 @@ async function api(req: Request, path: string): Promise<Response> {
 
   // ----- agents (P5) -----
 
+  if (path === "/api/worktrees" && method === "GET") return json(worktreeScan ?? { at: null, rows: [], errors: [] });
+  if (path === "/api/worktrees/scan" && method === "POST") { await scanWorktrees(); return json(worktreeScan); }
   if (path === "/api/agents" && method === "GET") return json(agentList());
   // A custom agent: an ACP agent started as `command args…` with `env` added (Settings › Agents).
   if (path === "/api/agents" && method === "POST") {
