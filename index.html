@@ -1853,9 +1853,9 @@ function setFileMode(m) {
   if (!f || f.deleted && m !== "diff") return;
   if (m === "edit" && fileLocked(f)) return toast("info", ...RUNNING_LOCK);
   f.mode = m;
+  S.focusEditor = m === "edit";   // before render: render mounts the editor and focuses it
   if (m === "diff") loadDiff(f).then(render);
   render();
-  if (m === "edit") S.focusEditor = true;
 }
 const hms = (ms) => (ms ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
 async function saveFile(force = false) {
