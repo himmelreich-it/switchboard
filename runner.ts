@@ -539,7 +539,7 @@ export function newSession(todoId: number, agent?: string, scheduled?: string) {
   const header = handOver({
     no, title: t.title, worktree: t.worktree_path, pr: t.pr_number,
     last: last ? { no: last.session_no ?? prev.no, body: last.body } : null,
-    files: filesOf(todoId).map((f) => ({ path: f.path, session_no: f.session_no })), scheduled,
+    files: filesOf(todoId).map((f) => ({ path: f.path, session_no: f.session_no, by_user: !!f.by_user })), scheduled,
   });
   runWorker(todoId, () => take(todoId, "queued"), { no, header, agent }, scheduled ? "scheduled run" : "new session");
 }

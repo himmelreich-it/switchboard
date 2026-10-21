@@ -249,7 +249,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
 23. Agents register each file they create against their TODO via `attach_file`, which resolves symlinks and rejects any path outside the TODO's artifact folder. The Files tab's TODO files root (item 101) lists each file with its name and its line count ("1 line", "48 lines"), its size for an image, binary or large file ("21 KB", item 104), or "missing", in which case the file is disabled. Its tooltip gives the path and, with 2 or more sessions, the session that registered it ("session 2"). A chat message that links a file shows a chip that opens it in Files › TODO files.
 85. The TODO files list shows every file in the artifact folder except `uploads/` and `terminal/`, not only the files registered with `attach_file`, so files written from a terminal show up too. A file that no session registered is marked "added outside a session".
 24. The user can open a file in the app, edit it inline, save and close it. Saving does not notify the agent. The user hands work back with a chat message such as "updated the review, post it but drop point 3".
-25. A TODO file is read-only while its TODO's agent is `running`, and editable in any other status.
+25. A TODO file is read-only while its TODO's agent is `running`, and editable in any other status. The user's own notes (item 147) are the exception: editable at any time, with the conflict check as their guard.
     - While locked, the file view says "Edit is locked while the agent is running. Read mode updates live as it writes." Clicking Edit shows the toast "Read-only" / "The agent is running. Edit unlocks when it stops."
     - If the TODO starts running while the user has unsaved edits (for example an operator message or a queued delivery resumes it), the edits stay in the browser and the editor locks. Saving is allowed again once the TODO stops running. Unsaved edits also survive closing the file: it reopens in Edit with them.
     - If the file changed on disk since it was loaded, saving opens the dialog "Changed on disk": "<path> changed on disk after you opened it. Overwrite replaces it with your version. Discard drops your edits and reloads the file." Its detail shows both times (`loaded   mtime 10:41:07`, `on disk  mtime 10:43:52`), and its buttons are Keep editing, Discard and Overwrite.
@@ -282,7 +282,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - Open folder shows the file in the system file manager: selected in Finder on macOS and in Explorer on Windows; on Linux its folder opens with `xdg-open`. The server opens it, so it works in the browser and in the window app. A failure shows the toast "Can't open folder" with the reason.
      - Add to message appends the path to the TODO's message draft: relative to the worktree for worktree files, absolute for Repo and TODO files. Its toast "Added to message" has a Go to chat action (item 125). The file stays open in the Files tab.
 107. Read and Edit modes use a code editor (CodeMirror 6) for every file, including TODO files. Read mode is the same editor, read-only, except for markdown, which reads rendered (item 52). ⌘E switches between Read and Edit, ⌘S saves, and ⌘F opens the editor's search in Edit mode (item 59). The key hints read "⌘E edit ⌘S save ⌘F find".
-     - Editing is light on purpose: there is no creating, renaming or deleting of files, no search across files, no LSP and no git actions. The agent or a terminal does those.
+     - Editing is light on purpose: there is no creating (except New note, item 147), renaming or deleting of files, no search across files, no LSP and no git actions. The agent or a terminal does those.
 108. Locking and conflicts depend on the root:
      - **TODO files**: item 25.
      - **Worktree files**: read-only while the TODO's agent is `running`, as in item 25. Read mode follows the file as it changes.
@@ -305,6 +305,10 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - "Ask agent · N" (N open comments) puts "Look at my comments." into the TODO's message box and switches to Chat; the user sends it. The agent is not told about comments otherwise.
      - Files with open or replied comments show an amber dot in the file list.
      - The worker tools (also in Claude terminals): `list_comments()` returns the TODO's open comments (id, disk path, line, quote, comment, `your_earlier_reply` after an edit); `reply_comment(id, reply)` stores the reply and sets `replied`. The app contract says to call them when the user asks to look at the comments, to apply what a comment asks and reply "Applied: <what changed>", and to answer a question without an edit.
+
+147. **New note.** Built 2026-10-21. The "TODO files" heading of the Files tab has a **New note** button (tooltip "Write your own notes for this TODO, also while the agent runs. The agent sees them once you point it to the file."). It writes an empty `notes.md` into the artifact folder (`notes-2.md`, `notes-3.md`, … when taken), registers it with `files.by_user = 1`, records a `file created` event by `user`, and opens it in Edit.
+     - The user's notes are not locked while the agent runs (item 25 exception); a save still warns when the file changed on disk. Their list tooltip reads "your note · editable while the agent runs".
+     - The agent is not told. The user points it to the note with a chat message, for example with Add to message (item 106). A hand-over (item 73) lists the note as "(the user's notes)".
 
 ### Terminals
 

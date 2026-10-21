@@ -49,7 +49,7 @@ export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = 
 // A TODO's topic: null before routing and for a TODO without a topic (801).
 export const projectRow = (id: number | null) => (id == null ? null : db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null);
 export const filesOf = (todoId: number) =>
-  db.query("SELECT id, path, session_no FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null }[];
+  db.query("SELECT id, path, session_no, by_user FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null; by_user: number | null }[];
 export type Comment = { id: number; todo_id: number; root: string; rel: string; path: string; quote: string; line: number | null; body: string; reply: string | null; state: "open" | "replied" | "resolved"; created_at: string; replied_at: string | null };
 export const commentsOf = (todoId: number, where = "1") =>
   db.query(`SELECT * FROM comments WHERE todo_id = ? AND ${where} ORDER BY path, line, id`).all(todoId) as Comment[];
@@ -331,15 +331,15 @@ function messageOut(id: number) {
   return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name, path }) => ({ id, name, size: Bun.file(path).size })) };
 }
 
-function fileOut(f: { id: number; path: string; session_no: number | null }) {
+function fileOut(f: { id: number; path: string; session_no: number | null; by_user: number | null }) {
   try {
     // Images, binaries and files over MAX_TEXT have no line count; the list shows their size instead (the same test as fileFacts).
     const st = statSync(f.path), image = IMAGE_EXT.test(f.path) && !/\.svg$/i.test(f.path);
     const buf = image || st.size > MAX_TEXT ? null : readFileSync(f.path);
     const lines = buf && !buf.subarray(0, 8192).includes(0) ? buf.toString("utf8").trimEnd().split("\n").length : null;
-    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines, size: st.size, mtime: st.mtimeMs };
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, by_user: !!f.by_user, lines, size: st.size, mtime: st.mtimeMs };
   } catch {
-    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, lines: null, mtime: null }; // deleted on disk
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, by_user: !!f.by_user, lines: null, mtime: null }; // deleted on disk
   }
 }
 
@@ -912,20 +912,33 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({ ok: true, dir });
   }
 
+  // Item 147: New note. The user's own markdown file in the artifact folder, notes.md, then notes-2.md, notes-3.md.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/files$/)) && method === "POST") {
+    const t = todoOr404(Number(m[1])), dir = artifactDir(t.id);
+    mkdirSync(dir, { recursive: true });
+    let n = 1, p = join(dir, "notes.md");
+    while (existsSync(p)) p = join(dir, `notes-${++n}.md`);
+    writeFileSync(p, "", { flag: "wx" });
+    const r = db.run("INSERT INTO files (todo_id, path, by_user) VALUES (?, ?, 1)", [t.id, realpathSync(p)]);
+    addEvent(t.id, "file created", "user", basename(p));
+    return json({ id: Number(r.lastInsertRowid), name: basename(p) });
+  }
+
   if ((m = path.match(/^\/api\/todos\/(\d+)\/files\/(\d+)(?:\/(reveal))?$/))) {
     const id = Number(m[1]);
     const t = todoOr404(id);
-    const f = db.query("SELECT id, path FROM files WHERE id = ? AND todo_id = ?").get(Number(m[2]), id) as { id: number; path: string } | null;
+    const f = db.query("SELECT id, path, by_user FROM files WHERE id = ? AND todo_id = ?").get(Number(m[2]), id) as { id: number; path: string; by_user: number | null } | null;
     if (!f) return fail("no such file", 404);
     if (m[3] === "reveal") return method === "POST" ? reveal(f.path) : fail("not found", 404);
     if (method === "GET") {
       if (!existsSync(f.path)) return fail(`${f.path} no longer exists on disk`, 404);
       if (new URL(req.url).searchParams.has("raw")) return new Response(Bun.file(f.path), { headers: { "content-security-policy": "sandbox" } });
-      return json({ id: f.id, name: basename(f.path), path: f.path, ...fileFacts(f.path) });
+      return json({ id: f.id, name: basename(f.path), path: f.path, by_user: !!f.by_user, ...fileFacts(f.path) });
     }
     if (method === "PUT") {
       if (typeof body.content !== "string") return fail("content is required");
-      if (t.status === "running") return json({ error: "running" }, 409);
+      // The user's own notes stay editable while the agent runs (item 147); the mtime check guards them, as for Repo files.
+      if (t.status === "running" && !f.by_user) return json({ error: "running" }, 409);
       const mtime = existsSync(f.path) ? statSync(f.path).mtimeMs : null;
       if (!body.force && mtime !== body.base_mtime) return json({ error: "changed", mtime }, 409);
       writeFileSync(f.path, body.content); // the agent is not told; the user hands work back with a chat message
