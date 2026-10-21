@@ -51,7 +51,7 @@ export function deliveryPrompt(worktree: string | null, bodies: string[], header
 // Lines without a value are left out. `scheduled` is the run line of a scheduled firing (item 144).
 export function handOver(o: {
   no: number; title: string; worktree: string | null; pr: number | null;
-  last: { no: number; body: string } | null; files: { path: string; session_no: number | null }[]; scheduled?: string | null;
+  last: { no: number; body: string } | null; files: { path: string; session_no: number | null; by_user?: boolean }[]; scheduled?: string | null;
 }): string {
   return [
     `This TODO continues earlier work (session ${o.no}). Title: ${o.title}. Keep this title.`,
@@ -60,7 +60,7 @@ export function handOver(o: {
     o.pr && `Pull request: #${o.pr}.`,
     o.last && `Last message of session ${o.last.no}: ${o.last.body.replace(/\s*\n\s*/g, " ")}`,
     o.files.length && "Files from earlier sessions (open with Read what you need):\n"
-      + o.files.map((f) => `${f.path} (${f.session_no ? `session ${f.session_no}` : "added outside a session"})`).join("\n"),
+      + o.files.map((f) => `${f.path} (${f.by_user ? "the user's notes" : f.session_no ? `session ${f.session_no}` : "added outside a session"})`).join("\n"),
   ].filter(Boolean).join("\n");
 }
 
@@ -633,6 +633,7 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("events", "session_no", "INTEGER");
   addColumn("events", "meta", "TEXT");           // a result's duration and tool count (JSON)
   addColumn("files", "session_no", "INTEGER");
+  addColumn("files", "by_user", "INTEGER");      // 1: a note the user made with New note; editable while the agent runs
   addColumn("projects", "mode", "TEXT");         // permission mode for the project's agents (null: auto), P3
   addColumn("todos", "mode", "TEXT");            // a TODO's own permission mode (null: the project's)
   addColumn("todos", "permission", "TEXT");      // the open permission request (JSON Permission), while the agent waits

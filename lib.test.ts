@@ -140,7 +140,7 @@ test("handOver leaves out lines without a value", () => {
   const full = handOver({
     no: 3, title: "Implement MCPs (AI-1234)", worktree: "/w/ai-1234", pr: 512,
     last: { no: 2, body: "Server done,\nclient stubs left." },
-    files: [{ path: "/d/plan.md", session_no: 1 }, { path: "/d/notes.md", session_no: null }],
+    files: [{ path: "/d/plan.md", session_no: 1 }, { path: "/d/notes.md", session_no: null }, { path: "/d/notes-2.md", session_no: null, by_user: true }],
   });
   expect(full).toBe([
     "This TODO continues earlier work (session 3). Title: Implement MCPs (AI-1234). Keep this title.",
@@ -150,6 +150,7 @@ test("handOver leaves out lines without a value", () => {
     "Files from earlier sessions (open with Read what you need):",
     "/d/plan.md (session 1)",
     "/d/notes.md (added outside a session)",
+    "/d/notes-2.md (the user's notes)",
   ].join("\n"));
   expect(handOver({ no: 2, title: "T", worktree: null, pr: null, last: null, files: [] }))
     .toBe("This TODO continues earlier work (session 2). Title: T. Keep this title.");
