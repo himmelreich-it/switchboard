@@ -921,6 +921,7 @@ async function api(req: Request, path: string): Promise<Response> {
     writeFileSync(p, "", { flag: "wx" });
     const r = db.run("INSERT INTO files (todo_id, path, by_user) VALUES (?, ?, 1)", [t.id, realpathSync(p)]);
     addEvent(t.id, "file created", "user", basename(p));
+    changed(t.id);
     return json({ id: Number(r.lastInsertRowid), name: basename(p) });
   }
 
@@ -930,6 +931,16 @@ async function api(req: Request, path: string): Promise<Response> {
     const f = db.query("SELECT id, path, by_user FROM files WHERE id = ? AND todo_id = ?").get(Number(m[2]), id) as { id: number; path: string; by_user: number | null } | null;
     if (!f) return fail("no such file", 404);
     if (m[3] === "reveal") return method === "POST" ? reveal(f.path) : fail("not found", 404);
+    // Item 147: the user deletes a note made with New note, with its comments. Agent files are not deletable here.
+    if (method === "DELETE") {
+      if (!f.by_user) return fail("only notes made with New note can be deleted", 403);
+      try { unlinkSync(f.path); } catch (e: any) { if (e.code !== "ENOENT") throw e; }
+      db.run("DELETE FROM comments WHERE todo_id = ? AND root = 'todo' AND rel = ?", [id, String(f.id)]);
+      db.run("DELETE FROM files WHERE id = ?", [f.id]);
+      addEvent(id, "file deleted", "user", basename(f.path));
+      changed(id);
+      return json({ ok: true });
+    }
     if (method === "GET") {
       if (!existsSync(f.path)) return fail(`${f.path} no longer exists on disk`, 404);
       if (new URL(req.url).searchParams.has("raw")) return new Response(Bun.file(f.path), { headers: { "content-security-policy": "sandbox" } });

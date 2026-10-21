@@ -8,7 +8,7 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ### 2026-10-21 · New note button in TODO files
 - Where: Focus › Files tab, the "TODO files" heading, right side.
-- Now: a small button "New note" creates an empty markdown note (notes.md, then notes-2.md, …) in the TODO's folder and opens it in Edit. The user's notes stay editable while the agent runs: no "Read-only · agent running" badge and no lock note for them. Their tooltip in the list reads "your note · editable while the agent runs".
+- Now: a small button "New note" creates an empty markdown note (notes.md, then notes-2.md, …) in the TODO's folder and opens it in Edit. The user's notes stay editable while the agent runs: no "Read-only · agent running" badge and no lock note for them. Their tooltip in the list reads "your note · editable while the agent runs". An open note has a trash icon button "Delete note" at the right end of the file header; it asks first (dialog "Delete note": "<name> is deleted from disk, with its comments. This can't be undone.", Cancel / Delete) and then shows the toast "Deleted". Agent files have no delete button.
 - Why: the user wanted to write down thoughts while an agent works, and point the agent to them when it is ready.
 - Design question: should the user pick the note's name when creating it? Should the user's notes look different from agent files in the list (an icon or a "you" tag)?
 

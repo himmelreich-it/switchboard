@@ -282,7 +282,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
      - Open folder shows the file in the system file manager: selected in Finder on macOS and in Explorer on Windows; on Linux its folder opens with `xdg-open`. The server opens it, so it works in the browser and in the window app. A failure shows the toast "Can't open folder" with the reason.
      - Add to message appends the path to the TODO's message draft: relative to the worktree for worktree files, absolute for Repo and TODO files. Its toast "Added to message" has a Go to chat action (item 125). The file stays open in the Files tab.
 107. Read and Edit modes use a code editor (CodeMirror 6) for every file, including TODO files. Read mode is the same editor, read-only, except for markdown, which reads rendered (item 52). ⌘E switches between Read and Edit, ⌘S saves, and ⌘F opens the editor's search in Edit mode (item 59). The key hints read "⌘E edit ⌘S save ⌘F find".
-     - Editing is light on purpose: there is no creating (except New note, item 147), renaming or deleting of files, no search across files, no LSP and no git actions. The agent or a terminal does those.
+     - Editing is light on purpose: there is no creating or deleting (except the user's notes, item 147), renaming of files, no search across files, no LSP and no git actions. The agent or a terminal does those.
 108. Locking and conflicts depend on the root:
      - **TODO files**: item 25.
      - **Worktree files**: read-only while the TODO's agent is `running`, as in item 25. Read mode follows the file as it changes.
@@ -308,6 +308,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
 
 147. **New note.** Built 2026-10-21. The "TODO files" heading of the Files tab has a **New note** button (tooltip "Write your own notes for this TODO, also while the agent runs. The agent sees them once you point it to the file."). It writes an empty `notes.md` into the artifact folder (`notes-2.md`, `notes-3.md`, … when taken), registers it with `files.by_user = 1`, records a `file created` event by `user`, and opens it in Edit.
      - The user's notes are not locked while the agent runs (item 25 exception); a save still warns when the file changed on disk. Their list tooltip reads "your note · editable while the agent runs".
+     - A note's file view has a **Delete note** icon button (trash) after the other icon buttons; agent files have none. It asks first ("Delete note": "<name> is deleted from disk, with its comments. This can't be undone.", Cancel / Delete), then removes the file, its `files` row and its comments, records a `file deleted` event by `user`, closes the file and shows the toast "Deleted" / "<name>". `DELETE /api/todos/:id/files/:fid` refuses other TODO files (403).
      - The agent is not told. The user points it to the note with a chat message, for example with Add to message (item 106). A hand-over (item 73) lists the note as "(the user's notes)".
 
 ### Terminals

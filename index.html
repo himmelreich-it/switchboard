@@ -1817,6 +1817,18 @@ async function newNote() {
     await openFile(r.id, "todo", null, "edit");
   } catch (e) { toast("danger", "Can't create note", e.message); }
 }
+function deleteNote() {
+  const f = S.file;
+  if (!f?.byUser) return;
+  openDialog({ title: "Delete note", body: `${f.name} is deleted from disk, with its comments. This can't be undone.`, detail: f.abs,
+    buttons: [["Cancel", "ghost"], ["Delete", "danger", () => act(call("DELETE", `/api/todos/${f.todoId}/files/${f.id}`).then(() => {
+      delete edits[fileKey(f)];
+      if (S.lastFile[f.todoId] === f) delete S.lastFile[f.todoId];
+      if (S.file === f) closeFile();
+      need("detail");
+      toast("success", "Deleted", f.name);
+    }), "Not deleted")]] });
+}
 async function openTreeFile(rel) {
   const t = cur(), root = S.fileRoot[t.id], mark = S.trees[`${t.id}:${root}`]?.marks?.[rel];
   if (mark === "D") return openDeleted(rel);
@@ -2960,7 +2972,7 @@ function renderFile(t) {
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}
     <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}
-      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}</span>`);
+      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
     destroyEditor();
@@ -3467,6 +3479,7 @@ const ACTIONS = {
   "copy-path": () => S.file?.abs && copyText(S.file.abs, "Copied", S.file.abs),
   "open-folder": () => { const f = S.file; f?.abs && act(call("POST", f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}/reveal` : fsUrl(f, "fs/reveal")), "Can't open folder"); },
   "add-path": addPathToMessage,
+  "delete-note": deleteNote,
   "md-tool": (id) => S.cm?.handle?.format(id),
   "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
   "term-sel": (id) => { const t = cur(); pickTerm(t.id, Number(id)); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
