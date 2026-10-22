@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts,
@@ -473,6 +473,41 @@ test("descendants", () => {
   expect(descendants(ps, 10)).toEqual([11, 12, 13]);
   expect(descendants(ps, 13)).toEqual([]);
   expect(descendants("", 10)).toEqual([]);
+});
+
+test("backgroundNames keeps each task's description from the SDK's level", () => {
+  const level = (...tasks: any[]) => ({ type: "system", subtype: "background_tasks_changed", tasks });
+  const sh = (task_id: string, description: string, more = {}) => ({ task_id, task_type: "local_bash", description, ...more });
+  const n = backgroundNames({}, level(sh("a", "bun test --watch"), sh("b", "")));
+  expect(n).toEqual({ a: "bun test --watch" });
+  expect(backgroundNames(n, level(sh("a", "bun test --watch")))).toBe(n); // nothing new: same object
+  // subagents and ambient tasks are not shown, so they change nothing
+  expect(backgroundNames(n, level({ task_id: "g", task_type: "local_agent", description: "Review the diff" }, sh("w", "watch", { ambient: true })))).toBe(n);
+  expect(backgroundNames(n, { type: "assistant" })).toBe(n);
+});
+
+test("port scan parsers", () => {
+  // lsof -Fpcn: IPv4 and IPv6 of one port count once; a process with no port is dropped
+  const listen = "p3398\ncollama\nf3\nn127.0.0.1:11434\np22884\ncSpotify\nf91\nn*:57621\nf78\nn127.0.0.1:7768\nf92\nn[::1]:7768\np9\ncidle\n";
+  expect(parseListen(listen)).toEqual([{ pid: 3398, name: "ollama", ports: [11434] }, { pid: 22884, name: "Spotify", ports: [7768, 57621] }]);
+  expect(parseCwd("p3398\nfcwd\nn/opt/homebrew/var\np7458\nfcwd\nn/\n")).toEqual(new Map([[3398, "/opt/homebrew/var"], [7458, "/"]]));
+  const ps = parsePs("  3398  1-02:03:04 /opt/homebrew/bin/ollama serve\n 29492      05:06 python -m http.server 8085\n");
+  expect(ps.get(3398)).toEqual({ secs: 93784, command: "/opt/homebrew/bin/ollama serve" });
+  expect(ps.get(29492)).toEqual({ secs: 306, command: "python -m http.server 8085" });
+  // real docker ps lines (2026-10-22): an unpublished port (8443/tcp) is not on the host
+  const dk = "ai1096-copilot-1|0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp|/Users/o/code/worktrees/AI-1096|17 hours ago|copilot\n"
+    + "ai1096-wiremock-1|8443/tcp, 127.0.0.1:18080->8080/tcp|/Users/o/code/worktrees/AI-1096|17 hours ago|wiremock\n";
+  expect(parseDocker(dk).map((c) => [c.name, c.ports, c.folder])).toEqual([["ai1096-copilot-1", [8000], "/Users/o/code/worktrees/AI-1096"], ["ai1096-wiremock-1", [18080], "/Users/o/code/worktrees/AI-1096"]]);
+});
+
+test("ownerOf: the deepest worktree, else the topic folder", () => {
+  const todos = [{ id: 1, worktree_path: "/w/a" }, { id: 2, worktree_path: "/w/a/nested" }, { id: 3, worktree_path: null }];
+  const projects = [{ id: 7, local_path: "/code/app" }, { id: 8, local_path: null }];
+  expect(ownerOf("/w/a/nested/src", todos, projects)).toEqual({ todo_id: 2, project_id: null });
+  expect(ownerOf("/w/a", todos, projects)).toEqual({ todo_id: 1, project_id: null });
+  expect(ownerOf("/w/ab", todos, projects)).toEqual({ todo_id: null, project_id: null }); // a sibling folder is not inside
+  expect(ownerOf("/code/app/web", todos, projects)).toEqual({ todo_id: null, project_id: 7 });
+  expect(ownerOf("", todos, projects)).toEqual({ todo_id: null, project_id: null });
 });
 
 test("parseWorktreeList and worktreeVerdict", () => {
