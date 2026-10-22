@@ -3,7 +3,7 @@ import {
   agentActivity, atToolBoundary, backgroundLevel, backgroundStep, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
-  nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule,
+  nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -473,4 +473,31 @@ test("descendants", () => {
   expect(descendants(ps, 10)).toEqual([11, 12, 13]);
   expect(descendants(ps, 13)).toEqual([]);
   expect(descendants("", 10)).toEqual([]);
+});
+
+test("parseWorktreeList and worktreeVerdict", () => {
+  const list = parseWorktreeList([
+    "worktree /code/app", "HEAD aaa", "branch refs/heads/main", "",
+    "worktree /code/worktrees/fix-x", "HEAD bbb", "branch refs/heads/fix/x", "",
+    "worktree /code/worktrees/gone", "HEAD ccc", "detached", "prunable gitdir file points to non-existent location", "",
+  ].join("\n"));
+  expect(list.map((w) => [w.path, w.branch, w.prunable])).toEqual([["/code/app", "main", false], ["/code/worktrees/fix-x", "fix/x", false], ["/code/worktrees/gone", null, true]]);
+
+  const base: WorktreeFacts = { prunable: false, locked: false, branch: "b", changed: [], localOnly: [], pr: null, todos: [] };
+  const merged = { number: 591, url: "u", state: "merged" as const };
+  // T-108's worktree: PR merged, nothing only here
+  expect(worktreeVerdict({ ...base, pr: merged, todos: [{ id: 108, removed: true }] })).toEqual({ verdict: "remove", reasons: ["PR #591 merged", "T-108 removed"] });
+  // renovate-python-packages: PR merged, but 2 commits made after it exist only here
+  expect(worktreeVerdict({ ...base, pr: merged, changed: ["?? x/"], localOnly: ["7dcabeb7 fix", "fe6ccb86 test"] }))
+    .toEqual({ verdict: "check", reasons: ["PR #591 merged", "no TODO", "1 changed file", "2 commits on no remote"] });
+  // AI-1025: live TODO, no PR, 12 commits only here: kept, with the warning
+  expect(worktreeVerdict({ ...base, localOnly: Array(12).fill("x"), todos: [{ id: 12, removed: false }] }))
+    .toEqual({ verdict: "keep", reasons: ["no PR", "T-12 live", "12 commits on no remote"] });
+  expect(worktreeVerdict({ ...base, pr: { ...merged, state: "open" } }).verdict).toBe("keep");
+  expect(worktreeVerdict({ ...base, todos: [{ id: 13, removed: true }, { id: 19, removed: false }] }).verdict).toBe("keep");
+  expect(worktreeVerdict({ ...base, pr: merged, locked: true }).verdict).toBe("check");
+  expect(worktreeVerdict({ ...base, branch: null }).reasons[0]).toBe("detached HEAD");
+  expect(worktreeVerdict({ ...base, prunable: true }).verdict).toBe("remove");
+  // a branch without worktree: no TODO line
+  expect(worktreeVerdict({ ...base, branchOnly: true, pr: merged })).toEqual({ verdict: "remove", reasons: ["PR #591 merged"] });
 });

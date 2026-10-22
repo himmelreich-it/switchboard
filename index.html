@@ -1042,6 +1042,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
     <nav class="set-nav" aria-label="Settings sections">
       <button type="button" class="set-sec" data-act="set-sec" data-id="projects"><span>Topics</span><span id="cProjects" class="n">0</span></button>
       <button type="button" id="agentsNav" class="set-sec" data-act="set-sec" data-id="agents"><span>Agents</span><span id="cAgents" class="n">0</span></button>
+      <button type="button" class="set-sec" data-act="set-sec" data-id="worktrees"><span>Worktrees</span><span id="cWorktrees" class="n"></span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="runs"><span>Runs</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
     </nav>
@@ -1102,6 +1103,13 @@ pre.cmd > .dollar { color: var(--accent-lime); }
         <span id="agentErr" class="mb-field__error" role="alert"></span>
         <div style="display:flex; justify-content:flex-end; gap:8px;"><button type="button" class="mb-btn mb-btn--ghost mb-btn--sm" data-act="agent-add-cancel">Cancel</button><button type="submit" class="mb-btn mb-btn--primary mb-btn--sm">Add agent</button></div>
       </form>
+    </div>
+    <!-- Clean-up: every git worktree of every topic, sorted by what can go. Listing only. -->
+    <div id="secWorktrees" class="set-main" hidden>
+      <div class="set-headrow"><div class="set-title"><h2>Worktrees</h2><span>Every git worktree of every topic, and every local branch without one, sorted by what can go. A scan only reads; Delete asks first.</span></div>
+        <span id="wtAt" class="small"></span><button type="button" id="wtScan" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="wt-scan">Scan</button>
+        <button type="button" id="wtDelete" class="mb-btn mb-btn--danger mb-btn--sm" data-act="wt-delete" hidden>Delete</button></div>
+      <div id="wtList" style="display:flex; flex-direction:column; gap:20px"></div>
     </div>
     <!-- Item 136: how long an agent waits for its background tasks between turns -->
     <div id="secRuns" class="set-main" hidden>
@@ -3281,10 +3289,87 @@ function renderSettings() {
   if (document.activeElement !== $("bgHours")) $("bgHours").value = S.meta?.background_wait_hours ?? 2;
   if (document.activeElement !== $("startedPerTurn")) $("startedPerTurn").value = S.meta?.started_todos_per_turn ?? 10;
   $("secAgents").hidden = S.setSec !== "agents";
+  $("secWorktrees").hidden = S.setSec !== "worktrees";
   $("cAgents").textContent = agentsAll().length;
   if (S.setSec === "projects") renderProjects();
   else if (S.setSec === "agents") renderAgents();
+  else if (S.setSec === "worktrees") renderWorktrees();
   else applyTheme();
+}
+
+// Settings › Worktrees: the last scan, grouped by verdict. The server keeps it until the next scan.
+// S.wtPick: the ticked keys. Each scan ticks every Can remove row; Check first rows the user ticks by hand.
+const WT_GROUPS = [["remove", "Can remove", "success", "PR merged or closed, no TODO works in it, and nothing exists only here."],
+  ["check", "Check first", "amber", "Changed files, commits on no remote, or no PR. Open the lists below to see what. Deleting loses them."],
+  ["keep", "Keep", "neutral", "A live TODO works in it, or its PR is open."]];
+const mb = (kb) => kb == null ? "?" : kb >= 1048576 ? (kb / 1048576).toFixed(1) + " GB" : Math.max(1, Math.round(kb / 1024)) + " MB";
+const wtName = (r) => r.kind === "branch" ? r.branch : r.path.split("/").pop();
+const wtPicked = () => (S.wt?.rows ?? []).filter((r) => r.verdict !== "keep" && S.wtPick?.has(r.key));
+function setWt(scan) { S.wt = scan; S.wtPick = new Set(scan.rows.filter((r) => r.verdict === "remove").map((r) => r.key)); }
+function renderWorktrees() {
+  if (S.wt === undefined) { S.wt = null; call("GET", "/api/worktrees").then((r) => { setWt(r); render(); }, () => {}); }
+  const w = S.wt, busy = !!S.wtBusy, picked = wtPicked();
+  $("wtScan").textContent = S.wtBusy === "scan" ? "Scanning…" : w?.at ? "Rescan" : "Scan";
+  $("wtScan").disabled = busy;
+  $("wtDelete").hidden = !w?.at;
+  $("wtDelete").disabled = busy || !picked.length;
+  $("wtDelete").textContent = S.wtBusy === "delete" ? "Deleting…" : `Delete ${picked.length}${picked.some((r) => r.kb) ? " · " + mb(picked.reduce((n, r) => n + (r.kb ?? 0), 0)) : ""}`;
+  $("wtAt").textContent = w?.at ? `Scanned ${ago(w.at)}` : "";
+  $("cWorktrees").textContent = w?.at ? w.rows.length : "";
+  if (!w?.at) return setHtml($("wtList"), `<span class="small">${busy ? "Reading every topic's worktrees and branches, their changes and their PRs…" : "Not scanned yet."}</span>`);
+  const errs = w.errors.map((e) => `<span class="note" style="color:var(--accent-amber)">${esc(e)}</span>`).join("");
+  setHtml($("wtList"), errs + WT_GROUPS.map(([v, title, tone, hint]) => {
+    const rows = w.rows.filter((r) => r.verdict === v).sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "worktree" ? -1 : 1) || (b.kb ?? 0) - (a.kb ?? 0));
+    if (!rows.length) return "";
+    const kb = rows.reduce((n, r) => n + (r.kb ?? 0), 0), wts = rows.filter((r) => r.kind === "worktree").length;
+    const count = [wts && `${wts} worktree${wts === 1 ? "" : "s"}`, rows.length - wts && `${rows.length - wts} branch${rows.length - wts === 1 ? "" : "es"}`].filter(Boolean).join(", ");
+    return `<div style="display:flex; flex-direction:column; gap:8px">
+      <div class="line" style="display:flex; align-items:center; gap:8px">${badge(title, tone, true)}<span class="small">${count} · ${mb(kb)} · ${esc(hint)}</span></div>
+      <div class="ag-list">${rows.map((r) => {
+        const pr = r.pr ? `<a href="${esc(r.pr.url)}" target="_blank" rel="noopener" data-act="link">PR #${r.pr.number}</a> ${esc(r.pr.state)}` : "";
+        const reasons = r.reasons.map((t) => r.pr && t.startsWith(`PR #${r.pr.number} `) ? pr : esc(t)).join(" · ");
+        const list = (label, items) => items.length ? `<details><summary class="note">${label}</summary><pre class="cmd" style="margin:4px 0 0; white-space:pre-wrap">${esc(items.join("\n"))}</pre></details>` : "";
+        const box = v === "keep" ? "" : `<input type="checkbox" data-wt="${esc(r.key)}" ${S.wtPick.has(r.key) ? "checked" : ""} aria-label="Delete ${esc(wtName(r))}" style="margin-top:4px">`;
+        const where = r.kind === "branch" ? `branch without worktree` : `${esc(r.branch ?? "detached")} · ${mb(r.kb)}`;
+        return `<div class="ag-row" style="grid-template-columns:${box ? "auto " : ""}minmax(0, 1fr); align-items:start">${box}<div class="l">
+          <div class="line"><span class="nm" title="${esc(r.path ?? r.repo)}">${esc(wtName(r))}</span><span class="ml">${esc(r.project)}</span></div>
+          <span class="cmd">${where}${r.last_commit ? ` · last commit ${esc(ago(r.last_commit))}` : ""}</span>
+          <span class="note">${reasons}</span>
+          ${list("Changed files", r.changed)}${list("Commits on no remote", r.localOnly)}</div></div>`;
+      }).join("")}</div></div>`;
+  }).join(""));
+}
+$("wtList").addEventListener("change", (e) => {
+  const k = e.target.dataset?.wt;
+  if (k == null) return;
+  e.target.checked ? S.wtPick.add(k) : S.wtPick.delete(k);
+  render();
+});
+async function scanWorktrees() {
+  S.wtBusy = "scan"; render();
+  try { setWt(await call("POST", "/api/worktrees/scan")); }
+  catch (e) { toast("danger", "Can't scan", e.message); }
+  S.wtBusy = null; render();
+}
+// Asks first. Check first rows are named with what is lost; the server deletes them only if their reasons still read so.
+function deleteWorktrees() {
+  const picked = wtPicked(), risky = picked.filter((r) => r.verdict === "check");
+  const wts = picked.filter((r) => r.kind === "worktree").length, brs = picked.length - wts;
+  const what = [wts && `${wts} worktree${wts === 1 ? "" : "s"} with ${wts === 1 ? "its" : "their"} branch${wts === 1 ? "" : "es"}`, brs && `${brs} branch${brs === 1 ? "" : "es"} without worktree`].filter(Boolean).join(" and ");
+  openDialog({ title: "Delete worktrees", body: `Deletes ${what}. Remote branches and PRs stay.${risky.length ? ` ${risky.length} ${risky.length === 1 ? "is a Check first row: its" : "are Check first rows: their"} changed files and commits on no remote are lost.` : ""} This can't be undone.`,
+    detail: picked.map((r) => `${wtName(r)}${r.verdict === "check" ? "  ⚠ " + r.reasons.join(" · ") : ""}`).join("\n"),
+    buttons: [["Cancel", "ghost"], [`Delete ${picked.length}`, "danger", async () => {
+      S.wtBusy = "delete"; render();
+      try {
+        const r = await call("POST", "/api/worktrees/delete", { items: picked.map((x) => ({ key: x.key, force: x.verdict === "check", seen: x.reasons.join(" · ") })) });
+        S.wt = r.scan;
+        for (const k of r.done) S.wtPick.delete(k);
+        const freed = picked.filter((x) => r.done.includes(x.key)).reduce((n, x) => n + (x.kb ?? 0), 0);
+        if (r.done.length) toast("success", `Deleted ${r.done.length}`, freed ? `${mb(freed)} freed` : r.done.map((k) => wtName(picked.find((x) => x.key === k))).join(", "));
+        if (r.failed.length) toast("danger", `Not deleted: ${r.failed.length}`, r.failed.map((f) => `${wtName(picked.find((x) => x.key === f.key))}: ${f.why}`).join(" · "));
+      } catch (e) { toast("danger", "Not deleted", e.message); }
+      S.wtBusy = null; render();
+    }]] });
 }
 
 // P5: each agent with its state. What it says about itself (version, ways to log in) is asked once per page load,
@@ -3504,6 +3589,8 @@ const ACTIONS = {
       openDialog({ title: "Rescan", body: "You edited this profile. A rescan replaces your text with a new one.", buttons: [["Cancel", "ghost"], ["Rescan", "danger", () => act(call("POST", `/api/projects/${id}/scan`, { force: true }), "Can't rescan")]] });
     }
   },
+  "wt-scan": () => scanWorktrees(),
+  "wt-delete": () => deleteWorktrees(),
   "scan-all": () => act(call("POST", "/api/projects/scan-all"), "Can't scan"),
   "new-project": () => { S.projSel = "new"; fillProjForm(); render(); pName.focus(); },
   "open-settings": () => (S.view === "settings" ? closeSettings() : openSettings()),
