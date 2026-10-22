@@ -217,10 +217,11 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .mb-tab__count { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-left: 6px; }
 .mb-tab[aria-selected="true"] .mb-tab__count { color: var(--accent-lime); }
 .mb-dialog-overlay { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--overlay-scrim); backdrop-filter: blur(4px); }
-.mb-dialog { width: 100%; max-width: 480px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-2); box-shadow: var(--shadow-3); }
+.mb-dialog { width: 100%; max-width: 480px; max-height: 100%; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-2); box-shadow: var(--shadow-3); }
 .mb-dialog__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }
 .mb-dialog__title { font-family: var(--font-display); font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.mb-dialog__body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.mb-dialog__body { padding: 20px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.mb-dialog__body pre.box { min-height: 0; overflow: auto; }   /* a long list scrolls; the buttons stay on screen */
 .mb-dialog__body p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
 /* design v6: bottom right, one line of text with a glowing square; up to three stack (item 125) */
 .toasts { position: fixed; right: 20px; bottom: 20px; z-index: 900; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; max-width: 380px; }
