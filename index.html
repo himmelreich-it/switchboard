@@ -454,6 +454,13 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .bl-row:hover { background: var(--surface-2); }
 .bl-row .t { font-size: 14px; line-height: 1.4; text-wrap: pretty; overflow-wrap: anywhere; }
 .bl-row .acts { display: flex; align-items: center; gap: 8px; }
+/* Running view (item 148): agent tasks and listening ports */
+.rn-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1.4fr) 56px; gap: 16px; align-items: center; min-height: 44px; padding: 6px 12px 6px 16px; cursor: pointer; transition: background var(--fast); }
+.rn-row:hover { background: var(--surface-2); }
+.pt-row { display: grid; grid-template-columns: 88px minmax(0, 1.2fr) minmax(0, 1fr) 110px 72px 150px; gap: 14px; align-items: center; min-height: 44px; padding: 6px 12px 6px 16px; }
+.pt-row .acts { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.pt-row .tchip { justify-self: start; background: none; color: var(--text-secondary); cursor: pointer; }
+.pt-row .tchip:hover { border-color: var(--accent-lime); color: var(--text-primary); }
 .rm-toggle { align-self: flex-start; height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
 .rm-toggle:hover { border-color: var(--border-default); color: var(--text-primary); }
 .rows.removed { background: var(--bg-base); box-shadow: none; }
@@ -956,6 +963,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
   <nav class="views" role="tablist" aria-label="Views">
     <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="board" title="Started work · B"><span id="waitTodos" class="wait" hidden></span><span>Board</span><span id="cBoard" class="n">0</span></div>
     <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="backlog" title="Not started yet · B"><span>Backlog</span><span id="cBacklog" class="n">0</span></div>
+    <div role="tab" tabindex="0" class="navtab" data-act="nav" data-id="running" title="Background tasks of the agents, and what listens on a port"><span>Running</span><span id="cRunning" class="n">0</span></div>
   </nav>
   <div class="drag-fill"></div>
   <div class="tb-right">
@@ -1353,7 +1361,7 @@ const S = {
 };
 try { S.opOpen = localStorage.getItem("switchboard-operator-open") === "1"; } catch (e) {}
 try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catch (e) {}
-try { S.board = localStorage.getItem("switchboard-board-view") === "backlog" ? "backlog" : "board"; } catch (e) {}
+try { const v = localStorage.getItem("switchboard-board-view"); S.board = v === "backlog" || v === "running" ? v : "board"; } catch (e) {}
 S.editing = null;   // first instruction being edited (items 94-97): {todoId, msgId, text, err}
 S.fileRoot = {};      // TODO id -> "todo" | "worktree" | "project" (item 101), until reload
 S.tabOf = {}; S.lastFile = {};   // TODO id -> its tab and its last opened file, restored when the card is opened again; until reload
@@ -1617,6 +1625,18 @@ function openNew() {
 }
 function closeNew() { S.newOpen = false; render(); }
 function openBoard(v) { S.focusFrom = null; goOverview(); setBoard(v); }
+async function scanPorts() {
+  S.portsScanning = true; render();
+  try { S.ports = await call("GET", "/api/ports"); }
+  catch (e) { toast("danger", "Scan failed", e.message); }
+  S.portsScanning = false; render();
+}
+async function stopPort(r) {
+  try { await call("POST", "/api/ports/stop", { kind: r.kind, key: r.key }); }
+  catch (e) { return toast("danger", "Not stopped", e.message); }
+  toast("success", "Stopped", `${r.name} · ${r.ports.map((p) => ":" + p).join(" ")}`);
+  setTimeout(scanPorts, 1000);   // SIGTERM takes a moment; the scan after it shows what is left
+}
 function setBoard(v) {
   S.board = v;
   try { localStorage.setItem("switchboard-board-view", v); } catch (e) {}
@@ -1630,6 +1650,14 @@ function setFilter(id) {
 
 // ---------- drafts (R19): saved to the server 400 ms after the last keystroke ----------
 let draftTimer = 0, draftPending = null;
+// Opens the TODO with `text` on a new line after its draft, to edit before sending.
+function toComposer(tid, text) {
+  select(tid);
+  const key = `todo:${tid}`;
+  if (drafts[key] === undefined) S.pendingPill = { key, text };   // the saved draft is not loaded yet; the detail loader appends it
+  else { appendPill(key, text); composer.focus(); }
+  render();
+}
 function appendPill(key, text) {   // a pill's text on a new line after the draft
   const d = drafts[key] ?? "";
   const next = d.trim() ? d.replace(/\s*$/, "\n") + text : text;
@@ -2063,6 +2091,7 @@ function renderHeader() {
   const ideas = lv.filter(isIdea).length;   // all projects, whatever the filter (item 63)
   $("cBacklog").textContent = ideas;
   $("cBoard").textContent = lv.length - ideas;
+  $("cRunning").textContent = lv.reduce((n, t) => n + (t.background ?? 0), 0);
   $("waitTodos").hidden = !n;
   $("waitTodos").title = `${n} waiting on you`;
   // Focus sits under the tab it was opened from; in Settings neither tab is active.
@@ -2103,7 +2132,8 @@ const lastWord = (t) => {
 
 function renderOverview() {
   const backlog = S.board === "backlog";
-  $("ov").classList.toggle("backlog", backlog);
+  $("ov").classList.toggle("backlog", backlog || S.board === "running");
+  if (S.board === "running") return setHtml($("ov"), runningHtml());
   // Not-started TODOs have no topic yet (801), so the backlog shows them all, without the filter.
   const lv = live(), fp = backlog ? null : filterProject();
   const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
@@ -2367,6 +2397,36 @@ function backlogHtml(rows) {
   return head + list + rm;
 }
 
+// Item 148: the Running view. Agent tasks come with the TODO list; Ports only on Scan (S.ports).
+function runningHtml() {
+  const tasks = live().flatMap((t) => (t.background_tasks ?? []).map((b) => ({ t, b })));
+  const head1 = `<div class="sec-head"><span class="sq8" style="background:var(--accent-cyan)"></span><h2>Agent tasks</h2><span class="cnt" style="color:var(--accent-cyan)">${tasks.length}</span><span class="sub">Background commands the agents started. Ask the agent to stop one.</span></div>`;
+  const list1 = !tasks.length ? '<span class="empty">No agent runs a background task.</span>'
+    : `<div class="rows">${tasks.map(({ t, b }) => `<div class="rn-row" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="rn:${t.id}:${esc(b.id)}">
+        <span class="num">${tNum(t)}</span><span class="t ellipsis" title="${esc(t.title)}">${esc(t.title)}</span>
+        <span class="mono ellipsis" style="font-size:12px" title="${esc(b.description || b.id)}">${esc(b.description || `task ${b.id}`)}</span>
+        <span class="mono muted" style="font-size:12px; text-align:right" title="${b.since ? "first seen " + esc(new Date(b.since).toLocaleString()) : ""}">${b.since ? esc(shortAge(b.since)) : ""}</span></div>`).join("")}</div>`;
+  const P = S.ports;
+  const note = !P ? "" : P.unsupported ? "Not available on Windows." : `scanned ${esc(new Date(P.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}${P.docker === "ok" ? "" : ` · Docker: ${esc(P.docker)}`}`;
+  const head2 = `<div class="sec-head"><span class="sq8" style="background:var(--accent-blue)"></span><h2>Ports</h2>${P ? `<span class="cnt" style="color:var(--accent-blue)">${P.rows.length}</span>` : ""}<span class="sub">${note || "Every process and Docker container that listens on a TCP port."}</span>
+    <span class="right"><button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="ports-scan" data-fk="ports-scan"${S.portsScanning ? " disabled" : ""}>${S.portsScanning ? "Scanning…" : "Scan"}</button></span></div>`;
+  const tilde = (f) => (P?.home && f.startsWith(P.home) ? "~" + f.slice(P.home.length) : f);
+  const ownerHtml = (r) => {
+    const t = r.todo_id && S.todos.find((x) => x.id === r.todo_id), p = r.project_id && S.projects.find((x) => x.id === r.project_id);
+    return t ? `<button type="button" class="tchip" data-act="open" data-id="${t.id}" title="${esc(t.title)}">${tNum(t)}</button>` : p ? `<span class="muted ellipsis" title="Topic folder">${esc(p.name)}</span>` : '<span class="muted">—</span>';
+  };
+  const list2 = !P ? '<span class="empty">Not scanned yet.</span>' : P.unsupported ? "" : !P.rows.length ? '<span class="empty">Nothing listens on a TCP port.</span>'
+    : `<div class="rows">${P.rows.map((r, i) => `<div class="pt-row">
+        <span class="mono" style="font-size:13px">${r.ports.map((p) => ":" + p).join(" ")}</span>
+        <div style="display:flex; flex-direction:column; gap:2px; min-width:0"><span class="ellipsis">${r.kind === "container" ? badge("Docker", "blue") + " " : ""}${esc(r.name)}</span><span class="mono muted ellipsis" style="font-size:11px" title="${esc(r.command)}">${esc(r.command)}</span></div>
+        <span class="mono muted ellipsis" style="font-size:11px" title="${esc(r.folder)}">${esc(tilde(r.folder) || "—")}</span>
+        ${ownerHtml(r)}
+        <span class="mono muted" style="font-size:12px; text-align:right; white-space:nowrap" title="${r.since ? "started " + esc(new Date(r.since).toLocaleString()) : esc(r.age)}">${esc(r.since ? shortAge(r.since) : r.age.replace(/ ago$/, ""))}</span>
+        <span class="acts">${r.todo_id ? btn(`Ask ${tNum({ id: r.todo_id })}`, "port-ask", { v: "ghost", id: i }) : ""}${r.self ? '<span class="muted" style="font-size:12px">Switchboard</span>' : btn("Stop", "port-stop", { v: "ghost", id: i })}</span>
+      </div>`).join("")}</div>`;
+  return `<section class="sec" aria-label="Agent tasks">${head1}${list1}</section><section class="sec" aria-label="Ports">${head2}${list2}</section>`;
+}
+
 // ---------- the operator side panel (design v6) ----------
 function renderOperator() {
   const panel = $("opPanel");
@@ -2496,7 +2556,7 @@ function gitHead(t) {
 
 function renderFocusHead(t, d) {
   const running = t.status === "running", perm = running && t.permission, sessions = d?.sessions ?? [], n = sessions.length || t.session_count || 0;
-  const from = S.focusFrom === "backlog" ? "Backlog" : "Board";
+  const from = S.focusFrom === "backlog" ? "Backlog" : S.focusFrom === "running" ? "Running" : "Board";
   // Row 1: back, number, title, status, actions, the waiting queue
   let status = "";
   if (perm) status += badge("Needs approval", "amber", true);
@@ -3375,18 +3435,26 @@ const ACTIONS = {
     const t = el.closest(".card") ? S.todos.find((x) => x.id === tid) : cur();
     const text = t?.suggestions?.[i];
     if (!text) return;
-    if (e?.shiftKey) {
-      select(tid);
-      const key = `todo:${tid}`;
-      if (drafts[key] === undefined) S.pendingPill = { key, text };   // the saved draft is not loaded yet; the detail loader appends it
-      else { appendPill(key, text); composer.focus(); }
-      return render();
-    }
+    if (e?.shiftKey) return toComposer(tid, text);
     const prev = t.suggestions, copies = [S.todos.find((x) => x.id === tid), S.detail?.todo.id === tid ? S.detail.todo : null].filter(Boolean);
     for (const c of copies) c.suggestions = null;   // gone at once; the server clears them too
     render();
     try { await call("POST", `/api/todos/${tid}/messages`, { body: text, suggested: true }); if (S.sel !== tid || S.mode !== "focus") toast("info", `Sent to T-${tid}`, "· " + short(text, 48)); }
     catch (err) { for (const c of copies) c.suggestions = prev; toast("danger", "Not sent", err.message); render(); }
+  },
+  // Item 148: the Running view's Ports.
+  "ports-scan": () => scanPorts(),
+  "port-ask": (id) => {
+    const r = S.ports?.rows[Number(id)];
+    if (r) toComposer(r.todo_id, r.kind === "container" ? `Stop the Docker container ${r.name} (port ${r.ports.join(", ")}).`
+      : `Stop the service on port ${r.ports.join(", ")} (\`${r.command || r.name}\`).`);
+  },
+  "port-stop": (id) => {
+    const r = S.ports?.rows[Number(id)];
+    if (!r) return;
+    const body = r.kind === "container" ? `Runs docker stop ${r.name}. The container keeps its data and can be started again.`
+      : `Ends ${r.name} (pid ${r.key}) and the processes it started: SIGTERM, then SIGKILL 5 s later. Unsaved work in it is lost.`;
+    openDialog({ title: "Stop", body, detail: `${r.ports.map((p) => ":" + p).join(" ")}  ${r.command}`, buttons: [["Cancel", "ghost"], ["Stop", "danger", () => stopPort(r)]] });
   },
   // Backlog and Board: from Settings, the tab Focus sits under returns to Focus; otherwise to that side's overview.
   nav: (id) => (S.view !== "todos" && S.mode === "focus" && id === (S.focusFrom ?? S.board) ? (S.settingsOpen = false, setView("todos")) : (S.settingsOpen = false, openBoard(id))),

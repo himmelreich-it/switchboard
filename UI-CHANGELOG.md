@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-22 · Running tab: agent background tasks and listening ports
+- Where: title bar, a third tab "Running n" after Backlog; its own screen.
+- Now: the tab counts the background tasks the agents run, across all TODOs. Its screen has two sections. "Agent tasks" lists each background task: TODO number, TODO title, the task's name and its age ("12m"); a click opens the TODO; no stop button, since the user asks the agent. "Ports" has a Scan button; after a scan it lists every process and Docker container that listens on a port: the ports (":3000"), the process name or container name with a "Docker" badge, the full command in small mono text, its folder, the TODO it belongs to (a "T-42" chip that opens it) or its topic name or "—", its age, and buttons "Ask T-42" and "Stop". The header says "scanned 10:41" and "Docker: not running" when Docker did not answer. Stop asks in a dialog ("Stop", what it ends, Cancel / Stop) and then shows the toast "Stopped". Ask T-42 opens that TODO with "Stop the service on port 3000 (`npm run dev`)." in its message box. Switchboard's own row shows "Switchboard" instead of Stop.
+- Why: the user wanted to see which background commands and services run, per TODO, and stop a leftover dev server or container directly or by asking the agent.
+- Design question: is a third tab the right home, or should this be a panel on the board? With 30 listening processes (editor helpers, music app) the list is long: should it hide processes that belong to no TODO or topic behind a "Show all" toggle? Rows of Switchboard's own agent processes (name "claude") have a plain Stop today: should they read "agent" instead, like Switchboard's own row?
+
 ### 2026-10-21 · Web addresses in chat messages are links
 - Where: Focus › Chat, the agent's messages and the user's own messages.
 - Now: a web address starting with http:// or https:// in a chat message shows in the link color and opens in the browser on click. A full stop, comma or closing bracket right after the address stays plain text. The rest of the message is unchanged plain text.

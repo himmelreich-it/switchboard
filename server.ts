@@ -4,14 +4,14 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  MODES, configIn, contextFile, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status,
 } from "./lib";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
-  CONTRACT, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
+  CONTRACT, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
@@ -319,9 +319,63 @@ export async function summaries(where = "1", args: any[] = []) {
       branch: git?.branch ?? null, git, pr: pr ? { ...pr, via: r.pr_number ? "set_pr" : null } : null,
       pr_checked_at: store?.at ?? null, gh_error: store?.error ?? null,
       // Item 136: the agent's background tasks still running, and whether the TODO shows running only for them.
-      background: backgroundCount(r.id), background_wait: backgroundWait(r),
+      background: backgroundCount(r.id), background_wait: backgroundWait(r), background_tasks: backgroundTasks(r.id),
     };
   }));
+}
+
+// ---------- ports (item 148): what listens on a TCP port, and which TODO or topic folder it runs in ----------
+
+// `since`: a process's start; a container has Docker's own text ("17 hours ago") in `age` instead.
+type PortRow = { kind: "process" | "container"; key: string; ports: number[]; name: string; command: string; folder: string; since: string | null; age: string;
+  todo_id: number | null; project_id: number | null; self: boolean };
+// The last scan's rows: Stop only acts on a pid or container it listed, never on one the request names on its own.
+let lastScan: PortRow[] = [];
+
+async function scanPorts() {
+  if (process.platform === "win32") return { unsupported: true, rows: [], docker: "not checked", at: now(), home: homedir() };
+  // lsof exits 1 when nothing listens; the output is still read.
+  const listen = parseListen((await sh(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"], { timeout: 15_000 })).out);
+  const pids = listen.map((l) => l.pid);
+  const [cwd, ps, dk] = await Promise.all([
+    pids.length ? sh(["lsof", "-a", "-p", pids.join(","), "-d", "cwd", "-Fn"], { timeout: 15_000 }).then((r) => parseCwd(r.out)) : new Map<number, string>(),
+    sh(["/bin/ps", "-A", "-o", "pid=,etime=,command="]).then((r) => parsePs(r.out)),
+    Bun.which("docker") ? sh(["docker", "ps", "--format", DOCKER_FORMAT], { timeout: 10_000 }) : null,
+  ]);
+  // lsof reports real paths (macOS /var is /private/var), so the stored folders are resolved too.
+  const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+  const todos = (db.query("SELECT id, worktree_path FROM todos WHERE removed_at IS NULL AND worktree_path IS NOT NULL").all() as { id: number; worktree_path: string }[])
+    .map((t) => ({ ...t, worktree_path: real(t.worktree_path) }));
+  const projects = (db.query("SELECT id, local_path FROM projects").all() as { id: number; local_path: string }[]).map((p) => ({ ...p, local_path: real(p.local_path) }));
+  const containers = dk?.ok ? parseDocker(dk.out) : [];
+  // A published container port also listens in Docker's own process (OrbStack, Docker Desktop): the container's row shows it.
+  const taken = new Set(containers.flatMap((c) => c.ports));
+  const rows: PortRow[] = [
+    ...listen.map((l) => ({ ...l, ports: l.ports.filter((p) => !taken.has(p)) })).filter((l) => l.ports.length).map((l) => {
+      const folder = cwd.get(l.pid) ?? "", p = ps.get(l.pid);
+      return { kind: "process" as const, key: String(l.pid), ports: l.ports, name: l.name, command: p?.command ?? "", folder,
+        since: p ? new Date(Date.now() - p.secs * 1000).toISOString() : null, age: "",
+        ...ownerOf(folder, todos, projects), self: l.pid === process.pid || l.pid === process.ppid };
+    }),
+    ...containers.filter((c) => c.ports.length).map((c) => ({ kind: "container" as const, key: c.name, ports: c.ports, name: c.name, command: c.image,
+      folder: c.folder, since: null, age: c.age, ...ownerOf(c.folder, todos, projects), self: false })),
+  ].sort((a, b) => a.ports[0]! - b.ports[0]!);
+  lastScan = rows;
+  const docker = !dk ? "not installed" : dk.ok ? "ok" : "not running";
+  return { unsupported: false, rows, docker, at: now(), home: homedir() };
+}
+
+// Stop: a process and the processes it started (SIGTERM, SIGKILL 5 s later), or `docker stop` for a container.
+async function stopPort(kind: string, key: string) {
+  const row = lastScan.find((r) => r.kind === kind && r.key === key);
+  if (!row) throw httpError(409, "not in the last scan: scan again");
+  if (row.self) throw httpError(400, "that is Switchboard itself");
+  if (kind === "container") {
+    const r = await sh(["docker", "stop", key], { timeout: 30_000 });
+    if (!r.ok) throw httpError(500, `docker stop failed: ${r.err}`);
+  } else killTree(Number(key), "SIGTERM");
+  lastScan = lastScan.filter((r) => r !== row);
+  return json({ ok: true });
 }
 
 function messageOut(id: number) {
@@ -834,6 +888,8 @@ async function api(req: Request, path: string): Promise<Response> {
   // ----- TODOs -----
 
   if (path === "/api/todos" && method === "GET") return json(await summaries());
+  if (path === "/api/ports" && method === "GET") return json(await scanPorts());
+  if (path === "/api/ports/stop" && method === "POST") return stopPort(String(body.kind), String(body.key));
   if (path === "/api/todos" && method === "POST") {
     const instruction = String(body.instruction ?? "").trim();
     if (!instruction) return fail("the first instruction is required");
