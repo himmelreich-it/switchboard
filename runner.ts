@@ -945,10 +945,7 @@ function routingPrompt(todoId: number, asked: Routing | null) {
     "# Topics",
     ...topics.map((r) => `## ${r.name}\nFolder: ${r.local_path}\n\n${r.profile?.trim() || "No profile yet."}`),
     `# The TODO: T-${todoId}`,
-    ...msgs.map((m) => {
-      const files = attachmentsOf(m.id).map((a) => a.name);
-      return m.body + (files.length ? `\n(Attached: ${files.join(", ")})` : "");
-    }),
+    ...msgs.map((m) => withAttachments(m.body, attachmentsOf(m.id).map((a) => a.path))),
     asked?.state === "asking" && `# Your question\n\nYou asked: ${asked.question}\nOptions: ${[...asked.options.map((o) => o.name), "No topic"].join(", ")}.\nThe user's reply is the last message above. If it is not a clear choice, ask again.`,
   ].filter(Boolean).join("\n\n");
 }
