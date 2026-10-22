@@ -11,7 +11,7 @@ import { deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "
 import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOST, PORT, addEvent, addMessage, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
+  HOST, PORT, addEvent, addMessage, attachmentsOf, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
 export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule"].map((n) => `mcp__app__${n}`);
@@ -288,8 +288,13 @@ function readTools(s: McpServer, used: Used) {
     used("read_todo", `T-${todo_id}`);
     const [s] = await summaries("t.id = ?", [todo_id]);
     if (!s) return err(`no TODO T-${todo_id}`);
-    const messages = db.query(`SELECT m.author, m.body, m.state, m.committed_at AS at, m.session_no, f.path AS file
-      FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.todo_id = ? ORDER BY m.id`).all(todo_id) as any[];
+    const messages = (db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.session_no, f.path AS file
+      FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.todo_id = ? ORDER BY m.id`).all(todo_id) as any[])
+      // the user's uploads as absolute paths, for Read (an image opens as an image)
+      .map(({ id, ...m }) => {
+        const paths = attachmentsOf(id).map((a) => a.path);
+        return paths.length ? { ...m, attachments: paths } : m;
+      });
     const sessions = sessionsOf(todo_id);
     const live = sessions.at(-1)?.no ?? null;
     const label = (no: number) => (messages.find((m) => m.session_no === no && m.author.startsWith("user"))?.body ?? "").split("\n")[0];
@@ -305,14 +310,20 @@ function readTools(s: McpServer, used: Used) {
     });
   });
   s.registerTool("read_file", {
-    description: "Read one of a TODO's attached markdown files by its name.",
+    description: "Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.",
     inputSchema: { todo_id: z.number().int(), name: z.string() },
   }, async ({ todo_id, name }) => {
     used("read_file", `T-${todo_id} ${name}`);
-    const f = filesOf(todo_id).find((x) => basename(x.path) === name);
-    if (!f) return err(`T-${todo_id} has no file named ${name}`);
-    if (!existsSync(f.path)) return err(`${f.path} no longer exists on disk`);
-    return ok(readFileSync(f.path, "utf8"));
+    const uploads = db.query("SELECT a.name, a.path FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.todo_id = ? ORDER BY a.id")
+      .all(todo_id) as { name: string; path: string }[];
+    const path = filesOf(todo_id).find((x) => basename(x.path) === name)?.path
+      ?? uploads.find((a) => basename(a.path) === name || a.name === name)?.path;
+    if (!path) return err(`T-${todo_id} has no file named ${name}`);
+    if (!existsSync(path)) return err(`${path} no longer exists on disk`);
+    const data = readFileSync(path);
+    // ponytail: a NUL byte means binary (every PNG, JPEG, PDF has one); UTF-16 text would count as binary too
+    if (data.includes(0)) return ok(`${path} is not a text file. Open it with Read.`);
+    return ok(data.toString("utf8"));
   });
 }
 
