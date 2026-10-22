@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, backgroundLevel, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, backgroundLevel, backgroundNames, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
   type Ctx, type Permission, type Schedule, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -93,8 +93,9 @@ type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Pro
 
 // The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
-// `bg` is its background tasks still running (item 136), oldest first.
-type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
+// `bg` is its background tasks still running (item 136), oldest first; `bgNames` and `bgSince` their names and when the app first
+// saw each (item 148).
+type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; bgNames: Record<string, string>; bgSince: Record<string, string>; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
 const agents = new Map<Key, Agent>();
 
 // `live` is set once the agent process is ready; `cancel` records a Stop that came before that; `kill` is the fallback
@@ -108,6 +109,15 @@ let shuttingDown = false;
 export const isRunning = (key: Key) => running.has(key);
 // Item 136: how many background tasks a TODO's agent has running. With no turn running the TODO still shows running.
 export const backgroundCount = (todoId: number) => agents.get(todoId)?.bg.length ?? 0;
+// Item 148: the same tasks with their names and start, for the Running view. The name is "" until the SDK gives one.
+export function backgroundTasks(todoId: number) {
+  const a = agents.get(todoId);
+  return a ? a.bg.map((id) => ({ id, description: a.bgNames[id] ?? "", since: a.bgSince[id] ?? null })) : [];
+}
+// Notes the first time each running task was seen.
+function seen(a: Agent) {
+  for (const id of a.bg) a.bgSince[id] ??= new Date().toISOString();
+}
 // A worker's open permission request (P3): the agent blocks on it, so there is at most one per TODO. The user's
 // answer, a Stop, a removal, a shutdown or the end of the turn settles it.
 const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutcome) => void }>();
@@ -351,14 +361,17 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     const bg = backgroundStep(self.bg, u);
     if (bg !== self.bg && typeof key === "number") emit({ type: "todo", id: key });
     self.bg = bg;
+    seen(self);
     if (sink.s) sink.s.onUpdate(u);
     else if (typeof key === "number" && agents.get(key) === self) unprompted(key, self, u);
   };
   const onSdk = (m: any) => {
     if (!self) return;
-    const bg = backgroundLevel(self.bg, m), had = self.bg.length;
-    if (bg !== self.bg && typeof key === "number") emit({ type: "todo", id: key });
+    const bg = backgroundLevel(self.bg, m), had = self.bg.length, names = backgroundNames(self.bgNames, m);
+    if ((bg !== self.bg || names !== self.bgNames) && typeof key === "number") emit({ type: "todo", id: key });
     self.bg = bg;
+    self.bgNames = names;
+    seen(self);
     // The last task ended between turns: the TODO no longer waits. Claude's follow-up, if any, runs as usual.
     if (had && !bg.length && typeof key === "number" && agents.get(key) === self && !running.has(key) && todoRow(key)?.status === "running") {
       setTodo(key, { status: statusAfterRun(todoRow(key)!.attention) });
@@ -378,7 +391,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     revoke(g.secret);
     throw e;
   }
-  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint, bg: [] });
+  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint, bg: [], bgNames: {}, bgSince: {} });
   agents.set(key, a);
   // A process that dies between turns takes its background tasks along.
   live.exited.then(() => agents.get(key) === a && !running.has(key) && closeAgent(key));

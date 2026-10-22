@@ -101,6 +101,78 @@ export function backgroundLevel(ids: string[], m: any): string[] {
   return next.length === ids.length && next.every((id, i) => id === ids[i]) ? ids : next;
 }
 
+// The names the SDK's level gives the tasks (their Bash `description`), kept by id; only the shell tasks of
+// backgroundLevel, so a subagent starting does not refetch the board. A task that joined by its Bash result before the
+// level arrived has no name until then.
+export function backgroundNames(names: Record<string, string>, m: any): Record<string, string> {
+  if (m?.type !== "system" || m.subtype !== "background_tasks_changed" || !Array.isArray(m.tasks)) return names;
+  const add = m.tasks.filter((t: any) => t.task_type === "local_bash" && !t.ambient && t.description && names[t.task_id] !== t.description);
+  return add.length ? { ...names, ...Object.fromEntries(add.map((t: any) => [String(t.task_id), String(t.description)])) } : names;
+}
+
+// ---------- ports (the Running view's Scan) ----------
+
+// `lsof -nP -iTCP -sTCP:LISTEN -Fpcn`: a `p<pid>` line, a `c<name>` line, then an `f`/`n<addr:port>` pair per socket.
+// One entry per process, its ports ascending (IPv4 and IPv6 of one port count once).
+export function parseListen(out: string): { pid: number; name: string; ports: number[] }[] {
+  const procs = new Map<number, { pid: number; name: string; ports: number[] }>();
+  let cur: { pid: number; name: string; ports: number[] } | null = null;
+  for (const line of out.split("\n")) {
+    const v = line.slice(1);
+    if (line[0] === "p") { const pid = Number(v); cur = procs.get(pid) ?? { pid, name: "", ports: [] }; procs.set(pid, cur); }
+    else if (line[0] === "c" && cur) cur.name = v;
+    else if (line[0] === "n" && cur) {
+      const port = Number(v.slice(v.lastIndexOf(":") + 1));
+      if (port && !cur.ports.includes(port)) cur.ports.push(port);
+    }
+  }
+  return [...procs.values()].filter((p) => p.ports.length).map((p) => ({ ...p, ports: p.ports.sort((a, b) => a - b) }));
+}
+
+// `lsof -a -p <pids> -d cwd -Fn`: `p<pid>`, then `fcwd`, then `n<folder>`.
+export function parseCwd(out: string): Map<number, string> {
+  const dirs = new Map<number, string>();
+  let pid = 0;
+  for (const line of out.split("\n")) {
+    if (line[0] === "p") pid = Number(line.slice(1));
+    else if (line[0] === "n" && pid) dirs.set(pid, line.slice(1));
+  }
+  return dirs;
+}
+
+// `ps -A -o pid=,etime=,command=`: seconds since start (etime is "[[dd-]hh:]mm:ss") and the full command per pid.
+export function parsePs(out: string): Map<number, { secs: number; command: string }> {
+  const rows = new Map<number, { secs: number; command: string }>();
+  for (const line of out.split("\n")) {
+    const m = line.trim().match(/^(\d+)\s+(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)\s+(.*)$/);
+    if (m) rows.set(Number(m[1]), { secs: ((Number(m[2] ?? 0) * 24 + Number(m[3] ?? 0)) * 60 + Number(m[4])) * 60 + Number(m[5]), command: m[6]! });
+  }
+  return rows;
+}
+
+// `docker ps --format` with DOCKER_FORMAT: one container per line. Only published ports count: "0.0.0.0:8000->8000/tcp,
+// [::]:8000->8000/tcp" is 8000; an unpublished "8443/tcp" is not on the host.
+export const DOCKER_FORMAT = '{{.Names}}|{{.Ports}}|{{.Label "com.docker.compose.project.working_dir"}}|{{.RunningFor}}|{{.Image}}';
+export function parseDocker(out: string): { name: string; ports: number[]; folder: string; age: string; image: string }[] {
+  return out.split("\n").filter((l) => l.includes("|")).map((l) => {
+    const [name = "", ports = "", folder = "", age = "", image = ""] = l.split("|");
+    const host = [...ports.matchAll(/:(\d+)->/g)].map((m) => Number(m[1]));
+    return { name, ports: [...new Set(host)].sort((a, b) => a - b), folder, age, image };
+  });
+}
+
+// Whose folder a process or container runs in: the TODO whose worktree holds it, else the topic whose folder does.
+// The deepest folder wins, so a worktree inside the topic folder beats the topic.
+// ponytail: by folder only. A process started from `/` or that changed folder matches nothing; the process tree
+// below an agent process would catch it while that agent lives.
+export function ownerOf(folder: string, todos: { id: number; worktree_path: string | null }[], projects: { id: number; local_path: string | null }[]) {
+  if (!folder) return { todo_id: null, project_id: null };
+  const within = (dir: string | null) => !!dir && (folder === dir || isInside(folder, dir));
+  const t = todos.filter((x) => within(x.worktree_path)).sort((a, b) => b.worktree_path!.length - a.worktree_path!.length)[0];
+  const p = projects.filter((x) => within(x.local_path)).sort((a, b) => b.local_path!.length - a.local_path!.length)[0];
+  return { todo_id: t?.id ?? null, project_id: p?.id ?? null };
+}
+
 // Between turns the agent can work on its own, e.g. a background task's follow-up. Such a cycle starts with any of
 // these updates (not a title or a command list) and ends with a usage_update whose origin is not the user's turn.
 export const agentActivity = (u: any) =>
