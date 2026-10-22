@@ -498,4 +498,6 @@ test("parseWorktreeList and worktreeVerdict", () => {
   expect(worktreeVerdict({ ...base, pr: merged, locked: true }).verdict).toBe("check");
   expect(worktreeVerdict({ ...base, branch: null }).reasons[0]).toBe("detached HEAD");
   expect(worktreeVerdict({ ...base, prunable: true }).verdict).toBe("remove");
+  // a branch without worktree: no TODO line
+  expect(worktreeVerdict({ ...base, branchOnly: true, pr: merged })).toEqual({ verdict: "remove", reasons: ["PR #591 merged"] });
 });

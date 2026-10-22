@@ -410,11 +410,13 @@ export type WorktreeFacts = {
   localOnly: string[];    // "<sha> <subject>" of commits on no remote branch and not in the PR
   pr: { number: number; url: string; state: "open" | "merged" | "closed" } | null;
   todos: { id: number; removed: boolean }[];
+  branchOnly?: boolean;   // a local branch no worktree has checked out: no TODO can work in it
 };
 export type Verdict = { verdict: "remove" | "check" | "keep"; reasons: string[] };
 
 // Keep: a live TODO works in it, or its PR is open. Remove: its PR is merged or closed and nothing in it exists only
 // here (no changed file, no commit on no remote). Check: anything else. Keep rows still list what exists only here.
+// Also for a branch without a worktree (branchOnly): then only its PR and its commits count.
 export function worktreeVerdict(f: WorktreeFacts): Verdict {
   if (f.prunable) return { verdict: "remove", reasons: ["folder is gone; git still lists it"] };
   const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
@@ -426,7 +428,7 @@ export function worktreeVerdict(f: WorktreeFacts): Verdict {
   ].filter((r): r is string => !!r);
   const pr = f.pr ? `PR #${f.pr.number} ${f.pr.state}` : f.branch ? "no PR" : "detached HEAD";
   const todo = live.length ? `${live.join(", ")} live` : f.todos.length ? `${f.todos.map((t) => `T-${t.id}`).join(", ")} removed` : "no TODO";
-  const reasons = [pr, todo, ...risks];
+  const reasons = [pr, ...(f.branchOnly ? [] : [todo]), ...risks];
   if (live.length || f.pr?.state === "open") return { verdict: "keep", reasons };
   return { verdict: f.pr && !risks.length ? "remove" : "check", reasons };
 }
