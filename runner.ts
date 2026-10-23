@@ -7,13 +7,13 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, backgroundLevel, backgroundNames, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
-  type Ctx, type Permission, type Schedule, type ToolMeta,
+  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOME, addEvent, addMessage, artifactDir, attachmentsOf, db, emit, filesOf, getMeta, liveSessionNo, now, projectRow, refreshPrs,
-  saveAttachments, sessionsOf, setEvent, setMeta, setTodo, todoRow, type Upload,
+  saveAttachments, sessionsOf, setEvent, setMeta, setTodo, todoRow, type Todo, type Upload,
 } from "./server";
 
 // The fixed app contract (R31), appended to the claude_code system prompt before the topic intro and the topic prompt.
@@ -50,9 +50,20 @@ The app's MCP tools write to the TODO, which the user sees on its card and in it
 
 The TODO's own agent may be working in the same folder or worktree at the same time. Check with the user before you commit, switch branches or rewrite history.`;
 
+// Auto effort: Claude's worker switches its effort level itself (mcp__app__set_effort), after the levels in
+// claude.dev/blog/spending-your-effort. max stays a user choice.
+const EFFORT_RULES = `
+- Your effort level is part of the job. The app starts you at the level last picked for this TODO (medium when none). Switch it with mcp__app__set_effort when the kind of work changes:
+  - low: brainstorming, sketches, easy edits, short answers.
+  - medium: regular feature work.
+  - high: bug fixes in existing code, verification, tests, reviews, anything with hidden edge cases.
+  - xhigh: security reviews, performance work, long autonomous work on a hard problem.
+- For a feature: build on low, check the gist with the user, then switch to high to verify and test. Switch back down when that is done.
+- When the user set the effort, set_effort is refused: keep their level.`;
+
 // The contract for one agent's session: the TODO's folder filled in, and the app tools named the way that agent sees them.
 export const contractFor = (agent: string, dir: string) =>
-  CONTRACT.replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
+  (CONTRACT + (isClaude(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
 
 // What an agent without a system-prompt append gets in front of the first prompt of each session (design §9). After a
 // restart the resumed session still has it in its context; an edited topic prompt reaches it with the next session.
@@ -219,12 +230,13 @@ async function applyMode(a: Agent, mode: string | null) {
 // Runs before every turn and on a change in the Focus header, also mid-turn. `reset` is an option the user just set
 // back to the agent's default (no value of the TODO's or the project's): the agent's `default` value is set where it
 // offers one (Claude's model and effort), since an unset option would otherwise keep its last value.
-// The TODO's own values belong to its agent: a session that opens on another agent (New session) takes the project's.
+// Effort the user did not set comes from auto effort (setAutoEffort), medium until the router or the worker picks one.
 export async function applyConfig(todoId: number, a: Agent, reset?: string) {
   const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a TODO without a topic has no defaults
   const own = (t.agent || DEFAULT_AGENT) === a.agent;
-  const d = defaultsFor(p.defaults, a.agent);
-  const wanted = { ...d.config, ...(own ? configIn(t.overrides ? JSON.parse(t.overrides) : null) : {}) };
+  const wanted = wantedConfig(t, a.agent);
+  const auto = own && isClaude(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
+  if (auto) wanted[auto[0]] = auto[1];
   if (reset && !wanted[reset] && configView(a.live.configOptions).find((o) => o.id === reset)?.options.some((x) => x.value === "default")) wanted[reset] = "default";
   const errors: string[] = [];
   let skipped: [string, string][] = [];
@@ -241,6 +253,29 @@ export async function applyConfig(todoId: number, a: Agent, reset?: string) {
   a.skipped = skip;
   await applyMode(a, own ? modeOf(t, p) : modeOf({ mode: null, agent: a.agent }, p));
   saveConfig(todoId, a);
+}
+
+// The config values the user set for a session on `agent`: the TODO's own over its topic's defaults. The TODO's own
+// values belong to its agent: a session that opens on another agent (New session) takes the topic's.
+function wantedConfig(t: Todo, agent: string): Record<string, string> {
+  const p = projectRow(t.project_id) ?? { defaults: null };
+  const own = (t.agent || DEFAULT_AGENT) === agent;
+  return { ...defaultsFor(p.defaults, agent).config, ...(own ? configIn(t.overrides ? JSON.parse(t.overrides) : null) : {}) };
+}
+
+// Auto effort (Claude only): the router's pick at the start or the worker's set_effort, stored in todos.auto_effort and
+// applied by applyConfig while the user has set no effort for the TODO or its topic. Returns that user value when it
+// blocks the pick. A live agent gets the level at once, not awaited: the worker's tool call waits on this.
+export function setAutoEffort(todoId: number, value: string, reason: string, by: "agent" | "operator"): string | null {
+  const t = todoRow(todoId)!, agent = t.agent || DEFAULT_AGENT;
+  const opts = JSON.parse(t.config ?? getMeta(metaKey("agent_config", agent)) ?? "[]") as ConfigOption[];
+  const user = wantedConfig(t, agent)[opts.find((o) => o.category === "thought_level")?.id ?? "effort"];
+  if (user) return user;
+  setTodo(todoId, { auto_effort: JSON.stringify({ value, reason }) });
+  addEvent(todoId, "effort", by, `${value} · ${reason}`);
+  const a = liveAgent(todoId);
+  if (a) void applyConfig(todoId, a).catch((e) => addEvent(todoId, "error", "app", `Could not set effort ${value}: ${e?.message ?? e}`));
+  return null;
 }
 
 // The session's options as the agent reports them, for the Focus header, and per agent the last list and slash commands
@@ -873,7 +908,8 @@ const ROUTING_PROMPT = `You are the operator of switchboard, a local app where e
 - End with exactly one call, then stop:
   - mcp__app__route_todo with the topic's name when one topic clearly fits, or with topic "none" when the TODO fits no topic and is thinking only (its agent then runs in the TODO's own folder). The reason is one short sentence the user reads, such as "the MCP server lives there".
   - mcp__app__ask_topic with a short question and the 2 or 3 likely topics when you cannot tell. The user also gets a "No topic" choice.
-- A topic without a profile can still be picked on its name and folder; say so when you ask.`;
+- A topic without a profile can still be picked on its name and folder; say so when you ask.
+- With route_todo, pass effort from the kind of work the TODO asks for: low for brainstorming, sketches and easy edits; medium for regular feature work; high for bug fixes in existing code, reviews and anything with hidden edge cases; xhigh for security reviews, performance work and long autonomous work on a hard problem. Leave it out when unsure: the agent starts at medium.`;
 const ROUTING_BUILTINS = ["Read", "Grep", "Glob"];
 
 const refuse = (r: PermissionRequest) => {

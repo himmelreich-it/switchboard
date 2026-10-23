@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-23 · Auto effort in the session chip and popover
+- Where: Focus header › session chip, and its Session settings popover, Effort row.
+- Now: for a Claude TODO where neither the user nor the topic set an effort, the session chip shows the effort as "High (auto)" (medium until a pick). In the popover the Effort row's first choice reads "Auto (High)", its source label on the right reads "Auto", and a small line under the row gives the reason ("verifying", "picked at the start"). The level changes by itself: routing picks it at the start, and the agent switches it as the work changes (low to build, high to verify). Picking a level in the row overrides auto, as before, and "This TODO ×" goes back to auto. Each switch shows as an "effort" event line in the transcript, with the level and the reason.
+- Why: the user wanted Claude's effort to follow the kind of work, after claude.dev/blog/spending-your-effort, without picking it by hand.
+- Design question: the chip now reads "S1 Auto · High (auto)", with the permission mode's "Auto" next to the effort's "(auto)". Is that clear, or should the effort get a label ("Effort High") or an icon? Should an effort switch show in the chat itself, not only in the transcript?
+
 ### 2026-10-22 · Running tab: agent background tasks and listening ports
 - Where: title bar, a third tab "Running n" after Backlog; its own screen.
 - Now: the tab counts the background tasks the agents run, across all TODOs. Its screen has two sections. "Agent tasks" lists each background task: TODO number, TODO title, the task's name and its age ("12m"); a click opens the TODO; no stop button, since the user asks the agent. "Ports" has a Scan button; after a scan it lists every process and Docker container that listens on a port: the ports (":3000"), the process name or container name with a "Docker" badge, the full command in small mono text, its folder, the TODO it belongs to (a "T-42" chip that opens it) or its topic name or "—", its age, and buttons "Ask T-42" and "Stop". The header says "scanned 10:41" and "Docker: not running" when Docker did not answer. Stop asks in a dialog ("Stop", what it ends, Cancel / Stop) and then shows the toast "Stopped". Ask T-42 opens that TODO with "Stop the service on port 3000 (`npm run dev`)." in its message box. Switchboard's own row shows "Switchboard" instead of Stop.

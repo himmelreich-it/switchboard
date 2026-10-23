@@ -11,7 +11,7 @@ import { authenticate, describe, killNow, killTree, sessionExists } from "./acp"
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
-  CONTRACT, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
+  contractFor, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
@@ -35,7 +35,7 @@ export type Todo = {
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
   agent: string | null; suggestions: string | null; run_started_at: string | null; routing: string | null; routed_at: string | null;
-  schedule: string | null; next_run_at: string | null; parent_id: number | null; key: string | null;
+  schedule: string | null; next_run_at: string | null; parent_id: number | null; key: string | null; auto_effort: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
 export type Project = {
@@ -413,7 +413,7 @@ const backgroundWait = (r: { id: number; status: string }) => r.status === "runn
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, suggestions, routing, schedule, schedule_last, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, auto_effort, suggestions, routing, schedule, schedule_last, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -425,7 +425,7 @@ export async function summaries(where = "1", args: any[] = []) {
       last_agent_message: r.last_agent_message ? JSON.parse(r.last_agent_message) : null,
       file_names: names, file_count: names.length, ctx: ctx ? JSON.parse(ctx) : null, plan: r.plan ? JSON.parse(r.plan) : null,
       permission: permission ? JSON.parse(permission) : null,
-      config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {},
+      config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {}, auto_effort: auto_effort ? JSON.parse(auto_effort) : null,
       suggestions: suggestions ? JSON.parse(suggestions) : null, routing: routing ? JSON.parse(routing) : null,
       // Item 144: the schedule, its chip text, and its last firing (run or skipped) for the chip's amber state.
       schedule: schedule ? JSON.parse(schedule) : null, schedule_text: schedule ? scheduleText(JSON.parse(schedule)) : null,
@@ -806,7 +806,7 @@ async function spawnTerm(x: Term) {
     writeFileSync(contract, TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir));
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
     // `--add-dir` and the other list flags take every argument after them, so `--` ends them before the first message.
-    cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.filter((n) => !n.endsWith("__suggest_follow_ups")).join(","),
+    cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.filter((n) => !n.endsWith("__suggest_follow_ups") && !n.endsWith("__set_effort")).join(","),
       ...(x.message ? ["--", x.message] : [])];
   } else cmd = LOGIN_SHELL ? [SHELL, "-l"] : [SHELL];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
@@ -917,7 +917,7 @@ async function api(req: Request, path: string): Promise<Response> {
     w.n += (db.query("SELECT id, status FROM todos WHERE status = 'running' AND permission IS NULL AND attention_by = 'agent' AND removed_at IS NULL").all() as Todo[]).filter(backgroundWait).length;
     // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
     // P5: the agents, and per agent its last seen config options.
-    return json({ contract: CONTRACT, waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
+    return json({ contract: contractFor(DEFAULT_AGENT, "{artifact_dir}"), waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
       shell: basename(SHELL).replace(/\.exe$/i, ""), login_shell: LOGIN_SHELL,
       background_wait_hours: Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS,
       started_todos_per_turn: Number(getMeta("started_todos_per_turn")) || DEFAULT_STARTED_PER_TURN });
