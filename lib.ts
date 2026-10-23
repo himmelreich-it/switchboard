@@ -312,6 +312,18 @@ export function configChanges(current: ConfigOption[], wanted: Record<string, st
   return { set, skipped };
 }
 
+// Auto effort (Claude only): the levels the router and the worker may pick, low to high. max stays a user choice.
+export const AUTO_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+// The effort option's id and the value auto sets: the picked level (null: medium), else the next lower one the agent
+// offers. Null when the wanted values set effort already (the TODO's or its topic's) or the agent has no effort option.
+export function autoEffort(current: ConfigOption[], wanted: Record<string, string>, level: string | null): [string, string] | null {
+  const o = current.find((c) => c.category === "thought_level");
+  if (!o || wanted[o.id]) return null;
+  const i = AUTO_EFFORTS.indexOf(level as any), top = i < 0 ? AUTO_EFFORTS.indexOf("medium") : i;
+  const v = AUTO_EFFORTS.slice(0, top + 1).reverse().find((x) => o.options.some((y) => y.value === x));
+  return v ? [o.id, v] : null;
+}
+
 // A {config id: value} object from a request body or a column: string values only, empty ones dropped.
 export function configIn(v: unknown): Record<string, string> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
@@ -784,6 +796,7 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("todos", "next_run_at", "TEXT");     // the next slot; null when paused or not scheduled
   addColumn("todos", "parent_id", "INTEGER");    // the TODO whose agent created this one (item 145)
   addColumn("todos", "key", "TEXT");             // create_todo's dedupe key, unique below
+  addColumn("todos", "auto_effort", "TEXT");     // the effort the router or the agent picked, {value, reason} (JSON); null: medium
   // A TODO has no repo before routing, or none at all: project_id becomes nullable. SQLite cannot drop NOT NULL, so the
   // table is rebuilt from its own CREATE statement. It has no triggers; its one index (todos_key) is made after this.
   if ((db.query("SELECT \"notnull\" AS n FROM pragma_table_info('todos') WHERE name = 'project_id'").get() as any)?.n) {

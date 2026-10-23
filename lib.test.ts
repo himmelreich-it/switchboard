@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
-  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, configChanges, configIn, configView, topicIntro,
+  MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts,
 } from "./lib";
 
@@ -324,6 +324,18 @@ test("laneOf, attentionAfterAnswer and MODES (P3)", () => {
   expect(attentionAfterAnswer(null)).toBe(1);
   expect(MODES[0]).toBe("auto");
   expect(MODES).toContain("default");
+});
+
+test("autoEffort: the picked level, medium by default, never one the user set or the agent lacks", () => {
+  const eff = (values: string[]) => [{ id: "effort", name: "Effort", category: "thought_level", value: "high", options: values.map((value) => ({ value, name: value })) }];
+  const all = eff(["default", "low", "medium", "high", "xhigh", "max"]);
+  expect(autoEffort(all, {}, null)).toEqual(["effort", "medium"]);
+  expect(autoEffort(all, {}, "xhigh")).toEqual(["effort", "xhigh"]);
+  expect(autoEffort(all, {}, "max")).toEqual(["effort", "medium"]);      // not an auto level: the default
+  expect(autoEffort(all, { effort: "max" }, "low")).toBeNull();           // the user's (TODO or topic) wins
+  expect(autoEffort(eff(["low", "medium", "high"]), {}, "xhigh")).toEqual(["effort", "high"]); // next lower offered
+  expect(autoEffort(eff(["high"]), {}, "low")).toBeNull();
+  expect(autoEffort([], {}, "high")).toBeNull();                          // no effort option (Haiku)
 });
 
 test("configView and configChanges: the model first, then what the model left (P4)", () => {
