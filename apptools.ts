@@ -7,14 +7,15 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
-import { deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
-import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, start } from "./runner";
+import { isClaude } from "./agents";
+import { AUTO_EFFORTS, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
+import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOST, PORT, addEvent, addMessage, attachmentsOf, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
-export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule"].map((n) => `mcp__app__${n}`);
+export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule", "set_effort"].map((n) => `mcp__app__${n}`);
 export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "remove_todo"].map((n) => `mcp__app__${n}`);
 // The operator's routing run for one TODO (801): read other TODOs, then decide.
 export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"].map((n) => `mcp__app__${n}`);
@@ -157,6 +158,15 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     const pid = todoRow(todoId)!.project_id;
     if (pid) refreshPrs(pid);
     return ok();
+  });
+  // Auto effort: the worker switches its own effort level as the work changes (CONTRACT's effort rules). Claude only;
+  // a Claude terminal does not get it, as the level belongs to the TODO's session.
+  if (!g.via && isClaude(todoRow(todoId)!.agent)) s.registerTool("set_effort", {
+    description: "Switch your effort level: low, medium, high or xhigh. reason: a few words the user reads, such as \"verifying the fix\". Refused when the user set the effort.",
+    inputSchema: { level: z.enum(AUTO_EFFORTS), reason: z.string() },
+  }, async ({ level, reason }) => {
+    const user = setAutoEffort(todoId, level, reason.trim() || "no reason given", "agent");
+    return user ? err(`The user set the effort to ${user}. Keep it.`) : ok(`Effort ${level}.`);
   });
   // Item 146: the user's comments on selected text in the Files tab.
   s.registerTool("list_comments", {
@@ -334,15 +344,16 @@ function routerTools(s: McpServer, todoId: number) {
   const names = () => topics().map((x) => x.name).join(", ") || "none";
   const decided = () => !!todoRow(todoId)!.routed_at || JSON.parse(todoRow(todoId)!.routing ?? "{}").state === "asking";
   s.registerTool("route_todo", {
-    description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. Stop after this call.",
-    inputSchema: { topic: z.string(), reason: z.string() },
-  }, async ({ topic, reason }) => {
+    description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium. Stop after this call.",
+    inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional() },
+  }, async ({ topic, reason, effort }) => {
     if (decided()) return err("This TODO's routing is decided already. Stop now.");
     const none = topic.trim().toLowerCase() === "none";
     const p = none ? null : find(topic);
     if (!none && !p) return err(`Unknown topic "${topic}". Topics: ${names()}, or "none".`);
     addEvent(todoId, "route_todo", "operator", `topic: "${p?.name ?? "none"}"`);
     routeTo(todoId, p?.id ?? null, reason);
+    if (effort && isClaude(todoRow(todoId)!.agent)) setAutoEffort(todoId, effort, "picked at the start", "operator");
     return ok(`Routed to ${p?.name ?? "no topic"}. The app starts session 1 there when you stop.`);
   });
   s.registerTool("ask_topic", {

@@ -2523,12 +2523,15 @@ function sessionRows(t) {
   }
   for (const o of configList(t)) {
     const own = t.overrides?.[o.id] ?? null, inh = pd[o.id] ?? null, live = t.config ? o.value : null;
-    const eff = own ?? inh ?? live;
+    // Auto effort: Claude's effort the user did not set is the router's or the agent's pick, medium until one is made.
+    const auto = agent === "claude" && o.category === "thought_level" && !inh ? t.auto_effort?.value ?? "medium" : null;
+    const eff = own ?? inh ?? auto ?? live;
     const isFast = o.category === "model_config";
-    rows.push({ kind: "cfg", id: o.id, label: o.name, own, from: inh ? "Project" : "Agent",
-      first: inh ? `Topic's (${optName(o, inh)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
-      options: o.options.map((x) => [x.value, x.name]), value: eff,
-      short: isFast ? (eff === "on" ? "Fast" : null) : eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null });
+    const name = eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null;
+    rows.push({ kind: "cfg", id: o.id, label: o.name, own, from: inh ? "Project" : auto ? "Auto" : "Agent",
+      first: inh ? `Topic's (${optName(o, inh)})` : auto ? `Auto (${optName(o, auto)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
+      options: o.options.map((x) => [x.value, x.name]), value: eff, desc: auto && !own ? t.auto_effort?.reason ?? null : null,
+      short: isFast ? (eff === "on" ? "Fast" : null) : auto && !own ? `${name} (auto)` : name });
   }
   return rows;
 }
