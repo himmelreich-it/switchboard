@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-26 · Change topic after a worktree exists; each topic keeps its worktree and PR
+- Where: Focus header › topic popover.
+- Now: the Change topic select also shows for a TODO that has a worktree or PR (before: "The topic is fixed once a worktree exists."). The select keeps its width; its note then reads "Starts a new session in the other folder. Each topic keeps its worktree and PR." Switching stores the worktree, branch and PR with the topic left and brings back the ones of the topic picked. Below Open in VS Code, the popover lists them under "Kept in other topics, back when you switch:", one entry per topic: "DOCS · feat-x · PR #99" with the folder below. The chat line reads "Topic changed from A to B. Back to its worktree <path> and PR #12 there. Your next message starts session 3 there."
+- Why: the user moves a TODO between topics and wants each topic's folder, branch and PR back when they return.
+- Design question: should the kept entries be clickable (open the PR, open the folder in VS Code)? Should the list show on the board card too?
+
 ### 2026-10-23 · Auto effort in the session chip and popover
 - Where: Focus header › session chip, and its Session settings popover, Effort row.
 - Now: for a Claude TODO where neither the user nor the topic set an effort, the session chip shows the effort as "High (auto)" (medium until a pick). In the popover the Effort row's first choice reads "Auto (High)", its source label on the right reads "Auto", and a small line under the row gives the reason ("verifying", "picked at the start"). The level changes by itself: routing picks it at the start, and the agent switches it as the work changes (low to build, high to verify). Picking a level in the row overrides auto, as before, and "This TODO ×" goes back to auto. Each switch shows as an "effort" event line in the transcript, with the level and the reason.
