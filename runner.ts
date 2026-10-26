@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -135,11 +135,17 @@ const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutco
 // TODOs whose agent posted a chat message in the current turn, so its final text is not posted as well. A set, not run
 // state, because the app tools' grant lives as long as the agent process, across runs.
 const posted = new Set<number>();
+// A turn cut by sleep or a passing API error is continued by the app (cutReason): this many times in a row, after this
+// delay, so the network is back after a wake. `cuts` counts the turns cut in a row per TODO; a turn that ends otherwise resets it.
+const AUTO_CONTINUES = 2;
+const CONTINUE_DELAY_MS = 15_000;
+const cuts = new Map<number, number>();
 
 // Like Esc in Claude Code: session/cancel. If the turn has not ended 10 seconds later, the agent process is closed.
 // With no turn running, Stop ends the background tasks a TODO's agent waits for: its process is closed (item 136).
 export function interrupt(key: Key, by: "user" | "app" = "app") {
   const r = running.get(key);
+  if (typeof key === "number") cuts.delete(key);   // a pending auto-continue does not run after a Stop
   if (!r) {
     if (typeof key === "number" && backgroundCount(key)) {
       addEvent(key, "interrupted", by, `${bgTasks(backgroundCount(key))} stopped`);
@@ -744,7 +750,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
 
     const turn = workerTurn(todoId, agent);
 
-    let error = "", stop = "";
+    let error = "", stop = "", cut: string | null = null;
     const started = performance.now();
     // Item 145: session 1 of a TODO another TODO's agent created says so first, for the contract's rule on its authority,
     // and names the title create_todo gave it (the title differs from the first instruction only then).
@@ -760,6 +766,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       stop = await live.prompt(text);
     } catch (e: any) {
       error = e?.message ?? String(e);
+      cut = live.alive ? cutReason(error) : null;
       if (!live.alive) addEvent(todoId, "agent log", "app", live.stderr().slice(-4000) || null);
       // The Claude adapter rejects a finished turn when a tool call got no result: a server tool such as advisor
       // (ACP spike). When the agent is alive and wrote its final text, the turn is treated as ended; the error stays an event.
@@ -769,7 +776,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       }
     }
     if (stop === "refusal" || stop === "max_tokens" || stop === "max_turn_requests") error ||= `The turn ended early: ${stop.replaceAll("_", " ")}.`;
-    endRun(todoId, run, agent, turn, started, error, false);
+    endRun(todoId, run, agent, turn, started, error, false, cut);
   })();
 }
 
@@ -803,7 +810,8 @@ function workerTurn(todoId: number, agent: Agent) {
 
 // The end of a worker run: a turn, or a cycle the agent ran on its own (`background`). With background tasks still
 // running the TODO stays running (item 136); the agent waits for them parked, and takes messages as usual.
-function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof turnState>, started: number, error: string, background: boolean) {
+// `cut` is why the turn broke off when a retry may fix it (cutReason), else null.
+function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof turnState>, started: number, error: string, background: boolean, cut: string | null = null) {
   // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
   // or sees the TODO idle and starts its own turn.
   cancelPermission(todoId); // a request still open when the turn ended (the agent died, or gave up waiting)
@@ -844,8 +852,26 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   else parkAgent(todoId);
   const pid = todoRow(todoId)!.project_id;
   if (pid) refreshPrs(pid); // the agent may have pushed or opened a PR
+  if (cut && !stopped && !shuttingDown && !todoRow(todoId)!.removed_at) autoContinue(todoId, cut);
+  else cuts.delete(todoId);
   // Queued messages, including ones committed during the turn, and after a Stop (item 129), go out now.
   if (!shuttingDown) deliver(todoId, "queued messages");
+}
+
+// The app asks the agent to continue a cut turn in the same session, unless the user started a run or another session
+// meanwhile, or the cap is reached.
+function autoContinue(todoId: number, why: string) {
+  const n = (cuts.get(todoId) ?? 0) + 1;
+  cuts.set(todoId, n);
+  if (n > AUTO_CONTINUES) return addEvent(todoId, "auto-continue skipped", "app", `${why} · continued ${AUTO_CONTINUES} times in a row already`);
+  const session = todoRow(todoId)!.session_id;
+  setTimeout(() => {
+    const t = todoRow(todoId);
+    if (running.has(todoId) || shuttingDown || !t || t.removed_at || t.session_id !== session || sessionsOf(todoId).at(-1)?.ended_at || cuts.get(todoId) !== n) return;
+    addEvent(todoId, "auto-continue", "app", `${why} · ${n} of ${AUTO_CONTINUES}`);
+    addMessage(todoId, "app", `Your last turn was cut off: ${why}. Continue where you left off.`, "queued");
+    deliver(todoId, "auto-continue");
+  }, CONTINUE_DELAY_MS);
 }
 
 // Item 136: an update from a parked agent, with no turn running. Between turns Claude works on its own when a
