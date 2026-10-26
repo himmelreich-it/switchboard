@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-26 · A turn cut by sleep continues on its own
+- Where: Focus › chat.
+- Now: when a turn breaks off because the Mac slept, a request timed out or the API had a server error, the app posts an app card 15 seconds later: "Your last turn was cut off: the computer slept. Continue where you left off." The agent gets the same text and goes on in the same session. At most 2 times in a row; after that the TODO stays as it is, as before.
+- Why: runs stopped overnight when the Mac slept with the lid closed, and nothing picked them up again.
+- Design question: should the app card look different from other app cards (an icon or badge for "continued by the app"), and should the chat say when the limit of 2 was reached?
+
 ### 2026-10-26 · Change topic after a worktree exists; each topic keeps its worktree and PR
 - Where: Focus header › topic popover.
 - Now: the Change topic select also shows for a TODO that has a worktree or PR (before: "The topic is fixed once a worktree exists."). The select keeps its width; its note then reads "Starts a new session in the other folder. Each topic keeps its worktree and PR." Switching stores the worktree, branch and PR with the topic left and brings back the ones of the topic picked. Below Open in VS Code, the popover lists them under "Kept in other topics, back when you switch:", one entry per topic: "DOCS · feat-x · PR #99" with the folder below. The chat line reads "Topic changed from A to B. Back to its worktree <path> and PR #12 there. Your next message starts session 3 there."

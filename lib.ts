@@ -25,7 +25,16 @@ export function cutToTwoLines(text: string): string {
   return out.length < lines.join("\n").length ? `${out}…` : out;
 }
 
-export const lineCount = (text: string) => text.trim().split("\n").filter((l) => l.trim()).length;
+// Why a failed turn is worth continuing: the Mac slept mid-request, or the API failed for a while. null for every other
+// error (a session limit, a login, a dead agent), which a retry would not fix.
+export function cutReason(error: string): string | null {
+  if (error.includes("went to sleep mid-response")) return "the computer slept";
+  if (error.includes("Request timed out")) return "the request timed out";
+  if (/API Error: 5\d\d\b/.test(error)) return "an API server error";
+  return null;
+}
+
+export const lineCount =(text: string) => text.trim().split("\n").filter((l) => l.trim()).length;
 
 // The agent's suggested follow-ups (pills): one or two one-line instructions the user sends with a click.
 export function followUpError(items: string[]): string | null {

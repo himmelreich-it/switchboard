@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -12,6 +12,17 @@ test("slugify and uniqueSlug", () => {
   expect(slugify("!!!")).toBe("project");
   expect(uniqueSlug("api", new Set())).toBe("api");
   expect(uniqueSlug("api", new Set(["api", "api-2"]))).toBe("api-3");
+});
+
+test("cutReason", () => {
+  // Real errors from the events table.
+  expect(cutReason("Internal error: API Error: Your computer went to sleep mid-response. The response above may be incomplete.")).toBe("the computer slept");
+  expect(cutReason("Internal error: Request timed out")).toBe("the request timed out");
+  expect(cutReason("Internal error: API Error: 502 Upstream service error. This is a server-side issue")).toBe("an API server error");
+  expect(cutReason("Internal error: You've hit your session limit · resets 5:20pm (Europe/Amsterdam)")).toBeNull();
+  expect(cutReason("Authentication required")).toBeNull();
+  expect(cutReason("Internal error: Claude ended the turn without returning results for tool calls: srvtoolu_01")).toBeNull();
+  expect(cutReason("API Error: 400 invalid_request_error")).toBeNull();
 });
 
 test("cutToTwoLines", () => {
