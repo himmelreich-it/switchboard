@@ -32,7 +32,7 @@ migrateDb(db);
 export type Todo = {
   id: number; project_id: number | null; title: string; status: Status; attention: number; session_id: string | null;
   worktree_path: string | null; pr_number: number | null; last_tool: string | null; last_read_at: string | null; created_at: string; updated_at: string;
-  removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null;
+  removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null; places: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
   agent: string | null; suggestions: string | null; run_started_at: string | null; routing: string | null; routed_at: string | null;
   schedule: string | null; next_run_at: string | null; parent_id: number | null; key: string | null; auto_effort: string | null;
@@ -413,7 +413,7 @@ const backgroundWait = (r: { id: number; status: string }) => r.status === "runn
 // if the list gets slow. PRs come from prStore in memory, never from a fetch.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
-  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, auto_effort, suggestions, routing, schedule, schedule_last, ...r }) => {
+  return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, auto_effort, suggestions, routing, schedule, schedule_last, places, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
     const git = r.worktree_path ? await gitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
@@ -427,6 +427,8 @@ export async function summaries(where = "1", args: any[] = []) {
       permission: permission ? JSON.parse(permission) : null,
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {}, auto_effort: auto_effort ? JSON.parse(auto_effort) : null,
       suggestions: suggestions ? JSON.parse(suggestions) : null, routing: routing ? JSON.parse(routing) : null,
+      // Change topic: the worktree, branch and PR each other topic keeps for this TODO.
+      places: Object.entries(places ? JSON.parse(places) : {}).map(([k, v]: [string, any]) => ({ project_id: k === "none" ? null : Number(k), ...v })),
       // Item 144: the schedule, its chip text, and its last firing (run or skipped) for the chip's amber state.
       schedule: schedule ? JSON.parse(schedule) : null, schedule_text: schedule ? scheduleText(JSON.parse(schedule)) : null,
       schedule_last: schedule_last ? JSON.parse(schedule_last) : null,
@@ -1064,7 +1066,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (body.project_id != null && !to) return fail("no such topic");
     if (isRunning(t.id)) return fail("the agent is running; change the topic once it stops", 409);
     if (termsOf(t.id).some((x) => !x.exited)) return fail("close this TODO's terminals first; they run in the old topic's folder", 409);
-    changeRepo(t.id, to?.id ?? null);
+    changeRepo(t.id, to?.id ?? null, t.worktree_path ? (await gitState(t.worktree_path))?.branch ?? null : null);
     return json((await summaries("t.id = ?", [t.id]))[0]);
   }
 

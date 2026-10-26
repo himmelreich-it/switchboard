@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -1016,8 +1016,8 @@ export function cancelRouting(todoId: number) {
 // POST /api/todos/:id/topic (server.ts checked: not running, no live terminal). While the operator asks, a
 // click routes and starts session 1. Before the start it only records the topic. After it, the live session ends, since
 // its folder is fixed at launch: the next message starts the next session in the new topic, with the hand-over header.
-// The worktree and PR belong to the old topic's repository: the TODO lets go of them, the worktree stays on disk.
-export function changeRepo(todoId: number, projectId: number | null) {
+// The worktree, branch and PR stay with the topic they were made in, and come back when the TODO switches back (`places`).
+export function changeRepo(todoId: number, projectId: number | null, branch: string | null = null) {
   const t = todoRow(todoId)!;
   if (t.routing) {
     routeTo(todoId, projectId, null);
@@ -1026,13 +1026,15 @@ export function changeRepo(todoId: number, projectId: number | null) {
   }
   if (t.routed_at && t.project_id === projectId) return;
   const from = projectRow(t.project_id)?.name ?? "no topic";
+  const { places, back } = swapPlace(t.places ? JSON.parse(t.places) : {}, t.project_id, projectId,
+    { worktree_path: t.worktree_path, branch, pr_number: t.pr_number }, existsSync);
+  setTodo(todoId, { places: JSON.stringify(places), worktree_path: back.worktree_path, pr_number: back.pr_number });
   routeTo(todoId, projectId, null);
-  if (t.worktree_path || t.pr_number) setTodo(todoId, { worktree_path: null, pr_number: null });
   if (!t.session_id) return;
   closeAgent(todoId);
   db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND ended_at IS NULL", [now(), todoId]);
-  const left = [t.worktree_path && `worktree ${t.worktree_path} stays on disk`, t.pr_number && `PR #${t.pr_number} is no longer tracked`].filter(Boolean).join("; ");
-  addMessage(todoId, "app", `Topic changed from ${from} to ${projectRow(projectId)?.name ?? "no topic"}${left ? ` (${left})` : ""}. Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
+  const again = [back.worktree_path && `worktree ${back.worktree_path}`, back.pr_number && `PR #${back.pr_number}`].filter(Boolean).join(" and ");
+  addMessage(todoId, "app", `Topic changed from ${from} to ${projectRow(projectId)?.name ?? "no topic"}.${again ? ` Back to its ${again} there.` : ""} Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
 }
 
 // ---------- topic profiles (801) ----------

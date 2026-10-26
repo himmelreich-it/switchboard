@@ -6,11 +6,11 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
-### 2026-10-26 · Change topic after a worktree exists
-- Where: Focus header › topic popover, the Change topic select.
-- Now: the select also shows for a TODO that already has a worktree (before, the popover read "The topic is fixed once a worktree exists."). Its note then reads "Starts a new session in the other folder. The worktree stays on disk." Picking another topic drops the worktree and the PR from the TODO; the chat line says so: "Topic changed from A to B (worktree <path> stays on disk; PR #12 is no longer tracked). Your next message starts session 3 there."
-- Why: the user wanted to move a TODO to another topic at any point, not only before a worktree exists.
-- Design question: should picking a topic for a TODO with a worktree or PR ask first, in a dialog, since the TODO loses its branch and PR chips?
+### 2026-10-26 · Change topic after a worktree exists; each topic keeps its worktree and PR
+- Where: Focus header › topic popover.
+- Now: the Change topic select also shows for a TODO that has a worktree or PR (before: "The topic is fixed once a worktree exists."). The select keeps its width; its note then reads "Starts a new session in the other folder. Each topic keeps its worktree and PR." Switching stores the worktree, branch and PR with the topic left and brings back the ones of the topic picked. Below Open in VS Code, the popover lists them under "Kept in other topics, back when you switch:", one entry per topic: "DOCS · feat-x · PR #99" with the folder below. The chat line reads "Topic changed from A to B. Back to its worktree <path> and PR #12 there. Your next message starts session 3 there."
+- Why: the user moves a TODO between topics and wants each topic's folder, branch and PR back when they return.
+- Design question: should the kept entries be clickable (open the PR, open the folder in VS Code)? Should the list show on the board card too?
 
 ### 2026-10-23 · Auto effort in the session chip and popover
 - Where: Focus header › session chip, and its Session settings popover, Effort row.
