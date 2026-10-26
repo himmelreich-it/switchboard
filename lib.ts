@@ -47,6 +47,20 @@ export function deliveryPrompt(worktree: string | null, bodies: string[], header
   return worktree ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
 }
 
+// Change topic: a TODO's worktree, branch and PR per topic it left, keyed by project id ("none": no topic).
+export type Place = { worktree_path: string | null; branch: string | null; pr_number: number | null };
+// Stores the current place under the topic left and takes the one of the topic entered, if it had one. A stored worktree
+// whose folder is gone (`exists` false) comes back without it.
+export function swapPlace(places: Record<string, Place>, from: number | null, to: number | null, cur: Place, exists: (p: string) => boolean) {
+  const next = { ...places }, key = (id: number | null) => String(id ?? "none");
+  if (cur.worktree_path || cur.pr_number) next[key(from)] = cur;
+  else delete next[key(from)];
+  const b = next[key(to)];
+  delete next[key(to)];
+  const wt = b?.worktree_path && exists(b.worktree_path) ? b.worktree_path : null;
+  return { places: next, back: { worktree_path: wt, pr_number: b?.pr_number ?? null } };
+}
+
 // Item 73: what a new session gets from the earlier ones, built from the TODO's data (no agent writes it).
 // Lines without a value are left out. `scheduled` is the run line of a scheduled firing (item 144).
 export function handOver(o: {
@@ -786,6 +800,7 @@ CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
   addColumn("todos", "suggestions", "TEXT");     // the agent's suggested follow-ups (JSON string[]), cleared at each run start
   addColumn("todos", "run_started_at", "TEXT");  // when the current or last run started, for the running timers (v6)
   addColumn("todos", "routing", "TEXT");         // the routing step while it runs or asks the user (JSON Routing), 801
+  addColumn("todos", "places", "TEXT");          // worktree, branch and PR per topic the TODO left (JSON {project id: Place}), Change topic
   // When the TODO's topic (or "no topic") was decided. A TODO made before routing got its project from the user.
   if (addColumn("todos", "routed_at", "TEXT")) db.run("UPDATE todos SET routed_at = created_at");
   addColumn("projects", "profile", "TEXT");      // what lives in the repo, written by a scan or the user, for routing
