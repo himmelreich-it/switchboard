@@ -1264,8 +1264,8 @@ const mmss = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${M
 const tNum = (t) => `T-${t.id}`;
 // 801: the TODO's topic as the UI names it. Before routing it has none yet; after, "no topic" means thinking only.
 const repoName = (t) => t.project_name ?? (t.routed_at ? "no topic" : "");
-// Change topic: while no worktree is registered, no run or routing runs, and no terminal runs (the server checks too).
-const canChangeRepo = (t) => !t.worktree_path && t.status !== "running" && !t.removed_at;
+// Change topic: while no run or routing runs, and no terminal runs (the server checks too).
+const canChangeRepo = (t) => t.status !== "running" && !t.removed_at;
 const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "");
 
 const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>';
@@ -1765,7 +1765,7 @@ async function saveEdit() {
     render();
   }
 }
-// 801: Change topic while the TODO has no worktree, and a click on one of the operator's options. pid null: no topic.
+// 801: Change topic, and a click on one of the operator's options. pid null: no topic.
 async function setRepo(id, pid) {
   const name = pid == null ? "No topic" : S.projects.find((x) => x.id === pid)?.name ?? "topic";
   try {
@@ -2608,8 +2608,8 @@ function renderFocusHead(t, d) {
       <span class="folder">${esc(folder)}</span>
       ${folder ? `<span>${btn("Open in VS Code", "vscode", { id: t.id })}</span>` : ""}
       ${canChangeRepo(t)
-        ? `<div class="foot"><span class="mb-select-wrap" style="width:160px"><select class="mb-select" aria-label="Change topic" title="Change topic" data-change="set-repo" data-id="${t.id}">${t.routed_at ? "" : '<option value="" selected disabled>Change topic</option>'}${S.projects.map((x) => `<option value="${x.id}"${t.routed_at && x.id === t.project_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="none"${t.routed_at && !p ? " selected" : ""}>No topic</option></select></span><span>${t.session_id ? "Starts a new session in the other folder." : "Session 1 starts there."}</span></div>`
-        : `<div class="foot">${t.git ? "local · uncommitted plus commits since the merge base with origin/HEAD" : t.worktree_path ? "The topic is fixed once a worktree exists." : "The agent registers a worktree with set_worktree."}</div>`}
+        ? `<div class="foot"><span class="mb-select-wrap" style="width:160px"><select class="mb-select" aria-label="Change topic" title="Change topic" data-change="set-repo" data-id="${t.id}">${t.routed_at ? "" : '<option value="" selected disabled>Change topic</option>'}${S.projects.map((x) => `<option value="${x.id}"${t.routed_at && x.id === t.project_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="none"${t.routed_at && !p ? " selected" : ""}>No topic</option></select></span><span>${t.session_id ? "Starts a new session in the other folder." : "Session 1 starts there."}${t.worktree_path ? " The worktree stays on disk." : ""}</span></div>`
+        : `<div class="foot">${t.git ? "local · uncommitted plus commits since the merge base with origin/HEAD" : "The agent registers a worktree with set_worktree."}</div>`}
     </div>` : "";
   let chips = `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="repo" data-fk="pop:repo" aria-expanded="${repoOpen}" title="Topic and branch"><span class="pri">${esc(repoName(t) || "topic not picked")}</span>${t.branch ? `${SVG(BRANCH, 12)}<span>${esc(t.branch)}</span>` : ""}${g ? `<span class="mut">·</span><span style="color:${g.text === "pushed" ? "var(--status-success)" : g.color}">${esc(g.text)}</span>` : ""}</button>${repoPop}</span>`;
   // Item 144: the schedule chip opens the schedule popover.

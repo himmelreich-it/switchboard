@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-26 · Change topic after a worktree exists
+- Where: Focus header › topic popover, the Change topic select.
+- Now: the select also shows for a TODO that already has a worktree (before, the popover read "The topic is fixed once a worktree exists."). Its note then reads "Starts a new session in the other folder. The worktree stays on disk." Picking another topic drops the worktree and the PR from the TODO; the chat line says so: "Topic changed from A to B (worktree <path> stays on disk; PR #12 is no longer tracked). Your next message starts session 3 there."
+- Why: the user wanted to move a TODO to another topic at any point, not only before a worktree exists.
+- Design question: should picking a topic for a TODO with a worktree or PR ask first, in a dialog, since the TODO loses its branch and PR chips?
+
 ### 2026-10-23 · Auto effort in the session chip and popover
 - Where: Focus header › session chip, and its Session settings popover, Effort row.
 - Now: for a Claude TODO where neither the user nor the topic set an effort, the session chip shows the effort as "High (auto)" (medium until a pick). In the popover the Effort row's first choice reads "Auto (High)", its source label on the right reads "Auto", and a small line under the row gives the reason ("verifying", "picked at the start"). The level changes by itself: routing picks it at the start, and the agent switches it as the work changes (low to build, high to verify). Picking a level in the row overrides auto, as before, and "This TODO ×" goes back to auto. Each switch shows as an "effort" event line in the transcript, with the level and the reason.

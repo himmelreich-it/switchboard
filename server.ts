@@ -1057,12 +1057,11 @@ async function api(req: Request, path: string): Promise<Response> {
   }
 
   // 801: Change topic, and a click on one of the operator's options while routing asks. project_id null is "no topic".
-  // Allowed while the TODO has no worktree and no terminal running, as a session's folder is fixed at its launch.
+  // Allowed while the agent and the TODO's terminals are stopped, as their folder is fixed at launch. A worktree is let go.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/topic$/)) && method === "POST") {
     const t = liveTodo(Number(m[1]));
     const to = body.project_id == null ? null : projectRow(Number(body.project_id));
     if (body.project_id != null && !to) return fail("no such topic");
-    if (t.worktree_path) return fail("this TODO has a worktree; its topic is fixed now", 409);
     if (isRunning(t.id)) return fail("the agent is running; change the topic once it stops", 409);
     if (termsOf(t.id).some((x) => !x.exited)) return fail("close this TODO's terminals first; they run in the old topic's folder", 409);
     changeRepo(t.id, to?.id ?? null);

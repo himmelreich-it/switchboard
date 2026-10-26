@@ -1013,9 +1013,10 @@ export function cancelRouting(todoId: number) {
   addEvent(todoId, "routing cancelled", "app");
 }
 
-// POST /api/todos/:id/topic (server.ts checked: no worktree, not running, no live terminal). While the operator asks, a
+// POST /api/todos/:id/topic (server.ts checked: not running, no live terminal). While the operator asks, a
 // click routes and starts session 1. Before the start it only records the topic. After it, the live session ends, since
 // its folder is fixed at launch: the next message starts the next session in the new topic, with the hand-over header.
+// The worktree and PR belong to the old topic's repository: the TODO lets go of them, the worktree stays on disk.
 export function changeRepo(todoId: number, projectId: number | null) {
   const t = todoRow(todoId)!;
   if (t.routing) {
@@ -1026,10 +1027,12 @@ export function changeRepo(todoId: number, projectId: number | null) {
   if (t.routed_at && t.project_id === projectId) return;
   const from = projectRow(t.project_id)?.name ?? "no topic";
   routeTo(todoId, projectId, null);
+  if (t.worktree_path || t.pr_number) setTodo(todoId, { worktree_path: null, pr_number: null });
   if (!t.session_id) return;
   closeAgent(todoId);
   db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND ended_at IS NULL", [now(), todoId]);
-  addMessage(todoId, "app", `Topic changed from ${from} to ${projectRow(projectId)?.name ?? "no topic"}. Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
+  const left = [t.worktree_path && `worktree ${t.worktree_path} stays on disk`, t.pr_number && `PR #${t.pr_number} is no longer tracked`].filter(Boolean).join("; ");
+  addMessage(todoId, "app", `Topic changed from ${from} to ${projectRow(projectId)?.name ?? "no topic"}${left ? ` (${left})` : ""}. Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
 }
 
 // ---------- topic profiles (801) ----------
