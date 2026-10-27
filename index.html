@@ -3159,7 +3159,7 @@ function openClaudeForm(root) {
   S.cform = { todoId: t.id, root: dir[0], cwd: dir[2], message: claudeDefault(t) };
   render();
 }
-function askCloseTerm(tid) {
+async function askCloseTerm(tid) {
   const t = cur(), x = (S.terms[t.id] ?? []).find((y) => y.id === tid);
   const close = async () => {
     try { await call("POST", `/api/todos/${t.id}/terminals/${tid}/close`); } catch (e) { return toast("danger", "Not closed", e.message); }
@@ -3169,6 +3169,8 @@ function askCloseTerm(tid) {
     render();
   };
   if (!x || x.exited) return close();
+  // An idle shell (no program in the foreground) closes without asking.
+  if (x.kind === "shell" && !(await call("GET", `/api/todos/${t.id}/terminals/${tid}/busy`).catch(() => ({ busy: true }))).busy) return close();
   openDialog({ title: "Close terminal", body: `${x.kind === "claude" ? "Claude" : "The shell"} in this tab is still running. Closing the tab ends its process.`, detail: x.cwd,
     buttons: [["Cancel", "ghost"], ["Close terminal", "danger", close]] });
 }

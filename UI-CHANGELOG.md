@@ -6,6 +6,12 @@ Baseline: design v9 (`designs/Switchboard v9.html`, 2026-10-13).
 
 ## Open
 
+### 2026-10-27 · Idle shell tab closes without asking
+- Where: Terminals panel › tab close button.
+- Now: closing a shell tab that sits at its prompt closes it at once. The dialog "Close terminal" shows only when a program runs in the foreground of the shell, and always for a Claude tab. Jobs started in the background end with the tab.
+- Why: the user found the dialog needless on a clean terminal.
+- Design question: none.
+
 ### 2026-10-26 · A turn cut by sleep continues on its own
 - Where: Focus › chat.
 - Now: when a turn breaks off because the Mac slept, a request timed out or the API had a server error, the app posts an app card 15 seconds later: "Your last turn was cut off: the computer slept. Continue where you left off." The agent gets the same text and goes on in the same session. At most 2 times in a row; after that the TODO stays as it is, as before.
