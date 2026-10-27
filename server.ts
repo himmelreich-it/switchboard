@@ -860,6 +860,14 @@ function killTerm(x: Term) {
   if (p && p.exitCode === null && !p.signalCode) killTree(p.pid, "SIGHUP");   // an ended shell's pid may be reused
   try { p?.terminal?.close(); } catch {}
 }
+// Item 156: a shell runs a foreground program when the terminal's foreground process group is not the shell's own.
+// Background jobs (`cmd &`) do not count; closing the tab ends them with the shell. Unknown (Windows, ps fails): busy.
+function termBusy(x: Term) {
+  if (x.exited || !x.proc) return false;
+  if (x.kind === "claude" || process.platform === "win32") return true;
+  const [tpgid, pgid] = Bun.spawnSync(["ps", "-o", "tpgid=,pgid=", "-p", String(x.proc.pid)]).stdout.toString().trim().split(/\s+/);
+  return !tpgid || tpgid !== pgid;
+}
 export function closeTerms(todoId: number | null) {
   for (const x of [...terms.values()]) if (todoId === null || x.todoId === todoId) {
     killTerm(x);
@@ -1222,7 +1230,7 @@ async function api(req: Request, path: string): Promise<Response> {
     }
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/terminals(?:\/(\d+)\/(restart|close))?$/))) {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/terminals(?:\/(\d+)\/(restart|close|busy))?$/))) {
     const id = Number(m[1]);
     if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: termsOf(id).map(termOut), unsupported: TERM_UNSUPPORTED }); }
     if (!m[2] && method === "POST") {
@@ -1250,6 +1258,7 @@ async function api(req: Request, path: string): Promise<Response> {
       emit({ type: "terminals", id });
       return json({});
     }
+    if (m[3] === "busy" && method === "GET") return json({ busy: termBusy(x) });
     if (m[3] === "restart" && method === "POST") {
       killTerm(x);
       termSend(x, enc8.encode("\x1bc"));
