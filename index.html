@@ -1690,6 +1690,10 @@ function flushDraft(keepalive = false) {
 }
 addEventListener("pagehide", () => flushDraft(true));
 
+function nsStarted(tid, nsNo) {
+  delete S.nsMode[tid]; delete S.nsAgent[tid];
+  toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`);
+}
 async function commit(key, el) {
   const body = el.value.trim();
   const files = uploads[key] ?? [];
@@ -1705,7 +1709,7 @@ async function commit(key, el) {
   render();
   try {
     await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
-    if (ns) { delete S.nsMode[tid]; delete S.nsAgent[tid]; toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`); }
+    if (ns) nsStarted(tid, nsNo);
   } catch (e) {
     drafts[key] = body;
     if (!el.value && (el === operatorIn || draftKey() === key)) el.value = body;
@@ -3532,7 +3536,12 @@ const ACTIONS = {
     const prev = t.suggestions, copies = [S.todos.find((x) => x.id === tid), S.detail?.todo.id === tid ? S.detail.todo : null].filter(Boolean);
     for (const c of copies) c.suggestions = null;   // gone at once; the server clears them too
     render();
-    try { await call("POST", `/api/todos/${tid}/messages`, { body: text, suggested: true }); if (S.sel !== tid || S.mode !== "focus") toast("info", `Sent to T-${tid}`, "· " + short(text, 48)); }
+    const ns = S.nsMode[tid], nsNo = ns ? (S.detail?.sessions?.length ?? 1) + 1 : 0;   // in New-session mode the pill starts the new session
+    try {
+      await call("POST", `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body: text, suggested: true, ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
+      if (ns) { nsStarted(tid, nsNo); render(); }
+      else if (S.sel !== tid || S.mode !== "focus") toast("info", `Sent to T-${tid}`, "· " + short(text, 48));
+    }
     catch (err) { for (const c of copies) c.suggestions = prev; toast("danger", "Not sent", err.message); render(); }
   },
   // Item 148: the Running view's Ports.

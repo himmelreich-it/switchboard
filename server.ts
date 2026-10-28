@@ -83,6 +83,12 @@ export function setDraft(key: string, body: string) {
   if (!body.trim()) db.run("DELETE FROM drafts WHERE key = ?", [key]);
   else db.run("INSERT INTO drafts (key, body) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET body = excluded.body", [key, body]);
 }
+// A pill click: false when the agent no longer offers this text; else logs the pick, before the run's launch events.
+function pickSuggestion(id: number, text: string) {
+  if (!(JSON.parse(todoRow(id)!.suggestions ?? "[]") as string[]).includes(text)) return false;
+  addEvent(id, "suggestion picked", "user", text);
+  return true;
+}
 
 // 801: artifact folders move once from data/<project slug>/<todo id>/ to data/<todo id>/, and the stored file and
 // attachment paths with them. HOME is a real path, so the stored paths start with these folders exactly.
@@ -1352,12 +1358,13 @@ async function api(req: Request, path: string): Promise<Response> {
       if (agent === undefined) return fail(`no agent ${body.agent}`);
       const text = String(body.body ?? "").trim();
       const uploads = uploadsIn(body.attachments);
+      if (body.suggested === true && !pickSuggestion(id, text)) return fail("That suggestion is gone", 409);
       const mid = db.transaction(() => {
         const mid = addMessage(id, "user", text || "continue", "queued");
         saveAttachments(id, mid, uploads);
         return mid;
       })();
-      setDraft(`todo:${id}`, "");
+      if (body.suggested !== true) setDraft(`todo:${id}`, "");
       newSession(id, agent ?? undefined);
       return json(messageOut(mid));
     }
@@ -1370,10 +1377,7 @@ async function api(req: Request, path: string): Promise<Response> {
       const text = String(body.body ?? "").trim();
       const uploads = uploadsIn(body.attachments);
       if (!text && !uploads.length) return fail("empty message");
-      if (body.suggested === true) {
-        if (!(JSON.parse(todoRow(id)!.suggestions ?? "[]") as string[]).includes(text)) return fail("That suggestion is gone", 409);
-        addEvent(id, "suggestion picked", "user", text);   // before the run's launch events
-      }
+      if (body.suggested === true && !pickSuggestion(id, text)) return fail("That suggestion is gone", 409);
       const mid = commitMessage(id, "user", text, uploads);
       // A pill click sends its text; the draft in the composer stays.
       if (body.suggested !== true) setDraft(`todo:${id}`, "");
