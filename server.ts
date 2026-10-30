@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import {
   DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
+  descendants,
 } from "./lib";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
@@ -450,7 +451,7 @@ export async function summaries(where = "1", args: any[] = []) {
 
 // `since`: a process's start; a container has Docker's own text ("17 hours ago") in `age` instead.
 type PortRow = { kind: "process" | "container"; key: string; ports: number[]; name: string; command: string; folder: string; since: string | null; age: string;
-  todo_id: number | null; project_id: number | null; self: boolean };
+  todo_id: number | null; project_id: number | null; self: boolean; agent: boolean };
 // The last scan's rows: Stop only acts on a pid or container it listed, never on one the request names on its own.
 let lastScan: PortRow[] = [];
 
@@ -459,11 +460,15 @@ async function scanPorts() {
   // lsof exits 1 when nothing listens; the output is still read.
   const listen = parseListen((await sh(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"], { timeout: 15_000 })).out);
   const pids = listen.map((l) => l.pid);
-  const [cwd, ps, dk] = await Promise.all([
+  const [cwd, ps, dk, tree] = await Promise.all([
     pids.length ? sh(["lsof", "-a", "-p", pids.join(","), "-d", "cwd", "-Fn"], { timeout: 15_000 }).then((r) => parseCwd(r.out)) : new Map<number, string>(),
     sh(["/bin/ps", "-A", "-o", "pid=,etime=,command="]).then((r) => parsePs(r.out)),
     Bun.which("docker") ? sh(["docker", "ps", "--format", DOCKER_FORMAT], { timeout: 10_000 }) : null,
+    sh(["/bin/ps", "-A", "-o", "pid=,ppid="]).then((r) => new Set(descendants(r.out, process.pid))),
   ]);
+  // An agent's own process (Claude Code listens for its IDE and MCP links): a `claude` this server started. Stopping it
+  // breaks the run, so the row offers no Stop; the user stops the run in the TODO.
+  const isAgent = (pid: number, name: string) => tree.has(pid) && /^claude\b/i.test(name);
   // lsof reports real paths (macOS /var is /private/var), so the stored folders are resolved too.
   const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
   const todos = (db.query("SELECT id, worktree_path FROM todos WHERE removed_at IS NULL AND worktree_path IS NOT NULL").all() as { id: number; worktree_path: string }[])
@@ -477,10 +482,10 @@ async function scanPorts() {
       const folder = cwd.get(l.pid) ?? "", p = ps.get(l.pid);
       return { kind: "process" as const, key: String(l.pid), ports: l.ports, name: l.name, command: p?.command ?? "", folder,
         since: p ? new Date(Date.now() - p.secs * 1000).toISOString() : null, age: "",
-        ...ownerOf(folder, todos, projects), self: l.pid === process.pid || l.pid === process.ppid };
+        ...ownerOf(folder, todos, projects), self: l.pid === process.pid || l.pid === process.ppid, agent: isAgent(l.pid, l.name) };
     }),
     ...containers.filter((c) => c.ports.length).map((c) => ({ kind: "container" as const, key: c.name, ports: c.ports, name: c.name, command: c.image,
-      folder: c.folder, since: null, age: c.age, ...ownerOf(c.folder, todos, projects), self: false })),
+      folder: c.folder, since: null, age: c.age, ...ownerOf(c.folder, todos, projects), self: false, agent: false })),
   ].sort((a, b) => a.ports[0]! - b.ports[0]!);
   lastScan = rows;
   const docker = !dk ? "not installed" : dk.ok ? "ok" : "not running";
@@ -492,6 +497,7 @@ async function stopPort(kind: string, key: string) {
   const row = lastScan.find((r) => r.kind === kind && r.key === key);
   if (!row) throw httpError(409, "not in the last scan: scan again");
   if (row.self) throw httpError(400, "that is Switchboard itself");
+  if (row.agent) throw httpError(400, "that is an agent: stop its run in the TODO");
   if (kind === "container") {
     const r = await sh(["docker", "stop", key], { timeout: 30_000 });
     if (!r.ok) throw httpError(500, `docker stop failed: ${r.err}`);
@@ -1087,7 +1093,10 @@ async function api(req: Request, path: string): Promise<Response> {
   // Opens the TODO's folder in VS Code: its worktree, else its topic folder, else its own folder (no topic).
   if ((m = path.match(/^\/api\/todos\/(\d+)\/vscode$/)) && method === "POST") {
     const t = todoOr404(Number(m[1]));
-    const dir = [t.worktree_path, projectRow(t.project_id)?.local_path, artifactDir(t.id)].find((d) => d && existsSync(d));
+    // v10: `place` opens the worktree a TODO keeps in another topic; only a folder listed in its places is taken.
+    const kept = body.place ? Object.values(t.places ? JSON.parse(t.places) : {}).map((x: any) => x.worktree_path).find((d) => d === body.place) : null;
+    if (body.place && !kept) return fail("not a worktree this TODO keeps", 400);
+    const dir = (kept ? [kept] : [t.worktree_path, projectRow(t.project_id)?.local_path, artifactDir(t.id)]).find((d) => d && existsSync(d));
     if (!dir) return fail("this TODO has no folder on disk yet", 404);
     let r;
     try { r = await sh(vscodeCommand(process.platform, dir), { timeout: 15_000, verbatim: true }); }
@@ -1238,7 +1247,7 @@ async function api(req: Request, path: string): Promise<Response> {
 
   if ((m = path.match(/^\/api\/todos\/(\d+)\/terminals(?:\/(\d+)\/(restart|close|busy))?$/))) {
     const id = Number(m[1]);
-    if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: termsOf(id).map(termOut), unsupported: TERM_UNSUPPORTED }); }
+    if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: termsOf(id).map((x) => ({ ...termOut(x), busy: termBusy(x) })), unsupported: TERM_UNSUPPORTED }); }
     if (!m[2] && method === "POST") {
       const t = liveTodo(id);
       if (TERM_UNSUPPORTED) return fail(TERM_UNSUPPORTED, 409);
