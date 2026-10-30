@@ -22,7 +22,7 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 
 - Talk to the user only through the app's MCP tools: mcp__app__post_message, mcp__app__set_title, mcp__app__set_attention, mcp__app__attach_file, mcp__app__set_worktree, mcp__app__set_pr and mcp__app__suggest_follow_ups. On your first turn, call mcp__app__set_title with a short title for this TODO, unless the prompt names a title to keep (a hand-over header does).
 - A prompt that starts with "This TODO continues earlier work" is a hand-over from earlier sessions. Keep the title it names, work in the worktree it names instead of creating a new one, and read the listed files you need before you start.
-- Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name.
+- Keep chat messages (mcp__app__post_message) to one or two lines. Anything longer (plans, reviews, questions with context, designs) goes in a markdown file in your artifact folder {artifact_dir}. Register each file with mcp__app__attach_file and link it from the message with file_name. Output for yourself (logs, raw results, scripts, data) goes in {artifact_dir}/work/; the user sees it only in a folded group, so the TODO's file list stays short.
 - The TODO text and the user's committed messages are your go-ahead for local edits within this TODO's scope. Outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user, unless the topic intro below turns on Independent mode.
 - Work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree. Only a topic whose folder is a git repository can have one; the topic intro below says where it goes.
 - T-<n> in text (T-38) is switchboard TODO number n. Read that TODO with mcp__app__read_todo and its files with mcp__app__read_file.
@@ -41,7 +41,7 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 export const TERMINAL_CONTRACT = `You are running in a terminal the user opened from switchboard, a local app where the user tracks work as TODOs. This terminal belongs to one TODO; {artifact_dir}/terminal/context.md describes it. The user talks to you here, in the terminal: answer here as usual.
 
 The app's MCP tools write to the TODO, which the user sees on its card and in its chat:
-- mcp__app__post_message posts a one or two line message to the TODO's chat, marked as coming from this terminal. Use it for an outcome worth keeping with the TODO (a finding, a decision, a finished step), not for your replies here. Longer content goes in a markdown file in the TODO's artifact folder {artifact_dir}: register it with mcp__app__attach_file and link it from the message with file_name.
+- mcp__app__post_message posts a one or two line message to the TODO's chat, marked as coming from this terminal. Use it for an outcome worth keeping with the TODO (a finding, a decision, a finished step), not for your replies here. Longer content goes in a markdown file in the TODO's artifact folder {artifact_dir}: register it with mcp__app__attach_file and link it from the message with file_name. Output for yourself (logs, raw results, scripts, data) goes in {artifact_dir}/work/.
 - mcp__app__list_comments lists the user's open comments on the TODO's files; answer each with mcp__app__reply_comment, when the user asks you to look at them.
 - mcp__app__set_attention raises the TODO's attention flag when the user should come back to it; clear it once that is resolved.
 - mcp__app__set_title, mcp__app__set_worktree and mcp__app__set_pr change the TODO itself: call them only when the user asks.
@@ -590,10 +590,12 @@ export function newSession(todoId: number, agent?: string, scheduled?: string) {
   }
   closeAgent(todoId);
   const last = db.query("SELECT body, session_no FROM messages WHERE todo_id = ? AND author = 'agent' ORDER BY id DESC LIMIT 1").get(todoId) as any;
+  const files = filesOf(todoId);
   const header = handOver({
     no, title: t.title, worktree: t.worktree_path, pr: t.pr_number,
     last: last ? { no: last.session_no ?? prev.no, body: last.body } : null,
-    files: filesOf(todoId).map((f) => ({ path: f.path, session_no: f.session_no, by_user: !!f.by_user })), scheduled,
+    files: files.filter((f) => !f.work).map((f) => ({ path: f.path, session_no: f.session_no, by_user: !!f.by_user })),
+    work: files.some((f) => f.work) ? `${artifactDir(todoId)}/work/` : null, scheduled,
   });
   runWorker(todoId, () => take(todoId, "queued"), { no, header, agent }, scheduled ? "scheduled run" : "new session");
 }
