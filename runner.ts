@@ -863,13 +863,17 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
 function autoContinue(todoId: number, why: string) {
   const n = (cuts.get(todoId) ?? 0) + 1;
   cuts.set(todoId, n);
-  if (n > AUTO_CONTINUES) return addEvent(todoId, "auto-continue skipped", "app", `${why} · continued ${AUTO_CONTINUES} times in a row already`);
+  if (n > AUTO_CONTINUES) {
+    // v10: the chat says once that the app gave up; its card carries a Continue button. Not sent to the agent.
+    if (n === AUTO_CONTINUES + 1) addMessage(todoId, "app", `Cut off again: ${why}. The app stopped after ${AUTO_CONTINUES} tries in a row. Send a message to go on.`, "delivered", null, "gave up");
+    return addEvent(todoId, "auto-continue skipped", "app", `${why} · continued ${AUTO_CONTINUES} times in a row already`);
+  }
   const session = todoRow(todoId)!.session_id;
   setTimeout(() => {
     const t = todoRow(todoId);
     if (running.has(todoId) || shuttingDown || !t || t.removed_at || t.session_id !== session || sessionsOf(todoId).at(-1)?.ended_at || cuts.get(todoId) !== n) return;
     addEvent(todoId, "auto-continue", "app", `${why} · ${n} of ${AUTO_CONTINUES}`);
-    addMessage(todoId, "app", `Your last turn was cut off: ${why}. Continue where you left off.`, "queued");
+    addMessage(todoId, "app", `Your last turn was cut off: ${why}. Continue where you left off.`, "queued", null, `continue ${n}/${AUTO_CONTINUES}`);
     deliver(todoId, "auto-continue");
   }, CONTINUE_DELAY_MS);
 }
