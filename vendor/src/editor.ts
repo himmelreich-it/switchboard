@@ -43,17 +43,17 @@ function language(name: string): Extension {
 const isMarkdown = (name: string) => /\.(md|markdown)$/i.test(name);
 
 // Token colors from the v4 design: keyword violet, string amber, number magenta, comment muted, property cyan;
-// markdown: heading cyan, quote violet, code amber, link lime.
+// markdown: heading cyan, quote violet, code amber, link lime. Monokai (design v8) sets --syntax-* tokens, which win.
 const style = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword, t.modifier], color: "var(--accent-violet)" },
-  { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "var(--accent-amber)" },
-  { tag: [t.number, t.bool, t.null, t.atom], color: "var(--accent-magenta)" },
+  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword, t.modifier], color: "var(--syntax-keyword, var(--accent-violet))" },
+  { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "var(--syntax-string, var(--accent-amber))" },
+  { tag: [t.number, t.bool, t.null, t.atom], color: "var(--syntax-number, var(--accent-magenta))" },
   { tag: [t.comment, t.lineComment, t.blockComment, t.meta], color: "var(--text-muted)" },
-  { tag: [t.propertyName, t.attributeName, t.definition(t.propertyName)], color: "var(--accent-cyan)" },
-  { tag: [t.heading, t.heading1, t.heading2, t.heading3], color: "var(--accent-cyan)", fontWeight: "600" },
+  { tag: [t.propertyName, t.attributeName, t.definition(t.propertyName)], color: "var(--syntax-type, var(--accent-cyan))" },
+  { tag: [t.heading, t.heading1, t.heading2, t.heading3], color: "var(--syntax-type, var(--accent-cyan))", fontWeight: "600" },
   { tag: t.quote, color: "var(--accent-violet)" },
-  { tag: t.monospace, color: "var(--accent-amber)" },
-  { tag: [t.link, t.url], color: "var(--accent-lime)" },
+  { tag: t.monospace, color: "var(--syntax-string, var(--accent-amber))" },
+  { tag: [t.link, t.url], color: "var(--syntax-function, var(--accent-lime))" },
   { tag: t.emphasis, fontStyle: "italic" },
   { tag: t.strong, fontWeight: "700" },
   { tag: t.strikethrough, textDecoration: "line-through" },
