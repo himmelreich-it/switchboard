@@ -165,6 +165,8 @@ test("handOver leaves out lines without a value", () => {
   ].join("\n"));
   expect(handOver({ no: 2, title: "T", worktree: null, pr: null, last: null, files: [] }))
     .toBe("This TODO continues earlier work (session 2). Title: T. Keep this title.");
+  expect(handOver({ no: 2, title: "T", worktree: null, pr: null, last: null, files: [], work: "/d/work/" }))
+    .toBe("This TODO continues earlier work (session 2). Title: T. Keep this title.\nEarlier output for the agent itself (logs, raw results, scripts) is in /d/work/.");
   // the header names the worktree, so the usual worktree line is not repeated
   expect(deliveryPrompt("/w", ["go"], "HEADER")).toBe("HEADER\n\ngo");
 });

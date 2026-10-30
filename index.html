@@ -892,6 +892,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fitem > .nm { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .fitem > .mt { flex: none; font-size: 11px; color: var(--text-muted); }
 .fitem.del > .nm { color: var(--text-muted); text-decoration: line-through; }
+.fitem.wgrp > .nm, .fitem.wgrp > .mk { color: var(--text-muted); }
 .chg { height: 22px; padding: 0 6px; display: flex; align-items: center; gap: 6px; cursor: pointer; background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-1); color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; }
 .chg[aria-pressed="true"] { background: var(--surface-3); border-color: var(--accent-lime); color: var(--text-primary); }
 .tree { display: flex; flex-direction: column; }
@@ -1472,6 +1473,7 @@ const FILE = '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7
 const BRANCH = '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>';
 const BUBBLE = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
 const PLUS = '<path d="M12 5v14"/><path d="M5 12h14"/>';
+const ARCHIVE = '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>';
 const TRASH = '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>';
 const CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
 const CLIP = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>';
@@ -1612,6 +1614,7 @@ try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catc
 try { const v = localStorage.getItem("switchboard-board-view"); S.board = v === "backlog" || v === "running" ? v : "board"; } catch (e) {}
 S.editing = null;   // first instruction being edited (items 94-97): {todoId, msgId, text, err}
 S.fileRoot = {};      // TODO id -> "todo" | "worktree" | "project" (item 101), until reload
+S.workOpen = {};      // TODO id -> true while its "Work files" group is open, until reload
 S.tabOf = {}; S.lastFile = {};   // TODO id -> its tab and its last opened file, restored when the card is opened again; until reload
 S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
 S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
@@ -2110,6 +2113,19 @@ function deleteNote() {
       need("detail");
       toast("success", "Deleted", f.name);
     }), "Not deleted")]] });
+}
+// An agent file moves to archive/ in the artifact folder; the list skips that folder.
+function archiveFile() {
+  const f = S.file;
+  if (!f || f.root !== "todo" || f.byUser) return;
+  openDialog({ title: "Archive file", body: `${f.name} moves to the archive folder of this TODO and leaves the list, with its comments. Move it back in Finder to restore it.`, detail: f.abs,
+    buttons: [["Cancel", "ghost"], ["Archive", "danger", () => act(call("DELETE", `/api/todos/${f.todoId}/files/${f.id}`).then(() => {
+      delete edits[fileKey(f)];
+      if (S.lastFile[f.todoId] === f) delete S.lastFile[f.todoId];
+      if (S.file === f) closeFile();
+      need("detail");
+      toast("success", "Archived", f.name);
+    }), "Not archived")]] });
 }
 async function openTreeFile(rel) {
   const t = cur(), root = S.fileRoot[t.id], mark = S.trees[`${t.id}:${root}`]?.marks?.[rel];
@@ -3233,15 +3249,19 @@ function renderFileList(t, d) {
   const markHtml = (m) => (m ? `<span class="mk" style="color:${MARK[m][1]}" title="${MARK[m][0]}">${m}</span>` : '<span class="mk"></span>');
   if (root === "todo") {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
+    const item = (f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.by_user ? "\nyour note · editable while the agent runs" : f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running && !f.by_user ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
+          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${f.by_user ? '<span class="youtag">you</span>' : ""}${unsaved({ root: "todo", id: f.id })}${cmtDot(t.id, "todo", f.id)}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`;
+    // Agents keep output meant for themselves in work/ (logs, raw results); it folds into one group, closed by default.
+    const top = d?.files.filter((f) => !f.work) ?? [], work = d?.files.filter((f) => f.work) ?? [], wOpen = !!S.workOpen[t.id];
     const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
-      : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.by_user ? "\nyour note · editable while the agent runs" : f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running && !f.by_user ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
-          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${f.by_user ? '<span class="youtag">you</span>' : ""}${unsaved({ root: "todo", id: f.id })}${cmtDot(t.id, "todo", f.id)}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
+      : top.map(item).join("") + (work.length ? `<button type="button" class="fitem wgrp" data-act="work-files" data-fk="work-files" aria-expanded="${wOpen}" title="Output the agents keep for themselves: logs, raw results, scripts (work/ in the artifact folder)">
+          <span class="mk">${wOpen ? "▾" : "▸"}</span><span class="nm">Work files</span><span class="mt">${work.length}</span></button>${wOpen ? work.map(item).join("") : ""}` : "");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
         ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span>${unsaved({ todoId: t.id, root: "worktree", rel })}${cmtDot(t.id, "worktree", rel)}<span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
     return setHtml($("fileList"), seg + `<span class="ml grp">TODO files<button type="button" class="newnote" data-act="new-note" data-fk="new-note" title="Write your own notes for this TODO, also while the agent runs. The agent sees them once you point it to the file.">${SVG(PLUS, 11)}New note</button></span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
-      <span class="root-note">terminal/ and uploads/ are not listed</span>`);
+      <span class="root-note">terminal/, uploads/ and archive/ are not listed</span>`);
   }
   // Items 102, 103: folders first; folders on the way to a change start open; Changed lists the changed files flat.
   const key = `${t.id}:${root}`, tr = S.trees[key];
@@ -3325,7 +3345,7 @@ function renderFile(t) {
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${f.byUser ? '<span class="notetag" title="Your note · editable while the agent runs">your note</span>' : ""}${locked ? `<span title="The agent may change this file. Edit opens when its run ends." style="display:flex">${badge("Read-only · agent running")}</span>` : ""}
     <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}
-      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : ""}</span>`);
+      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : f.root === "todo" ? iconBtn("archive-file", locked ? "Archive opens when the agent's run ends" : "Archive file", ARCHIVE, locked) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
     destroyEditor();
@@ -3940,6 +3960,8 @@ const ACTIONS = {
   "open-folder": () => { const f = S.file; f?.abs && act(call("POST", f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}/reveal` : fsUrl(f, "fs/reveal")), "Can't open folder"); },
   "add-path": addPathToMessage,
   "delete-note": deleteNote,
+  "archive-file": archiveFile,
+  "work-files": () => { S.workOpen[S.sel] = !S.workOpen[S.sel]; render(); },
   "md-tool": (id) => S.cm?.handle?.format(id),
   "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
   "term-sel": (id) => { const t = cur(); pickTerm(t.id, Number(id)); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },

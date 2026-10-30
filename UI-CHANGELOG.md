@@ -6,14 +6,23 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
-### Unclear whether v9 covers these (built 2026-10-11/12, before v9 landed)
-Check against v9's scenes; move to "Covered › v9" or keep open.
-- Follow-up pills (1195c7c): with two pills on a card, the shorter one keeps its full width but leaves at least 70px for the longer one, which is cut with "…". Before, the longer pill could leave the card.
-- Follow-up pills (6c927f2): pills show only on cards in a lane where the agent waits for the user. A TODO whose agent asked while background tasks still run sits in Waiting and shows its pills; a Running card never does.
+### 2026-10-30 · Archive a TODO file
+- Where: Files tab › TODO root › file header, the icon row next to "Add the path to the message".
+- Now: an agent's file has an archive icon "Archive file". A dialog "Archive file" says the file moves to the TODO's archive folder and leaves the list, with its comments; buttons Cancel and Archive. Success shows the toast "Archived <file>". While the agent runs the icon is disabled. The user's own notes keep "Delete note". A file deleted on disk now leaves the list by itself instead of showing "missing". The note under the list reads "terminal/, uploads/ and archive/ are not listed".
+- Why: a TODO collected 180 files, 172 of them already deleted, and the user could not remove any.
+- Design question: archive icon in the header, or a hover action on each row of the list?
+
+### 2026-10-30 · Work files group
+- Where: Files tab › TODO root › list, below the TODO's own files.
+- Now: files the agents keep for themselves (logs, raw results, scripts) sit in one folded row "▸ Work files <count>", muted, closed by default. A click opens it and lists those files under it, same row style as the others.
+- Why: agents wrote 160+ logs and result files next to the plans and reports, and the user could not find the files meant for them.
+- Design question: should the group be indented or carry its own heading, and should the Files tab count include work files?
 
 ## Covered
 
 ### v10 (2026-10-30)
+- Follow-up pills (1195c7c): with two pills on a card, the shorter one keeps its full width but leaves at least 70px for the longer one.
+- Follow-up pills (6c927f2): pills show only on cards in a lane where the agent waits for the user.
 - 2026-10-27 · Idle shell tab closes without asking
 - 2026-10-26 · A turn cut by sleep continues on its own
 - 2026-10-26 · Change topic after a worktree exists; each topic keeps its worktree and PR
