@@ -11,9 +11,10 @@ const r = await Bun.build({
 if (!r.success) { console.error(r.logs.join("\n")); process.exit(1); }
 copyFileSync(join(nm, "@xterm/xterm/css/xterm.css"), join(out, "terminal.css"));
 
-// Latin subsets, weights 400-700: the design's three families.
+// Latin subsets, weights 400-700: the Cyberpunk families, and Inter for Monokai (design v8).
 const FONTS: [string, string, string][] = [
   ["Chakra Petch", "chakra-petch", "normal"], ["Space Grotesk", "space-grotesk", "normal"], ["JetBrains Mono", "jetbrains-mono", "normal"],
+  ["Inter", "inter", "normal"],
 ];
 mkdirSync(join(out, "fonts"), { recursive: true });
 let css = "";
