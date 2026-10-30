@@ -2,7 +2,7 @@ import type { ServerWebSocket, Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
@@ -49,8 +49,10 @@ export const now = () => new Date().toISOString();
 export const todoRow = (id: number) => db.query("SELECT * FROM todos WHERE id = ?").get(id) as Todo | null;
 // A TODO's topic: null before routing and for a TODO without a topic (801).
 export const projectRow = (id: number | null) => (id == null ? null : db.query("SELECT * FROM projects WHERE id = ?").get(id) as Project | null);
+// work: the file sits in work/, where agents keep output meant for themselves; the Files tab folds those.
 export const filesOf = (todoId: number) =>
-  db.query("SELECT id, path, session_no, by_user FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null; by_user: number | null }[];
+  (db.query("SELECT id, path, session_no, by_user FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null; by_user: number | null }[])
+    .map((f) => ({ ...f, work: f.path.startsWith(join(artifactDir(todoId), "work") + "/") }));
 export type Comment = { id: number; todo_id: number; root: string; rel: string; path: string; quote: string; line: number | null; body: string; reply: string | null; state: "open" | "replied" | "resolved"; created_at: string; replied_at: string | null };
 export const commentsOf = (todoId: number, where = "1") =>
   db.query(`SELECT * FROM comments WHERE todo_id = ? AND ${where} ORDER BY path, line, id`).all(todoId) as Comment[];
@@ -513,20 +515,21 @@ function messageOut(id: number) {
   return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name, path }) => ({ id, name, size: Bun.file(path).size })) };
 }
 
-function fileOut(f: { id: number; path: string; session_no: number | null; by_user: number | null }) {
+function fileOut(f: { id: number; path: string; session_no: number | null; by_user: number | null; work: boolean }) {
   try {
     // Images, binaries and files over MAX_TEXT have no line count; the list shows their size instead (the same test as fileFacts).
     const st = statSync(f.path), image = IMAGE_EXT.test(f.path) && !/\.svg$/i.test(f.path);
     const buf = image || st.size > MAX_TEXT ? null : readFileSync(f.path);
     const lines = buf && !buf.subarray(0, 8192).includes(0) ? buf.toString("utf8").trimEnd().split("\n").length : null;
-    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, by_user: !!f.by_user, lines, size: st.size, mtime: st.mtimeMs };
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, by_user: !!f.by_user, work: f.work, lines, size: st.size, mtime: st.mtimeMs };
   } catch {
-    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, by_user: !!f.by_user, lines: null, mtime: null }; // deleted on disk
+    return { id: f.id, name: basename(f.path), path: f.path, session_no: f.session_no, by_user: !!f.by_user, work: f.work, lines: null, mtime: null }; // deleted on disk
   }
 }
 
 // Item 85: every file in the artifact folder is a TODO file, also one written from a terminal. Files no session
-// registered get session_no NULL ("added outside a session"). uploads/ (attachments) and terminal/ (context) are skipped.
+// registered get session_no NULL ("added outside a session"). uploads/ (attachments), terminal/ (context) and archive/
+// (files the user removed) are skipped. A file gone from disk leaves the list, with its comments.
 // Symlinks are skipped: they could point the editor at files outside the folder, or loop.
 // ponytail: stops after 500 files; an artifact folder holds plans and notes, not a checkout.
 function registerDiskFiles(t: Todo) {
@@ -537,7 +540,7 @@ function registerDiskFiles(t: Todo) {
     let names: string[];
     try { names = readdirSync(d); } catch { return; }
     for (const n of names) {
-      if (found.length >= 500 || n.startsWith(".") || (top && (n === "uploads" || n === "terminal"))) continue;
+      if (found.length >= 500 || n.startsWith(".") || (top && (n === "uploads" || n === "terminal" || n === "archive"))) continue;
       const p = join(d, n);
       try {
         const st = lstatSync(p);
@@ -548,6 +551,12 @@ function registerDiskFiles(t: Todo) {
   };
   walk(realpathSync(dir), true);
   for (const p of found) db.run("INSERT OR IGNORE INTO files (todo_id, path) VALUES (?, ?)", [t.id, p]);
+  for (const f of filesOf(t.id)) if (!existsSync(f.path)) dropFile(t.id, f.id);
+}
+
+function dropFile(todoId: number, fileId: number) {
+  db.run("DELETE FROM comments WHERE todo_id = ? AND root = 'todo' AND rel = ?", [todoId, String(fileId)]);
+  db.run("DELETE FROM files WHERE id = ?", [fileId]);
 }
 
 async function projectOut(p: Project) {
@@ -794,7 +803,7 @@ async function writeContext(t: Todo) {
     git: g ? [g.commits != null && `${g.commits} commits`, g.changed && `${g.changed} changed`, g.untracked && `${g.untracked} untracked`,
       g.push === "none" ? "not pushed" : g.push === "unpushed" ? `${g.unpushed} unpushed` : g.push].filter(Boolean).join(" · ") : null,
     pr: pr ? `#${pr.number} ${pr.state}${pr.draft ? " (draft)" : ""} · ${pr.url}` : s.pr_number ? `#${s.pr_number}` : null,
-    sessions: sessionsOf(t.id), messages: msgs, files: filesOf(t.id).map((f) => f.path),
+    sessions: sessionsOf(t.id), messages: msgs, files: filesOf(t.id).filter((f) => !f.work).map((f) => f.path),
   });
   mkdirSync(join(dir, "terminal"), { recursive: true });
   writeFileSync(join(dir, "terminal", "context.md"), text);
@@ -1125,13 +1134,23 @@ async function api(req: Request, path: string): Promise<Response> {
     const f = db.query("SELECT id, path, by_user FROM files WHERE id = ? AND todo_id = ?").get(Number(m[2]), id) as { id: number; path: string; by_user: number | null } | null;
     if (!f) return fail("no such file", 404);
     if (m[3] === "reveal") return method === "POST" ? reveal(f.path) : fail("not found", 404);
-    // Item 147: the user deletes a note made with New note, with its comments. Agent files are not deletable here.
+    // Item 147: the user deletes a note made with New note, with its comments. Any other file moves to archive/ in the
+    // artifact folder, which the list skips; the user gets it back by moving it out in Finder.
     if (method === "DELETE") {
-      if (!f.by_user) return fail("only notes made with New note can be deleted", 403);
-      try { unlinkSync(f.path); } catch (e: any) { if (e.code !== "ENOENT") throw e; }
-      db.run("DELETE FROM comments WHERE todo_id = ? AND root = 'todo' AND rel = ?", [id, String(f.id)]);
-      db.run("DELETE FROM files WHERE id = ?", [f.id]);
-      addEvent(id, "file deleted", "user", basename(f.path));
+      if (f.by_user) {
+        try { unlinkSync(f.path); } catch (e: any) { if (e.code !== "ENOENT") throw e; }
+      } else if (existsSync(f.path)) {
+        if (t.status === "running") return json({ error: "running" }, 409);
+        const dir = artifactDir(id), rel = relative(dir, f.path);
+        if (rel.startsWith("..") || isAbsolute(rel)) return fail(`${f.path} is outside the artifact folder`, 403);
+        const ext = extname(rel), stem = join(dir, "archive", rel.slice(0, rel.length - ext.length));
+        let to = stem + ext, n = 1;
+        while (existsSync(to)) to = `${stem}-${++n}${ext}`;
+        mkdirSync(dirname(to), { recursive: true });
+        renameSync(f.path, to);
+      }
+      dropFile(id, f.id);
+      addEvent(id, f.by_user ? "file deleted" : "file archived", "user", basename(f.path));
       changed(id);
       return json({ ok: true });
     }

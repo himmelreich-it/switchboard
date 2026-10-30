@@ -74,7 +74,7 @@ export function swapPlace(places: Record<string, Place>, from: number | null, to
 // Lines without a value are left out. `scheduled` is the run line of a scheduled firing (item 144).
 export function handOver(o: {
   no: number; title: string; worktree: string | null; pr: number | null;
-  last: { no: number; body: string } | null; files: { path: string; session_no: number | null; by_user?: boolean }[]; scheduled?: string | null;
+  last: { no: number; body: string } | null; files: { path: string; session_no: number | null; by_user?: boolean }[]; work?: string | null; scheduled?: string | null;
 }): string {
   return [
     `This TODO continues earlier work (session ${o.no}). Title: ${o.title}. Keep this title.`,
@@ -84,6 +84,7 @@ export function handOver(o: {
     o.last && `Last message of session ${o.last.no}: ${o.last.body.replace(/\s*\n\s*/g, " ")}`,
     o.files.length && "Files from earlier sessions (open with Read what you need):\n"
       + o.files.map((f) => `${f.path} (${f.by_user ? "the user's notes" : f.session_no ? `session ${f.session_no}` : "added outside a session"})`).join("\n"),
+    o.work && `Earlier output for the agent itself (logs, raw results, scripts) is in ${o.work}.`,
   ].filter(Boolean).join("\n");
 }
 
