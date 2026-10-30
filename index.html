@@ -144,16 +144,16 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
   --text-primary: #F8F8F2; --text-secondary: #D7D7CB; --text-muted: #BFBDAE; --text-disabled: #8C8A80;
   --text-on-accent: #181714; --text-on-primary: #181714; --text-on-danger: #181714;
   --accent-lime: #F8F8F2; --accent-lime-hover: #FFFFFF; --accent-lime-press: #C6C4BC;
-  --accent-cyan: #D7D7CB; --accent-blue: #D7D7CB; --accent-magenta: #FD7686; --accent-red: #FD7686; --accent-violet: #B7A0FB; --accent-amber: #FFCA35;
+  --accent-cyan: #66D9EF; --accent-blue: #7D9BFF; --accent-magenta: #FD7686; --accent-red: #FD7686; --accent-violet: #B7A0FB; --accent-amber: #FFCA35;
   --tint-lime: #F8F8F212; --line-lime: #87857F;
-  --tint-cyan: #F8F8F212; --line-cyan: #74736F;
-  --tint-blue: #F8F8F212; --line-blue: #74736F;
+  --tint-cyan: #66D9EF24; --line-cyan: #66D9EF8C;
+  --tint-blue: #7D9BFF24; --line-blue: #7D9BFF8C;
   --tint-neutral: #F8F8F212; --line-neutral: #74736F;
   --tint-magenta: #FD768624; --line-magenta: #FD76868C;
   --tint-red: #FD768624; --line-red: #FD76868C;
   --tint-violet: #B7A0FB24; --line-violet: #B7A0FB8C;
   --tint-amber: #FFCA3524; --line-amber: #FFCA358C;
-  --status-success: #65E0CA; --tint-success: #65E0CA24; --line-success: #65E0CA8C;
+  --status-success: #A6E22E; --tint-success: #A6E22E24; --line-success: #A6E22E8C;
   --status-warning: #FFCA35; --tint-warning: #FFCA3524; --line-warning: #FFCA358C;
   --status-danger: #FD7686; --status-danger-hover: #FE97A3; --tint-danger: #FD768624; --line-danger: #FD76868C;
   --status-info: #D7D7CB; --tint-info: #F8F8F212; --line-info: #74736F;
@@ -176,17 +176,17 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
   --text-primary: #272822; --text-secondary: #4C4B44; --text-muted: #69675A; --text-disabled: #AFAEA6;
   --text-on-accent: #FFFFFF; --text-on-primary: #FFFFFF; --text-on-danger: #FFFFFF;
   --accent-lime: #272822; --accent-lime-hover: #3D3E37; --accent-lime-press: #12120D;
-  --accent-cyan: #4C4B44; --accent-blue: #4C4B44; --accent-magenta: #A10128; --accent-red: #A10128; --accent-violet: #7444B4; --accent-amber: #B66D00;
+  --accent-cyan: #00768A; --accent-blue: #3558C8; --accent-magenta: #A10128; --accent-red: #A10128; --accent-violet: #7444B4; --accent-amber: #8A6A00;
   --tint-lime: #2728220F; --line-lime: #85847E;
-  --tint-cyan: #2728220F; --line-cyan: #BCBAB6;
-  --tint-blue: #2728220F; --line-blue: #BCBAB6;
+  --tint-cyan: #21C7E02E; --line-cyan: #00768A8C;
+  --tint-blue: #5B7BFF2E; --line-blue: #3558C88C;
   --tint-neutral: #2728220F; --line-neutral: #BCBAB6;
   --tint-magenta: #FD61782E; --line-magenta: #A101288C;
   --tint-red: #FD61782E; --line-red: #A101288C;
   --tint-violet: #AE84F22E; --line-violet: #7444B48C;
-  --tint-amber: #F9AD262E; --line-amber: #B66D008C;
-  --status-success: #007A7B; --tint-success: #21D1CA2E; --line-success: #007A7B8C;
-  --status-warning: #B66D00; --tint-warning: #F9AD262E; --line-warning: #B66D008C;
+  --tint-amber: #E6C2002E; --line-amber: #8A6A008C;
+  --status-success: #4A7500; --tint-success: #8BC34A2E; --line-success: #4A75008C;
+  --status-warning: #8A6A00; --tint-warning: #E6C2002E; --line-warning: #8A6A008C;
   --status-danger: #A10128; --status-danger-hover: #860121; --tint-danger: #FD61782E; --line-danger: #A101288C;
   --status-info: #4C4B44; --tint-info: #2728220F; --line-info: #BCBAB6;
   --interactive-primary: #272822; --interactive-primary-hover: #3D3E37; --interactive-primary-press: #12120D;
@@ -220,6 +220,7 @@ body {
 h1, h2, h3, h4 { margin: 0; font-family: var(--font-display); font-weight: 600; line-height: 1.15; }
 a { color: var(--accent-lime); text-decoration: none; }
 a:hover { color: var(--accent-lime-hover); text-decoration: underline; }
+.bubble a, .said:not(.md) a, .appcard .t a { text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }   /* v10: visible in Monokai, where the link color is the text color */
 code, kbd, pre, samp { font-family: var(--font-mono); }
 :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 ::selection { background: var(--tint-lime); color: var(--accent-lime); }
@@ -560,6 +561,39 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .rn-row:hover { background: var(--surface-2); }
 .pt-row { display: grid; grid-template-columns: 88px minmax(0, 1.2fr) minmax(0, 1fr) 110px 72px 150px; gap: 14px; align-items: center; min-height: 44px; padding: 6px 12px 6px 16px; }
 .pt-row .acts { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.pt-row.pt-head { min-height: 32px; background: var(--surface-2); font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.tp-indep { display: flex; align-items: baseline; gap: 8px; font-family: var(--font-sans); font-size: 12px; line-height: 1.5; color: var(--text-secondary); text-wrap: pretty; }
+.tp-indep > span:first-child { flex: none; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-primary); }
+.tp-kept { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle); }
+.tp-kept .h { font-family: var(--font-sans); color: var(--text-muted); }
+.tp-kept .kp { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tp-kept .kp > div { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; color: var(--text-secondary); }
+.tp-kept .kp > div + div { flex-wrap: nowrap; gap: 8px; }
+.tp-kept .tn { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-primary); }
+.tp-kept .mut { color: var(--text-muted); }
+.tp-kept a { color: var(--accent-lime); text-decoration: underline; text-underline-offset: 2px; }
+.tp-kept .fd { flex: 1; min-width: 0; color: var(--text-muted); overflow-wrap: anywhere; }
+.kp-vsc { flex: none; height: 24px; padding: 0 8px; cursor: pointer; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.kp-vsc:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.tp-change { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
+.tp-change .h { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.tp-change .note { font-family: var(--font-sans); font-size: 12px; color: var(--text-muted); text-wrap: pretty; }
+.ccnt { flex: none; display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--accent-amber); }
+.ccnt > svg { flex: none; }
+.youtag { flex: none; padding: 0 4px; line-height: 16px; font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border-default); border-radius: 2px; }
+.notetag { flex: none; padding: 0 5px; line-height: 18px; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border-default); border-radius: 2px; }
+.newnote { flex: none; height: 22px; padding: 0 6px; display: flex; align-items: center; gap: 4px; cursor: pointer; background: transparent; border: 1px solid var(--border-subtle); border-radius: 2px; font-family: var(--font-mono); font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--text-secondary); }
+.newnote:hover { border-color: var(--accent-lime); color: var(--text-primary); }
+.cmt-tog { height: 26px; padding: 0 8px; display: flex; align-items: center; gap: 6px; cursor: pointer; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.cmt-tog[aria-pressed="true"] { background: var(--surface-3); border-color: var(--border-strong); }
+.cmt-tog:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.autotag { padding: 0 4px; line-height: 16px; font-size: 11px; color: var(--text-muted); border: 1px solid var(--border-default); border-radius: 2px; }
+.removed-note { flex: none; padding: 12px 20px 16px; }
+.removed-note > div { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); font-size: 13px; line-height: 1.5; color: var(--text-secondary); text-wrap: pretty; }
+.removed-note .ic { display: flex; flex: none; color: var(--text-muted); }
+.pt-tag { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.pt-all { align-self: flex-start; height: 28px; padding: 0 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.pt-all:hover { border-color: var(--border-default); color: var(--text-primary); }
 .pt-row .tchip { justify-self: start; background: none; color: var(--text-secondary); cursor: pointer; }
 .pt-row .tchip:hover { border-color: var(--accent-lime); color: var(--text-primary); }
 .rm-toggle { align-self: flex-start; height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
@@ -633,7 +667,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .ctxbar > i { position: absolute; left: 0; top: 0; bottom: 0; }
 .pop-tip { width: max-content; max-width: min(380px, 80vw); padding: 10px 12px; flex-direction: column; gap: 4px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: normal; color: var(--text-secondary); }
 .pop-tip .note { font-family: var(--font-sans); color: var(--text-muted); }
-.gitpop { width: 340px; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: normal; color: var(--text-secondary); }
+.gitpop { width: 400px; max-width: calc(100vw - 48px); padding: 12px; display: flex; flex-direction: column; gap: 8px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: normal; color: var(--text-secondary); }
 .gitpop .folder { color: var(--text-muted); overflow-wrap: anywhere; }
 .gitpop .foot { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle); font-family: var(--font-sans); font-size: 12px; color: var(--text-muted); }
 .sesspop { width: 460px; max-width: calc(100vw - 48px); padding: 14px; display: flex; flex-direction: column; gap: 12px; white-space: normal; }
@@ -692,6 +726,8 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .edit-btn:hover { border-color: var(--accent-lime); color: var(--text-primary); }
 .appcard { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 4px; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-2); }
 .appcard > svg { flex: none; margin-top: 2px; }
+.appcard.warn { border-color: var(--line-amber); }
+.appcard > div > span:last-child:has(.mb-btn) { display: flex; }
 .appcard > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .appcard .t { font-size: 13px; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .work { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-top: 8px; padding: 4px 8px 4px 4px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; text-align: left; }
@@ -813,10 +849,11 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .cfoot { display: flex; align-items: center; gap: 8px; padding: 4px 6px 6px 8px; }
 .cfoot > .hint { flex: 1; min-width: 0; font-size: 12px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .cfoot > .hint.blue { color: var(--accent-blue); }
-.ns-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
-.ns-head > .sq8 { width: 8px; height: 8px; flex: none; background: var(--accent-lime); }
-.ns-head > .t { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-.ns-head > .s { font-size: 12px; color: var(--text-muted); }
+.ns-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: -9px; padding: 8px 10px 16px 12px; background: var(--tint-violet); border: 1px solid var(--line-violet); border-bottom: none; border-radius: var(--radius-2) var(--radius-2) 0 0; }
+.ns-head > svg { flex: none; }
+.ns-head > .t { font-family: var(--font-display); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-violet); }
+.ns-head > .s { font-size: 12px; color: var(--text-secondary); }
+.composer.ns .cbox, .composer.ns .cbox:focus-within { position: relative; border-color: var(--accent-violet); }
 .ns-head > .mb-btn { margin-left: auto; }
 .deliver-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 13px; color: var(--text-secondary); background: var(--tint-blue); border: 1px solid var(--line-blue); border-radius: var(--radius-1); }
 .deliver-bar > .mb-btn { margin-left: auto; }
@@ -847,7 +884,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .flist > .seg { margin: 0 0 8px; align-self: stretch; }
 .flist > .seg > button { flex: 1; justify-content: center; height: 24px; padding: 0 6px; font-size: 11px; }
 .flist .grp { padding: 10px 8px 4px; display: flex; align-items: center; gap: 8px; }
-.flist .grp > .chg { margin-left: auto; }
+.flist .grp > .chg, .flist .grp > .newnote { margin-left: auto; }
 .fitem { min-height: 32px; padding: 4px 8px; display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; }
 .fitem:hover { background: var(--surface-2); }
 .fitem[aria-pressed="true"] { background: var(--surface-3); border-color: var(--border-default); }
@@ -908,10 +945,12 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .cmt .r .md { font-size: 12px; }
 .cmt .acts { display: flex; gap: 4px; flex-wrap: wrap; }
 .cmt textarea { width: 100%; min-height: 64px; resize: vertical; box-sizing: border-box; font: inherit; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: 2px; padding: 6px; }
-.cmt-add { position: fixed; z-index: 30; }
+.cmt-add { position: fixed; z-index: 30; height: 26px; padding: 0 8px; display: flex; align-items: center; gap: 6px; cursor: pointer; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-1); box-shadow: var(--shadow-2); color: var(--text-primary); font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.cmt-add[hidden] { display: none; }
+.cmt-add:hover { border-color: var(--accent-lime); }
 ::highlight(sb-cmt) { background-color: var(--tint-amber); }
 ::highlight(sb-cmt-on) { background-color: var(--tint-amber); text-decoration: underline 2px var(--accent-amber); }
-.fitem > .cdot, .tr > .cdot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent-amber); }
+.fitem > .ccnt, .tr > .ccnt { margin-left: 2px; }
 .md-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .md-read { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; }
 .code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); }
@@ -949,9 +988,8 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .titem > .c { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .titem .nm { font-size: 13px; font-weight: 500; }
 .titem .sb { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.titem > .x { position: absolute; right: 4px; top: 50%; margin-top: -11px; width: 22px; height: 22px; display: none; align-items: center; justify-content: center; border-radius: 2px; color: var(--text-muted); }
-.titem:hover > .x, .titem[aria-selected="true"] > .x { display: flex; }
-.titem > .x:hover { background: var(--surface-2); color: var(--text-primary); }
+.titem > .x { position: absolute; right: 5px; top: 50%; margin-top: -11px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 2px; color: var(--text-muted); }
+.titem > .x:hover { border-color: var(--border-default); color: var(--text-primary); }
 .term-add { display: flex; gap: 6px; padding: 8px 0 0; flex-wrap: wrap; }
 .term-add .h { flex-basis: 100%; padding: 4px 0 0; }
 .term-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -964,13 +1002,15 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .cform .acts { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .term-hosts { flex: 1; min-height: 0; display: flex; margin: 16px 20px 0; background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
 .term-hosts > div { flex: 1; min-width: 0; min-height: 0; padding: 12px 14px; }
-.term-hosts > div:focus-within { box-shadow: inset 0 0 0 1px var(--line-lime); }
+.term-hosts:has(> div:focus-within) { border-color: var(--accent-lime); box-shadow: 0 0 0 1px var(--accent-lime); }
 .term-hosts .term-in { width: 100%; height: 100%; }   /* FitAddon measures the parent, so the padding sits outside it */
 .term-exit { flex: none; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 8px 20px 0; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--border-default); border-radius: var(--radius-1); font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
 .term-exit .right { margin-left: auto; display: flex; gap: 8px; }
-.term-foot { flex: none; display: flex; align-items: center; gap: 12px; padding: 6px 20px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.term-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 16px 20px 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
 .term-foot .cwd { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.term-foot .right { margin-left: auto; }
+.term-foot .right { margin-left: auto; flex: none; }
+.term-foot .right.on { color: var(--accent-lime); }
+.term-foot + .term-hosts { margin-top: 8px; }
 
 /* rendered markdown (files and operator replies) */
 .md { color: var(--text-primary); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
@@ -1114,6 +1154,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
       <div id="chatView" class="chatwrap" hidden>
         <div id="chatLog" aria-live="polite"></div>
         <div id="approval" data-screen-label="Approval" hidden></div>
+        <div id="removedNote" class="removed-note" hidden></div>
         <div class="composer"><div class="in">
           <div id="deliverBar" hidden></div>
           <div id="pillsBar"></div>
@@ -1153,7 +1194,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
             </div><div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize comments" title="Drag to resize · double-click to reset" tabindex="0" data-pane="notes"></div><aside id="fileNotes" class="fnotes" aria-label="Comments" hidden></aside></div>
-            <button type="button" id="cmtAdd" class="mb-btn mb-btn--primary mb-btn--sm cmt-add" hidden>Comment</button>
+            <button type="button" id="cmtAdd" class="cmt-add" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Comment</button>
             <span id="fileFoot" class="ffoot"></span>
           </div>
         </div>
@@ -1165,7 +1206,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
         <div class="term-body">
           <div id="termStrip" class="term-list"></div>
           <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize terminal list" title="Drag to resize · double-click to reset" tabindex="0" data-pane="term"></div>
-          <div class="term-pane"><div id="termPanel"></div><div id="termHosts" class="term-hosts" hidden></div><div id="termExit" hidden></div><div id="termFoot" class="term-foot" hidden></div></div>
+          <div class="term-pane"><div id="termPanel"></div><div id="termFoot" class="term-foot" hidden></div><div id="termHosts" class="term-hosts" hidden></div><div id="termExit" hidden></div></div>
         </div>
       </div>
     </section>
@@ -1243,7 +1284,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
     <div id="secWorktrees" class="set-main" hidden>
       <div class="set-headrow"><div class="set-title"><h2>Worktrees</h2><span>Every git worktree of every topic, and every local branch without one, sorted by what can go. A scan only reads; Delete asks first.</span></div>
         <span id="wtAt" class="small"></span><button type="button" id="wtScan" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="wt-scan">Scan</button>
-        <button type="button" id="wtDelete" class="mb-btn mb-btn--danger mb-btn--sm" data-act="wt-delete" hidden>Delete</button></div>
+        <button type="button" id="wtDelete" class="mb-btn mb-btn--danger mb-btn--sm" data-act="wt-delete" disabled>Delete</button></div>
       <div id="wtList" style="display:flex; flex-direction:column; gap:20px"></div>
     </div>
     <!-- Item 136: how long an agent waits for its background tasks between turns -->
@@ -1429,6 +1470,8 @@ function shortAge(iso) {
 const SVG = (d, size = 16, color = "currentColor") => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const FILE = '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>';
 const BRANCH = '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>';
+const BUBBLE = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
+const PLUS = '<path d="M12 5v14"/><path d="M5 12h14"/>';
 const TRASH = '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>';
 const CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
 const CLIP = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>';
@@ -1446,6 +1489,8 @@ const I = {
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   down: '<path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  again: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   plan: '<path d="M3 17l2 2 4-4"/><path d="M3 7l2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
@@ -2506,7 +2551,7 @@ function schedChip(t, lane = false, head = false) {
   const cls = s.paused ? "muted" : sk ? "amber" : lane ? "lane" : "";
   const text = esc(s.paused ? "paused" : t.schedule_text + (sk ? " · skipped" : ""));
   if (head) return `<button type="button" class="hchip sch schip ${cls}" data-act="pop" data-id="sched" data-fk="pop:sched" aria-expanded="${S.pop === "sched"}" title="${esc(title)}">${SVG(REPEAT, 12)}<span class="t">${text}</span>${SVG(CHEV_D, 12)}</button>`;
-  return `<button type="button" class="schip ${cls}" data-act="sched-open" data-id="${t.id}" title="${esc(title)} · Click to edit the schedule.">${SVG(REPEAT, 11)}<span class="t">${text}</span>${SVG('<path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 10)}</button>`;
+  return `<button type="button" class="schip ${cls}" data-act="sched-open" data-id="${t.id}" title="${esc(t.schedule_text)} · ${esc(title.replace(/\.$/, ""))}. Click to edit the schedule.">${SVG(REPEAT, 11)}<span class="t">${text}</span>${SVG('<path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 10)}</button>`;
 }
 // Item 145: a TODO another TODO's agent created; the badge opens that TODO.
 const fromBadge = (t) => (t.parent_id ? `<button type="button" class="fromb" data-act="open" data-id="${t.parent_id}" title="Created by T-${t.parent_id}'s agent · open T-${t.parent_id}">from&nbsp;T-${t.parent_id}</button>` : "");
@@ -2608,29 +2653,38 @@ function backlogHtml(rows) {
 function runningHtml() {
   const tasks = live().flatMap((t) => (t.background_tasks ?? []).map((b) => ({ t, b })));
   const head1 = `<div class="sec-head"><span class="sq8" style="background:var(--accent-cyan)"></span><h2>Agent tasks</h2><span class="cnt" style="color:var(--accent-cyan)">${tasks.length}</span><span class="sub">Background commands the agents started. Ask the agent to stop one.</span></div>`;
-  const list1 = !tasks.length ? '<span class="empty">No agent runs a background task.</span>'
+  const list1 = !tasks.length ? '<span class="empty">No background tasks.</span>'
     : `<div class="rows">${tasks.map(({ t, b }) => `<div class="rn-row" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="rn:${t.id}:${esc(b.id)}">
         <span class="num">${tNum(t)}</span><span class="t ellipsis" title="${esc(t.title)}">${esc(t.title)}</span>
         <span class="mono ellipsis" style="font-size:12px" title="${esc(b.description || b.id)}">${esc(b.description || `task ${b.id}`)}</span>
         <span class="mono muted" style="font-size:12px; text-align:right" title="${b.since ? "first seen " + esc(new Date(b.since).toLocaleString()) : ""}">${b.since ? esc(shortAge(b.since)) : ""}</span></div>`).join("")}</div>`;
   const P = S.ports;
+  // v10: the time of the scan sits by the Rescan button; rows that belong to no TODO, topic, agent or Switchboard hide behind Show all.
   const note = !P ? "" : P.unsupported ? "Not available on Windows." : `scanned ${esc(new Date(P.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}${P.docker === "ok" ? "" : ` · Docker: ${esc(P.docker)}`}`;
-  const head2 = `<div class="sec-head"><span class="sq8" style="background:var(--accent-blue)"></span><h2>Ports</h2>${P ? `<span class="cnt" style="color:var(--accent-blue)">${P.rows.length}</span>` : ""}<span class="sub">${note || "Every process and Docker container that listens on a TCP port."}</span>
-    <span class="right"><button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="ports-scan" data-fk="ports-scan"${S.portsScanning ? " disabled" : ""}>${S.portsScanning ? "Scanning…" : "Scan"}</button></span></div>`;
+  const keep = (r) => !!(r.todo_id || r.project_id || r.self || r.agent);
+  const rows = P && !P.unsupported ? P.rows.map((r, i) => ({ r, i })).filter(({ r }) => S.portsAll || keep(r)) : [];
+  const hidden = P && !P.unsupported ? P.rows.filter((r) => !keep(r)).length : 0;
+  const head2 = `<div class="sec-head"><span class="sq8" style="background:var(--accent-blue)"></span><h2>Ports</h2>${P && !P.unsupported ? `<span class="cnt" style="color:var(--accent-blue)">${rows.length}</span>` : ""}<span class="sub">Processes and Docker containers that listen on a port.</span>
+    <span class="right">${note ? `<span class="mono muted" style="font-size:12px">${note}</span>` : ""}<button type="button" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="ports-scan" data-fk="ports-scan"${S.portsScanning ? " disabled" : ""}>${S.portsScanning ? "Scanning…" : P ? "Rescan" : "Scan"}</button></span></div>`;
   const tilde = (f) => (P?.home && f.startsWith(P.home) ? "~" + f.slice(P.home.length) : f);
   const ownerHtml = (r) => {
     const t = r.todo_id && S.todos.find((x) => x.id === r.todo_id), p = r.project_id && S.projects.find((x) => x.id === r.project_id);
-    return t ? `<button type="button" class="tchip" data-act="open" data-id="${t.id}" title="${esc(t.title)}">${tNum(t)}</button>` : p ? `<span class="muted ellipsis" title="Topic folder">${esc(p.name)}</span>` : '<span class="muted">—</span>';
+    return t ? `<button type="button" class="tchip" data-act="open" data-id="${t.id}" title="Open ${tNum(t)}">${tNum(t)}</button>` : p ? `<span class="muted ellipsis" title="Topic folder">${esc(p.name)}</span>` : '<span class="muted">—</span>';
   };
-  const list2 = !P ? '<span class="empty">Not scanned yet.</span>' : P.unsupported ? "" : !P.rows.length ? '<span class="empty">Nothing listens on a TCP port.</span>'
-    : `<div class="rows">${P.rows.map((r, i) => `<div class="pt-row">
+  const label = (text, title) => `<span class="pt-tag" title="${esc(title)}">${text}</span>`;
+  const acts = (r, i) => r.self ? label("Switchboard", "This app's own server")
+    : r.agent ? label("Agent", r.todo_id ? `The agent of ${tNum({ id: r.todo_id })}. Stop its run in the TODO instead.` : "An agent process")
+    : (r.todo_id ? `<span title="Opens ${tNum({ id: r.todo_id })} with the request in its message box">${btn(`Ask ${tNum({ id: r.todo_id })}`, "port-ask", { v: "secondary", id: i })}</span>` : "") + btn("Stop", "port-stop", { v: "ghost", id: i });
+  const toggle = hidden ? `<button type="button" class="pt-all" data-act="ports-all" data-fk="ports-all">${S.portsAll ? `Hide the ${hidden} without a TODO or topic` : `Show all · ${hidden} more without a TODO or topic`}</button>` : "";
+  const list2 = !P ? '<span class="empty">Not scanned yet. A scan only reads; nothing stops without your click.</span>' : P.unsupported ? "" : !P.rows.length ? '<span class="empty">Nothing listens on a TCP port.</span>'
+    : `<div class="rows"><div class="pt-row pt-head"><span>Port</span><span>Process</span><span>Folder</span><span>Belongs to</span><span style="text-align:right">Age</span><span></span></div>${rows.map(({ r, i }) => `<div class="pt-row">
         <span class="mono" style="font-size:13px">${r.ports.map((p) => ":" + p).join(" ")}</span>
-        <div style="display:flex; flex-direction:column; gap:2px; min-width:0"><span class="ellipsis">${r.kind === "container" ? badge("Docker", "blue") + " " : ""}${esc(r.name)}</span><span class="mono muted ellipsis" style="font-size:11px" title="${esc(r.command)}">${esc(r.command)}</span></div>
+        <div style="display:flex; flex-direction:column; gap:2px; min-width:0"><span class="ellipsis">${esc(r.name)}${r.kind === "container" ? " " + badge("Docker", "blue") : ""}</span><span class="mono muted ellipsis" style="font-size:11px" title="${esc(r.command)}">${esc(r.command)}</span></div>
         <span class="mono muted ellipsis" style="font-size:11px" title="${esc(r.folder)}">${esc(tilde(r.folder) || "—")}</span>
         ${ownerHtml(r)}
         <span class="mono muted" style="font-size:12px; text-align:right; white-space:nowrap" title="${r.since ? "started " + esc(new Date(r.since).toLocaleString()) : esc(r.age)}">${esc(r.since ? shortAge(r.since) : r.age.replace(/ ago$/, ""))}</span>
-        <span class="acts">${r.todo_id ? btn(`Ask ${tNum({ id: r.todo_id })}`, "port-ask", { v: "ghost", id: i }) : ""}${r.self ? '<span class="muted" style="font-size:12px">Switchboard</span>' : btn("Stop", "port-stop", { v: "ghost", id: i })}</span>
-      </div>`).join("")}</div>`;
+        <span class="acts">${acts(r, i)}</span>
+      </div>`).join("")}</div>${toggle}`;
   return `<section class="sec" aria-label="Agent tasks">${head1}${list1}</section><section class="sec" aria-label="Ports">${head2}${list2}</section>`;
 }
 
@@ -2728,8 +2782,10 @@ function sessionRows(t) {
     const name = eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null;
     rows.push({ kind: "cfg", id: o.id, label: o.name, own, from: inh ? "Project" : auto ? "Auto" : "Agent",
       first: inh ? `Topic's (${optName(o, inh)})` : auto ? `Auto (${optName(o, auto)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
-      options: o.options.map((x) => [x.value, x.name]), value: eff, desc: auto && !own ? t.auto_effort?.reason ?? null : null,
-      short: isFast ? (eff === "on" ? "Fast" : null) : auto && !own ? `${name} (auto)` : name });
+      options: o.options.map((x) => [x.value, x.name]), value: eff, desc: auto && !own ? `Picked by the app: ${t.auto_effort?.reason ?? "medium until routing picks a level"}. Pick a level to set it yourself.` : null,
+      // v10: the chip names the effort ("Effort High") and marks the app's pick with a small "auto" tag.
+      short: isFast ? (eff === "on" ? "Fast" : null) : o.category === "thought_level" && name ? `Effort ${name}` : name, auto: !!(auto && !own),
+      why: auto && !own ? t.auto_effort?.reason ?? "medium until routing picks a level" : null });
   }
   return rows;
 }
@@ -2779,7 +2835,8 @@ function renderFocusHead(t, d) {
     const tip = t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : keys("Stop · interrupts the agent, like Esc in Claude Code. Queued messages wait for the next turn. ⌘.");
     status += `<span class="runseg"><span class="l"><span class="live-dot"></span>${t.routing ? "Picking a topic" : t.background_wait ? "Background" : "Running"} ${since}</span><button type="button" data-act="stop" data-id="${t.id}" data-fk="stop:${t.id}" title="${esc(tip)}"><i></i>Stop</button></span>`;
   }
-  if (!running && t.session_id) status += `<span title="Start a fresh session. The hand-over carries this TODO's history." style="display:flex">${btn("New session", "open-ns", { id: t.id })}</span>`;
+  if (!running && t.session_id) status += S.nsMode[t.id] ? `<span title="Stay in session ${n || 1} · Esc" style="display:flex">${btn(`Keep session ${n || 1}`, "cancel-ns", { id: t.id })}</span>`
+    : `<span title="Start a fresh session. The hand-over carries this TODO's history." style="display:flex">${btn("New session", "open-ns", { id: t.id })}</span>`;
   const resume = sessions.at(-1)?.resume;
   const moreOpen = S.pop === "more";
   status += `<span style="position:relative; display:flex"><button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="pop" data-id="more" data-fk="pop:more" aria-label="More" aria-expanded="${moreOpen}">${DOTS()}</button>
@@ -2804,14 +2861,22 @@ function renderFocusHead(t, d) {
       <span class="ml">${t.branch ? "Git" : "Topic"} · ${esc(t.branch ?? repoName(t))}</span>
       ${facts.length ? facts.map((f) => `<span style="color:${f.color === GC.muted ? "var(--text-secondary)" : f.color}">${esc(f.text)}</span>`).join("") : `<span style="color:var(--text-muted)">${!t.routed_at ? "The operator picks the topic when you start it" : !p ? "No topic: runs in the TODO's own folder" : !p.git ? "Topic folder, not a git repository" : t.status === "not_started" ? "No worktree yet" : "Topic folder, shared with other TODOs"}</span>`}
       <span class="folder">${esc(folder)}</span>
-      ${folder ? `<span>${btn("Open in VS Code", "vscode", { id: t.id })}</span>` : ""}
-      ${t.places?.length ? '<span style="padding-top:8px; border-top:1px solid var(--border-subtle); font-family:var(--font-sans); color:var(--text-muted)">Kept in other topics, back when you switch:</span>' : ""}
-      ${(t.places ?? []).map((x) => `<span class="ml">${esc(S.projects.find((q) => q.id === x.project_id)?.name ?? "no topic")}${x.branch ? " · " + esc(x.branch) : ""}${x.pr_number ? " · PR #" + x.pr_number : ""}</span>${x.worktree_path ? `<span class="folder">${esc(x.worktree_path)}</span>` : ""}`).join("")}
-      ${canChangeRepo(t)
-        ? `<div class="foot"><span class="mb-select-wrap" style="width:160px; flex:none"><select class="mb-select" aria-label="Change topic" title="Change topic" data-change="set-repo" data-id="${t.id}">${t.routed_at ? "" : '<option value="" selected disabled>Change topic</option>'}${S.projects.map((x) => `<option value="${x.id}"${t.routed_at && x.id === t.project_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="none"${t.routed_at && !p ? " selected" : ""}>No topic</option></select></span><span>${t.session_id ? "Starts a new session in the other folder." : "Session 1 starts there."}${t.worktree_path || t.pr_number || t.places?.length ? " Each topic keeps its worktree and PR." : ""}</span></div>`
-        : `<div class="foot">${t.git ? "local · uncommitted plus commits since the merge base with origin/HEAD" : "The agent registers a worktree with set_worktree."}</div>`}
+      ${p?.independent ? '<span class="tp-indep"><span>Independent</span><span>The agent pushes, opens and squash-merges its PR once it trusts its work. Settings › Topics turns it off.</span></span>' : ""}
+      ${folder ? `<span title="Opens this folder in VS Code" style="display:flex">${btn("Open in VS Code", "vscode", { id: t.id })}</span>` : ""}
+      ${t.places?.length ? `<div class="tp-kept"><span class="h">Kept in other topics, back when you switch:</span>${t.places.map((x) => {
+        const q = S.projects.find((y) => y.id === x.project_id), gh = q?.repo?.match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/);
+        const pr = !x.pr_number ? "" : gh ? `<span class="mut">·</span><a href="https://github.com/${esc(gh[1])}/${esc(gh[2])}/pull/${x.pr_number}" target="_blank" rel="noopener" title="Open PR #${x.pr_number} on GitHub">PR #${x.pr_number} ↗</a>` : `<span class="mut">·</span><span>PR #${x.pr_number}</span>`;
+        return `<div class="kp"><div><span class="tn">${esc(q?.name ?? "no topic")}</span>${x.branch ? `<span class="mut">·</span><span>${esc(x.branch)}</span>` : ""}${pr}</div>${x.worktree_path ? `<div><span class="fd">${esc(x.worktree_path)}</span><button type="button" class="kp-vsc" data-act="vscode-place" data-id="${esc(x.worktree_path)}" title="Open this folder in VS Code">VS Code</button></div>` : ""}</div>`;
+      }).join("")}</div>` : ""}
+      ${t.removed_at ? "" : (() => {
+        // v10: the select always shows; while a run or a terminal program goes on it is disabled, and the note says why.
+        const termBusy = (S.terms[t.id] ?? []).some((k) => k.busy), locked = !canChangeRepo(t) || termBusy;
+        const note = t.status === "running" ? "Stop the run first. The topic changes between sessions." : termBusy ? "A terminal of this TODO runs a program. Close it first."
+          : (t.session_id ? "Starts a new session in the other folder." : "Session 1 starts there.") + (t.worktree_path || t.pr_number || t.places?.length ? " Each topic keeps its worktree and PR." : "");
+        return `<div class="tp-change"><span class="h">Change topic</span><span class="mb-select-wrap" style="width:240px; max-width:100%"><select class="mb-select" aria-label="Change topic" data-change="set-repo" data-id="${t.id}"${locked ? " disabled" : ""}>${t.routed_at ? "" : '<option value="" selected disabled>Pick a topic</option>'}${S.projects.map((x) => `<option value="${x.id}"${t.routed_at && x.id === t.project_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}<option value="none"${t.routed_at && !p ? " selected" : ""}>No topic</option></select></span><span class="note">${note}</span></div>`;
+      })()}
     </div>` : "";
-  let chips = `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="repo" data-fk="pop:repo" aria-expanded="${repoOpen}" title="Topic and branch"><span class="pri">${esc(repoName(t) || "topic not picked")}</span>${t.branch ? `${SVG(BRANCH, 12)}<span>${esc(t.branch)}</span>` : ""}${g ? `<span class="mut">·</span><span style="color:${g.text === "pushed" ? "var(--status-success)" : g.color}">${esc(g.text)}</span>` : ""}</button>${repoPop}</span>`;
+  let chips = `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="repo" data-fk="pop:repo" aria-expanded="${repoOpen}" title="Topic and branch"><span class="pri">${esc(repoName(t) || "topic not picked")}</span>${p?.independent ? '<span class="mut" title="Independent mode: the agent pushes, opens and merges its own PR in this topic.">· independent</span>' : ""}${t.branch ? `${SVG(BRANCH, 12)}<span>${esc(t.branch)}</span>` : ""}${g ? `<span class="mut">·</span><span style="color:${g.text === "pushed" ? "var(--status-success)" : g.color}">${esc(g.text)}</span>` : ""}</button>${repoPop}</span>`;
   // Item 144: the schedule chip opens the schedule popover.
   if (t.schedule) chips += `<span class="hwrap">${schedChip(t, false, true)}${S.pop === "sched" ? schedPop(t, d) : ""}</span>`;
   if (t.parent_id) chips += fromBadge(t).replace('class="fromb"', 'class="hchip"');
@@ -2826,8 +2891,9 @@ function renderFocusHead(t, d) {
   } else if (t.git?.push === "pushed" && t.pr_checked_at) chips += `<span class="hchip" style="cursor:default">${t.gh_error ? "no PR · as of " + esc(ago(t.pr_checked_at)) : "no PR · branch pushed"}</span>`;
   const rows = sessionRows(t);
   if (rows.length || t.session_id) {
-    const sesOpen = S.pop === "session", parts = rows.map((r) => r.short ? `<span class="${r.own != null ? "pri" : ""}">${esc(r.short)}</span>` : "").filter(Boolean);
-    chips += `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="session" data-fk="pop:session" aria-expanded="${sesOpen}" title="Session settings"><span class="mut">S${n || 1}</span>${parts.join('<span class="mut">·</span>')}${rows.some((r) => r.own != null) ? '<span class="setsq" title="Set for this TODO"></span>' : ""}${SVG(CHEV_D, 12)}</button>${sesOpen ? sessionPop(t, d) : ""}</span>`;
+    const sesOpen = S.pop === "session", parts = rows.map((r) => r.short ? `<span class="${r.own != null ? "pri" : ""}">${esc(r.short)}</span>${r.auto ? '<span class="autotag" title="Picked by the app">auto</span>' : ""}` : "").filter(Boolean);
+    const au = rows.find((r) => r.auto), sesTitle = au ? `Session settings · ${au.short}, picked by the app: ${au.why}` : "Session settings";
+    chips += `<span class="hwrap"><button type="button" class="hchip" data-act="pop" data-id="session" data-fk="pop:session" aria-expanded="${sesOpen}" title="${esc(sesTitle)}"><span class="mut">S${n || 1}</span>${parts.join('<span class="mut">·</span>')}${rows.some((r) => r.own != null) ? '<span class="setsq" title="Set for this TODO"></span>' : ""}${SVG(CHEV_D, 12)}</button>${sesOpen ? sessionPop(t, d) : ""}</span>`;
   }
   chips += ctxHtml(t.ctx, `session ${n || 1}`, running);
   if (t.status === "not_started" && !t.removed_at) chips += `<span class="notstarted">Not started · instruction editable until you start</span>`;
@@ -2849,7 +2915,15 @@ function renderFocusHead(t, d) {
 function msgHtml(m, t) {
   const editing = S.editing?.msgId === m.id;   // stays after a start, so a refused save keeps the text
   const firstOf = t.status === "not_started" && !t.removed_at && S.detail?.messages[0]?.id === m.id;   // items 94-98
-  if (m.author === "app") return `<div class="appcard">${SVG(I.info, 15, "var(--text-muted)")}<div><span class="ml">App · ${esc(hm(m.at))}</span><span class="t">${esc(m.body)}</span></div></div>`;
+  if (m.author === "app") {
+    // v10: a turn the app continued after a cut-off, and the card when it gave up, look apart from other app notes.
+    const cont = /^continue (\d+)\/(\d+)$/.exec(m.via ?? ""), gave = m.via === "gave up";
+    const lastApp = S.detail?.messages.at(-1)?.id === m.id;
+    const tag = cont ? ` · continued for you · ${cont[1]} of ${cont[2]}` : gave ? " · stopped after 2 tries" : "";
+    const icon = cont ? SVG(I.again, 15, "var(--text-secondary)") : gave ? SVG(I.alert, 15, "var(--accent-amber)") : SVG(I.info, 15, "var(--text-muted)");
+    const action = gave && lastApp && !t.removed_at && t.status !== "running" ? `<span>${btn("Continue", "continue-cut", { id: t.id })}</span>` : "";
+    return `<div class="appcard${gave ? " warn" : ""}">${icon}<div><span class="ml">App${tag} · ${esc(hm(m.at))}</span><span class="t">${linkify(m.body)}</span>${action}</div></div>`;
+  }
   const user = m.author.startsWith("user");
   let who, color, sub = "";
   if (user) [who, color] = ["You", "var(--text-secondary)"];
@@ -3092,6 +3166,9 @@ function renderChat(t, d) {
   chatLog.dataset.sig = sig;
 
   $("chatView").querySelector(".composer").hidden = !!t.removed_at;
+  // v10: a removed TODO says why it has no composer, in its place.
+  $("removedNote").hidden = !t.removed_at;
+  setHtml($("removedNote"), t.removed_at ? `<div><span class="ic">${SVG(TRASH, 15)}</span><span>Removed ${esc(ago(t.removed_at))} by ${esc(!t.removed_by || t.removed_by === "user" ? "you" : t.removed_by === "operator" ? "the operator" : t.removed_by)}. Read-only: restore it to message the agent. Its files still open and save.</span></div>` : "");
   const appr = $("approval"), perm = running && t.permission;
   appr.hidden = !perm;
   setHtml(appr, perm ? approvalHtml(t) : "");
@@ -3104,8 +3181,10 @@ function renderChat(t, d) {
   nsHead.hidden = !ns;
   // P5: the next session may run on another agent; the hand-over is plain text, so any agent picks it up.
   const nsAgent = ns && agentsFound().length > 1 ? `<span class="mb-select-wrap" style="width:170px">${agentSelect(S.nsAgent[t.id] ?? t.agent, `class="mb-select" aria-label="Agent" title="Agent for session ${nSess + 1}" data-change="ns-agent" data-id="${t.id}"`)}</span>` : "";
-  setHtml(nsHead, ns ? `<span class="sq8"></span><span class="t">New session ${nSess + 1}</span><span class="s">The hand-over carries this TODO's history.</span>${nsAgent}${btn("Cancel", "cancel-ns", { v: "ghost", id: t.id })}` : "");
-  $("commitBtn").textContent = ns ? "Start session" : running && !t.background_wait ? "Queue" : "Send";
+  // v10: the mode reads as a violet frame around the composer; Esc or "Keep session n" leaves it.
+  $("chatView").querySelector(".composer").classList.toggle("ns", ns);
+  setHtml(nsHead, ns ? `${SVG(PLUS, 16, "var(--accent-violet)")}<span class="t">New session ${nSess + 1}</span><span class="s">Your next message starts it. The hand-over carries this TODO's history. Esc keeps session ${nSess || 1}.</span>${nsAgent}${btn(`Keep session ${nSess || 1}`, "cancel-ns", { v: "ghost", id: t.id })}` : "");
+  $("commitBtn").textContent = ns ? `Start session ${nSess + 1}` : running && !t.background_wait ? "Queue" : "Send";
   // R56: after an app restart queued messages wait for the user; nothing is delivered on its own
   const q = t.queued_count;
   const bar = $("deliverBar");
@@ -3156,12 +3235,12 @@ function renderFileList(t, d) {
     const running = t.status === "running", multi = (d?.sessions?.length ?? 0) > 1;
     const own = !d ? '<span class="empty">Loading…</span>' : !d.files.length ? '<span class="empty" style="padding:4px 8px 8px">No files yet. Agents attach plans, reviews and questions here with attach_file.</span>'
       : d.files.map((f) => `<button type="button" class="fitem" data-act="open-file" data-id="${f.id}" data-fk="file:${f.id}" aria-pressed="${f0?.root === "todo" && f0.id === f.id}" title="${esc(f.path)}${f.by_user ? "\nyour note · editable while the agent runs" : f.session_no == null ? "\nadded outside a session" : multi ? `\nsession ${f.session_no}` : ""}${running && !f.by_user ? "\nread-only while the agent runs" : ""}"${f.mtime == null ? " disabled" : ""}>
-          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${unsaved({ root: "todo", id: f.id })}${cmtDot(t.id, "todo", f.id)}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
+          ${markHtml(null)}<span class="nm">${esc(f.name)}</span>${f.by_user ? '<span class="youtag">you</span>' : ""}${unsaved({ root: "todo", id: f.id })}${cmtDot(t.id, "todo", f.id)}<span class="mt">${f.mtime == null ? "missing" : f.lines == null ? fmtBytes(f.size) : plural(f.lines, "line")}</span></button>`).join("");
     const wt = treeUsable(t) ? S.trees[`${t.id}:worktree`] : null, changed = wt?.marks ? Object.keys(wt.marks).sort() : [];
     if (treeUsable(t) && !wt) need("tree");
     const chg = changed.map((rel) => `<button type="button" class="fitem${wt.marks[rel] === "D" ? " del" : ""}" data-act="open-changed" data-id="${esc(rel)}" data-fk="chg:${esc(rel)}" aria-pressed="${f0?.root === "worktree" && f0.rel === rel}" title="${esc(rel)}">
         ${markHtml(wt.marks[rel])}<span class="nm">${esc(basename(rel))}</span>${unsaved({ todoId: t.id, root: "worktree", rel })}${cmtDot(t.id, "worktree", rel)}<span class="mt">${esc(rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "")}</span></button>`).join("");
-    return setHtml($("fileList"), seg + `<span class="ml grp">TODO files<button type="button" class="chg" data-act="new-note" data-fk="new-note" title="Write your own notes for this TODO, also while the agent runs. The agent sees them once you point it to the file.">New note</button></span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
+    return setHtml($("fileList"), seg + `<span class="ml grp">TODO files<button type="button" class="newnote" data-act="new-note" data-fk="new-note" title="Write your own notes for this TODO, also while the agent runs. The agent sees them once you point it to the file.">${SVG(PLUS, 11)}New note</button></span>${own}${treeUsable(t) ? `<span class="ml grp">Changed in worktree</span>${chg || '<span class="empty">No changes on this branch.</span>'}` : ""}
       <span class="root-note">terminal/ and uploads/ are not listed</span>`);
   }
   // Items 102, 103: folders first; folders on the way to a change start open; Changed lists the changed files flat.
@@ -3244,8 +3323,8 @@ function renderFile(t) {
   const words = show.md ? ` · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}` : "";
   const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
-  setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${locked ? badge("Read-only · agent running", "cyan") : ""}
-    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}
+  setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${f.byUser ? '<span class="notetag" title="Your note · editable while the agent runs">your note</span>' : ""}${locked ? `<span title="The agent may change this file. Edit opens when its run ends." style="display:flex">${badge("Read-only · agent running")}</span>` : ""}
+    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}
       ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
@@ -3462,8 +3541,11 @@ function renderTermFoot() {
   foot.hidden = !x || !!S.cform;
   if (foot.hidden) return;
   const focused = v.host.contains(document.activeElement);
-  setHtml(foot, `<span style="color:var(--text-secondary)">${x.kind === "claude" ? "claude · separate session" : esc(S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell")}</span><span class="cwd" title="${esc(x.cwd)}">${esc(x.cwd)}</span>
-    <span class="right">${v.down && !v.exit && !v.ended ? "Disconnected · reconnecting…" : focused ? "Click outside to hand keys back" : "Keys go here while focused"}</span>`);
+  // v10: above the terminal, which one it is and where the keys go; the frame turns lime while it has them.
+  const down = v.down && !v.exit && !v.ended;
+  const kind = x.kind === "claude" ? "claude · separate session" : (S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell");
+  setHtml(foot, `<span class="cwd" title="${esc(kind + " · " + x.cwd)}">${esc(termLabel(x, t) === x.cwd ? x.cwd : termLabel(x, t) + " · " + x.cwd)}</span>
+    <span class="right${focused && !down ? " on" : ""}">${down ? "Disconnected · reconnecting…" : focused ? "Typing goes to this terminal" : "Click to type"}</span>`);
 }
 function renderTerminals(t, d) {
   const list = S.terms[t.id] ?? [];
@@ -3475,8 +3557,8 @@ function renderTerminals(t, d) {
   const items = list.map((x) => `<div class="titem" role="tab" tabindex="0" aria-selected="${!S.cform && x.id === sel}" data-act="term-sel" data-id="${x.id}" data-fk="term:${x.id}" title="${esc(x.cwd)}">
       ${x.kind === "claude" ? SVG(I.run, 14, "var(--accent-violet)") : SVG(I.run, 14, "var(--text-primary)")}
       <span class="c"><span class="nm" style="color:${x.kind === "claude" ? "var(--accent-violet)" : "var(--text-primary)"}">${esc(termLabel(x, t))}</span>
-        <span class="sb">${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind === "claude" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "topic folder" : "TODO folder") : basename(x.cwd))}</span></span>
-      <span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="Close">${SVG(CLOSE, 12)}</span></div>`).join("");
+        <span class="sb"${x.busy && !x.exited ? ' style="color:var(--accent-cyan)"' : ""}>${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind === "claude" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "topic folder" : "TODO folder") : basename(x.cwd))}</span></span>
+      <span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="${x.exited ? "Close" : x.kind === "claude" ? "Close · asks first, Claude runs in it" : x.busy ? "Close · asks first, a program runs in it" : "Close"}">${SVG(CLOSE, 12)}</span></div>`).join("");
   const add = S.termsUnsupported ? "" : dirs.map(([root, head]) => `<div class="term-add">${dirs.length > 1 ? `<span class="ml h ellipsis" title="${esc(head)}">${esc(root === "worktree" ? "Worktree" : "Project folder")}</span>` : ""}
       <span title="A shell in ${esc(head)}: git, docker, tests, a dev server" style="display:flex">${btn("Shell", "term-new", { id: "shell:" + root })}</span>
       <span title="Claude in ${esc(head)}, starting with this TODO's context" style="display:flex">${btn("Claude", "term-new", { id: "claude:" + root })}</span></div>`).join("");
@@ -3577,16 +3659,16 @@ function renderWorktrees() {
   const w = S.wt, busy = !!S.wtBusy, picked = wtPicked();
   $("wtScan").textContent = S.wtBusy === "scan" ? "Scanning…" : w?.at ? "Rescan" : "Scan";
   $("wtScan").disabled = busy;
-  $("wtDelete").hidden = !w?.at;
   $("wtDelete").disabled = busy || !picked.length;
-  $("wtDelete").textContent = S.wtBusy === "delete" ? "Deleting…" : `Delete ${picked.length}${picked.some((r) => r.kb) ? " · " + mb(picked.reduce((n, r) => n + (r.kb ?? 0), 0)) : ""}`;
+  $("wtDelete").textContent = S.wtBusy === "delete" ? "Deleting…" : !picked.length ? "Delete" : `Delete ${picked.length}${picked.some((r) => r.kb) ? " · " + mb(picked.reduce((n, r) => n + (r.kb ?? 0), 0)) : ""}`;
   $("wtAt").textContent = w?.at ? `Scanned ${ago(w.at)}` : "";
   $("cWorktrees").textContent = w?.at ? w.rows.length : "";
-  if (!w?.at) return setHtml($("wtList"), `<span class="small">${busy ? "Reading every topic's worktrees and branches, their changes and their PRs…" : "Not scanned yet."}</span>`);
+  if (!w?.at) return setHtml($("wtList"), `<span class="small">${busy ? "Reading every topic's worktrees and branches, their changes and their PRs…" : "Not scanned yet. Scan reads each topic's worktrees and branches with git, and asks GitHub for their PRs."}</span>`);
   const errs = w.errors.map((e) => `<span class="note" style="color:var(--accent-amber)">${esc(e)}</span>`).join("");
   setHtml($("wtList"), errs + WT_GROUPS.map(([v, title, tone, hint]) => {
     const rows = w.rows.filter((r) => r.verdict === v).sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "worktree" ? -1 : 1) || (b.kb ?? 0) - (a.kb ?? 0));
-    if (!rows.length) return "";
+    // v10: an empty group still shows, so the three groups always read the same.
+    if (!rows.length) return `<div style="display:flex; flex-direction:column; gap:8px"><div class="line" style="display:flex; align-items:center; gap:8px">${badge(title, tone, true)}<span class="small">${esc(hint)}</span></div><span class="small">Nothing here.</span></div>`;
     const kb = rows.reduce((n, r) => n + (r.kb ?? 0), 0), wts = rows.filter((r) => r.kind === "worktree").length;
     const count = [wts && `${wts} worktree${wts === 1 ? "" : "s"}`, rows.length - wts && `${rows.length - wts} branch${rows.length - wts === 1 ? "" : "es"}`].filter(Boolean).join(", ");
     return `<div style="display:flex; flex-direction:column; gap:8px">
@@ -3594,7 +3676,7 @@ function renderWorktrees() {
       <div class="ag-list">${rows.map((r) => {
         const pr = r.pr ? `<a href="${esc(r.pr.url)}" target="_blank" rel="noopener" data-act="link">PR #${r.pr.number}</a> ${esc(r.pr.state)}` : "";
         const reasons = r.reasons.map((t) => r.pr && t.startsWith(`PR #${r.pr.number} `) ? pr : esc(t)).join(" · ");
-        const list = (label, items) => items.length ? `<details><summary class="note">${label}</summary><pre class="cmd" style="margin:4px 0 0; white-space:pre-wrap">${esc(items.join("\n"))}</pre></details>` : "";
+        const list = (label, items) => items.length ? `<details><summary class="note">${label} · ${items.length}</summary><pre class="cmd" style="margin:4px 0 0; white-space:pre-wrap">${esc(items.join("\n"))}</pre></details>` : "";
         const box = v === "keep" ? "" : `<input type="checkbox" data-wt="${esc(r.key)}" ${S.wtPick.has(r.key) ? "checked" : ""} aria-label="Delete ${esc(wtName(r))}" style="margin-top:4px">`;
         const where = r.kind === "branch" ? `branch without worktree` : `${esc(r.branch ?? "detached")} · ${mb(r.kb)}`;
         return `<div class="ag-row" style="grid-template-columns:${box ? "auto " : ""}minmax(0, 1fr); align-items:start">${box}<div class="l">
@@ -3740,6 +3822,7 @@ const ACTIONS = {
   },
   // Item 148: the Running view's Ports.
   "ports-scan": () => scanPorts(),
+  "ports-all": () => { S.portsAll = !S.portsAll; render(); },
   "port-ask": (id) => {
     const r = S.ports?.rows[Number(id)];
     if (r) toComposer(r.todo_id, r.kind === "container" ? `Stop the Docker container ${r.name} (port ${r.ports.join(", ")}).`
@@ -3760,7 +3843,11 @@ const ACTIONS = {
   "new-close": closeNew,
   "theme-toggle": () => { setAppearance({ mode: isDark() ? "light" : "dark" }); render(); },
   // one popover or menu at a time; a second click on its button closes it
-  pop: (id) => { S.pop = S.pop === id ? null : id; render(); },
+  pop: (id) => {
+    S.pop = S.pop === id ? null : id; render();
+    // v10: the topic popover locks Change topic while a terminal of the TODO runs a program; ask the terminals afresh.
+    if (S.pop === "repo" && typeof S.sel === "number") loaders.terms(S.sel).then(() => S.pop === "repo" && render(), () => {});
+  },
   "removed-toggle": () => { S.removedOpen = !S.removedOpen; render(); },
   "work-toggle": (id, el) => { S.openWork.set(id, el.getAttribute("aria-expanded") !== "true"); render(); },
   "show-all": (id) => { S.showAll.add(id); render(); },
@@ -3798,6 +3885,13 @@ const ACTIONS = {
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
   // Item 144: Run now, the schedule chip on a card (opens the TODO with its popover), and the schedule editor.
+  "continue-cut": (id) => act(call("POST", `/api/todos/${id}/messages`, { body: "Continue where you left off.", attachments: [] }).then(() => need("detail", "todos")), "Not sent"),
+  "cmt-toggle": () => {
+    const k = fileKey(S.file), on = !S.cmtHidden[k] || S.cmtDraft?.key === k;
+    if (on) { S.cmtHidden[k] = true; if (S.cmtDraft?.key === k) S.cmtDraft = null; } else delete S.cmtHidden[k];
+    render();
+  },
+  "vscode-place": (dir) => { S.pop = null; render(); act(call("POST", `/api/todos/${S.sel}/vscode`, { place: dir }).then((r) => toast("info", "Opened in VS Code", "· " + r.dir)), "Can't open VS Code"); },
   vscode: (id) => { S.pop = null; render(); act(call("POST", `/api/todos/${id}/vscode`).then((r) => toast("info", "Opened in VS Code", "· " + r.dir)), "Can't open VS Code"); },
   "run-now": (id) => { S.pop = null; act(call("POST", `/api/todos/${id}/run-now`).then(() => toast("info", `Started T-${id}`, "· a new session. It goes back to Scheduled when the run ends.")), "Can't run now"); },
   "sched-open": (id) => { select(Number(id)); S.pop = "sched"; render(); },
@@ -3894,9 +3988,13 @@ S.cmtDraft = null;     // {key, quote, line, text}: the new comment's box
 S.cmtEdit = null; S.cmtEditText = null;   // the comment being edited, and its text so far
 S.cmtOn = null;        // id of the comment shown active (outlined card, underlined text)
 S.cmtResolved = false; // resolved comments shown
+S.cmtHidden = {};      // fileKey -> the Comments column hidden from the file header (v10)
 const fileComments = (f) => (S.detail?.todo.id === f.todoId ? S.detail.comments ?? [] : []).filter((c) => c.path === f.abs);
-const cmtDot = (todoId, root, rel) => (S.detail?.todo.id === todoId && S.detail.comments?.some((c) => c.root === root && c.rel === String(rel) && c.state !== "resolved")
-  ? '<span class="cdot" title="Open comments"></span>' : "");
+// v10: the file list shows the number of open comments with a speech-bubble icon.
+const cmtDot = (todoId, root, rel) => {
+  const n = S.detail?.todo.id === todoId ? (S.detail.comments ?? []).filter((c) => c.root === root && c.rel === String(rel) && c.state !== "resolved").length : 0;
+  return n ? `<span class="ccnt" title="${plural(n, "open comment")}">${SVG(BUBBLE, 12)}${n}</span>` : "";
+};
 // Whitespace and markdown signs are skipped on both sides, so a quote picked in the rendered view ("bold") matches the source ("**bold**").
 // ponytail: link targets are not skipped, so a quote across a link is found only in the rendered view.
 const CMT_SKIP = /[\s*_`#>~|\\]/;
@@ -3948,10 +4046,17 @@ function highlightRendered(placed) {
   CSS.highlights.set("sb-cmt", new Highlight(...cmtRanges.filter((x) => x.id !== S.cmtOn).map((x) => x.range)));
   CSS.highlights.set("sb-cmt-on", new Highlight(...cmtRanges.filter((x) => x.id === S.cmtOn).map((x) => x.range)));
 }
+// v10: the Comments column hides and shows from a button in the file header; a new comment shows it again.
+function cmtToggle(f, show) {
+  const list = fileComments(f);
+  if (!(show.read || show.md || show.code) || !list.length) return "";
+  const on = !S.cmtHidden[fileKey(f)] || S.cmtDraft?.key === fileKey(f);
+  return `<button type="button" class="cmt-tog" data-act="cmt-toggle" data-fk="cmt-toggle" aria-pressed="${on}" title="Show or hide the comments">${SVG(BUBBLE, 12)}Comments · ${list.filter((c) => c.state !== "resolved").length}</button>`;
+}
 function renderNotes(f, show) {
   const box = $("fileNotes"), list = fileComments(f);
   const draft = S.cmtDraft?.key === fileKey(f) ? S.cmtDraft : null;
-  const on = (show.read || show.md || show.code) && (list.length || draft);
+  const on = (show.read || show.md || show.code) && (draft || (list.length && !S.cmtHidden[fileKey(f)]));
   box.hidden = !on;
   const placed = on ? placeComments(f, list.filter((c) => c.state !== "resolved")) : [];
   highlightRendered(placed);
@@ -4012,7 +4117,7 @@ document.addEventListener("selectionchange", () => requestAnimationFrame(() => {
   cmtSel = selectedQuote();
   const b = $("cmtAdd");
   b.hidden = !cmtSel;
-  if (cmtSel) { b.style.left = Math.min(cmtSel.rect.right, innerWidth - 100) + "px"; b.style.top = Math.min(cmtSel.rect.bottom + 6, innerHeight - 40) + "px"; }
+  if (cmtSel) { b.style.left = Math.min(cmtSel.rect.right, innerWidth - 100) + "px"; b.style.top = (cmtSel.rect.top > 40 ? cmtSel.rect.top - 32 : Math.min(cmtSel.rect.bottom + 6, innerHeight - 40)) + "px"; }   // v10: above the selection
 }));
 $("cmtAdd").addEventListener("mousedown", (e) => e.preventDefault());   // keeps the selection
 $("cmtAdd").addEventListener("click", () => {

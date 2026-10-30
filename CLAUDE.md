@@ -1,6 +1,6 @@
 # Switchboard
 
-The UI follows the Claude Design versions in `designs/` (latest: `designs/Switchboard v9.html`). `designs/feature-spec-switchboard.md` describes the behaviour.
+The UI follows the Claude Design versions in `designs/` (latest: `designs/Switchboard v10.html`). `designs/feature-spec-switchboard.md` describes the behaviour.
 
 ## UI changelog
 
