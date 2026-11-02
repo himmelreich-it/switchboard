@@ -157,7 +157,8 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
   --status-warning: #FFCA35; --tint-warning: #FFCA3524; --line-warning: #FFCA358C;
   --status-danger: #FD7686; --status-danger-hover: #FE97A3; --tint-danger: #FD768624; --line-danger: #FD76868C;
   --status-info: #D7D7CB; --tint-info: #F8F8F212; --line-info: #74736F;
-  --interactive-primary: #E9E8DF; --interactive-primary-hover: #F8F8F2; --interactive-primary-press: #C6C4BC;
+  --interactive-primary: #B7A0FB; --interactive-primary-hover: #CAB8FC; --interactive-primary-press: #9C84E8;
+  --selection-bg: #3D5AA8; --code-bg: #1B1B17;
   --surface-card: #2E2D2A; --surface-popover: #363532; --surface-input: #1B1B17;
   --text-body: #F8F8F2; --text-label: #D7D7CB; --overlay-scrim: rgba(24, 23, 20, 0.72);
   --surface-tooltip: #181714; --text-tooltip: #F8F8F2; --border-tooltip: #87857F;
@@ -189,7 +190,8 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
   --status-warning: #8A6A00; --tint-warning: #E6C2002E; --line-warning: #8A6A008C;
   --status-danger: #A10128; --status-danger-hover: #860121; --tint-danger: #FD61782E; --line-danger: #A101288C;
   --status-info: #4C4B44; --tint-info: #2728220F; --line-info: #BCBAB6;
-  --interactive-primary: #272822; --interactive-primary-hover: #3D3E37; --interactive-primary-press: #12120D;
+  --interactive-primary: #7444B4; --interactive-primary-hover: #5F35A0; --interactive-primary-press: #4E2A86;
+  --selection-bg: #B9CCFF; --code-bg: #EEEDE8;
   --surface-card: #FDFDFA; --surface-popover: #FFFFFF; --surface-input: #FFFFFF;
   --text-body: #272822; --text-label: #4C4B44; --overlay-scrim: rgba(39, 40, 34, 0.45);
   --surface-tooltip: #272822; --text-tooltip: #F8F8F2; --border-tooltip: #272822;
@@ -202,7 +204,10 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
 
 /* Monokai is sentence case: no uppercase labels, no letter tracking. */
 [data-theme^="monokai"] * { text-transform: none !important; letter-spacing: 0 !important; }
-[data-theme^="monokai"] ::selection { background: var(--surface-3); color: var(--text-primary); }
+[data-theme^="monokai"] ::selection { background: var(--selection-bg); color: var(--text-primary); }
+/* Buttons and toggles carry the violet interactive color; hover sharpens to it. */
+[data-theme^="monokai"] .mb-btn--secondary:hover:not(:disabled) { border-color: var(--interactive-primary); background: var(--tint-violet); }
+[data-theme^="monokai"] :is(.mb-switch__track, .mb-switch__knob) { border-radius: 999px; }
 /* The chamfered buttons set border-radius 0; without the chamfer they get the corners of every other button. */
 [data-theme^="monokai"] :is(.mb-btn--primary, .mb-btn--danger, .aopt.yes) { border-radius: var(--radius-1); }
 /* State marks are round dots. */
@@ -373,10 +378,12 @@ nav.views { display: flex; align-items: flex-end; gap: 2px; min-width: 0; -webki
 .op-btn[aria-pressed="true"] { background: var(--tint-violet); border-color: var(--line-violet); }
 .op-btn .unread { width: 6px; height: 6px; flex: none; background: var(--accent-violet); }
 /* a two- or three-way choice in an inset box (file roots, file modes) */
-.seg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; flex: none; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
-.seg > button { height: 28px; padding: 0 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 2px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.seg { display: inline-flex; flex: none; border: 1px solid var(--border-default); border-radius: var(--radius-1); overflow: hidden; }
+.seg > button { height: 26px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; background: transparent; border: none; border-left: 1px solid var(--border-default); color: var(--text-secondary); font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.seg > button:first-child { border-left-color: transparent; }
+.seg > button:focus-visible { outline-offset: -2px; }
 .seg > button:hover { color: var(--text-primary); }
-.seg > button[aria-checked="true"] { background: var(--surface-3); border-color: var(--border-strong); color: var(--text-primary); }
+.seg > button[aria-checked="true"] { background: var(--surface-3); color: var(--text-primary); }
 
 /* ---------- shell ---------- */
 #app { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -529,7 +536,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .sched-ed .d[aria-pressed="true"] { background: var(--interactive-primary); border-color: var(--interactive-primary); color: var(--text-on-primary); }
 .sched-ed .linkb { padding: 0 4px; cursor: pointer; background: none; border: none; font-size: 12px; color: var(--text-secondary); text-decoration: underline; text-underline-offset: 3px; }
 .sched-ed .linkb:hover { color: var(--text-primary); }
-.sched-ed .seg > button { height: 24px; padding: 0 10px; }
+.sched-ed .seg > button { height: 30px; padding: 0 12px; font-family: var(--font-sans); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
 .tbox { height: 30px; display: inline-flex; align-items: center; background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: var(--radius-1); }
 .tbox > input { width: 58px; height: 100%; padding: 0 8px; background: transparent; border: none; outline: none; color: var(--text-primary); font-family: var(--font-mono); font-size: 13px; }
 .tbox > .u { padding-right: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
@@ -785,9 +792,9 @@ pre.io.out { max-height: 240px; overflow: auto; color: var(--text-secondary); }
 .res-md ul > li { position: relative; padding-left: 16px; margin: 2px 0; }
 .res-md ul > li::before { content: "–"; position: absolute; left: 0; color: var(--text-muted); }
 .res-md ol { padding-left: 20px; }
-.res-md code { padding: 0 4px; font-family: var(--font-mono); font-size: 12.5px; background: var(--surface-3); border-radius: 2px; }
+.res-md code { padding: 0 4px; font-family: var(--font-mono); font-size: 12.5px; background: var(--code-bg, var(--surface-3)); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); }
 .res-md pre { padding: 8px; background: var(--surface-inset); border: 1px solid var(--border-subtle); overflow: auto; }
-.res-md pre code { background: none; padding: 0; }
+.res-md pre code { background: none; border: none; padding: 0; }
 .res-md strong { font-weight: 600; }
 .res-md table { border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
 .res-md th, .res-md td { border: 1px solid var(--border-default); padding: 2px 8px; overflow-wrap: break-word; }
@@ -882,7 +889,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fileswrap { flex: 1; min-height: 0; display: grid; grid-template-columns: min(var(--pane-tree, 260px), 50%) 1px minmax(0, 1fr); }
 .flist { min-width: 0; min-height: 0; overflow: auto; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
 .flist > .seg { margin: 0 0 8px; align-self: stretch; }
-.flist > .seg > button { flex: 1; justify-content: center; height: 24px; padding: 0 6px; font-size: 11px; }
+.flist > .seg > button { flex: 1; padding: 0 6px; }
 .flist .grp { padding: 10px 8px 4px; display: flex; align-items: center; gap: 8px; }
 .flist .grp > .chg, .flist .grp > .newnote { margin-left: auto; }
 .fitem { min-height: 32px; padding: 4px 8px; display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; }
@@ -922,8 +929,6 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fstrip.sub { padding-left: 16px; }
 .fstrip .ml { flex: none; }
 .fstrip .hint { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.fstrip .seg { padding: 2px; }
-.fstrip .seg > button { height: 24px; padding: 0 8px; font-size: 11px; }
 .fstrip .p { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
 .fstrip .mkl { flex: none; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .fstrip .dirty, .fitem > .dirty, .tr > .dirty { width: 6px; height: 6px; flex: none; background: var(--accent-amber); }
@@ -1037,9 +1042,9 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .md h3 { font-size: 15px; }
 .md p, .md ul, .md ol { margin: 0 0 .8em; }
 .md li { margin: .25em 0; }
-.md code { font-family: var(--font-mono); font-size: 12.5px; background: var(--surface-3); padding: 1px 5px; border-radius: 2px; }
+.md code { font-family: var(--font-mono); font-size: 12.5px; background: var(--code-bg, var(--surface-3)); border: 1px solid var(--border-subtle); padding: 1px 5px; border-radius: var(--radius-1); }
 .md pre { background: var(--surface-inset); border: 1px solid var(--border-subtle); padding: 12px; border-radius: 2px; overflow: auto; }
-.md pre code { background: none; padding: 0; }
+.md pre code { background: none; border: none; padding: 0; }
 .md blockquote { margin: 0 0 .8em; padding: 8px 12px; border-left: 2px solid var(--accent-violet); background: var(--tint-violet); }
 .md table { display: block; overflow: auto; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; margin: 0 0 .8em; }
 .md th, .md td { border: 1px solid var(--border-default); padding: 6px 10px; overflow-wrap: break-word; }
@@ -3357,8 +3362,8 @@ function renderFile(t) {
   const seg = modes.length > 1 ? `<div class="seg" role="radiogroup" aria-label="File mode">${modes.map(([id, label]) =>
     `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles, ⌘F finds") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
     : modes.length ? `<span class="ml">${modes[0][1]}</span>` : `<span class="ml">${f.image ? "Image" : f.large ? "Large file" : "Binary"}</span>`;
-  const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${["write", "split", "preview"].map((v) =>
-    `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${v}</button>`).join("")}</div>` : "";
+  const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${[["write", "Write"], ["split", "Split"], ["preview", "Preview"]].map(([v, l]) =>
+    `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${l}</button>`).join("")}</div>` : "";
   const words = show.md ? ` · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}` : "";
   const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
@@ -3442,7 +3447,7 @@ const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValu
 function termTheme() {
   return {
     background: cssVar("--surface-inset"), foreground: cssVar("--text-primary"), cursor: cssVar("--accent-lime"), cursorAccent: cssVar("--surface-inset"),
-    selectionBackground: document.documentElement.dataset.theme.startsWith("monokai") ? cssVar("--surface-3") : "rgba(182,255,58,.25)", black: cssVar("--surface-3"), red: cssVar("--accent-red"), green: cssVar("--status-success"),
+    selectionBackground: cssVar("--selection-bg") || "rgba(182,255,58,.25)", black: cssVar("--surface-3"), red: cssVar("--accent-red"), green: cssVar("--status-success"),
     yellow: cssVar("--accent-amber"), blue: cssVar("--accent-blue"), magenta: cssVar("--accent-violet"), cyan: cssVar("--accent-cyan"),
     white: cssVar("--text-secondary"), brightBlack: cssVar("--text-muted"), brightRed: cssVar("--accent-red"), brightGreen: cssVar("--status-success"),
     brightYellow: cssVar("--accent-amber"), brightBlue: cssVar("--accent-blue"), brightMagenta: cssVar("--accent-violet"), brightCyan: cssVar("--accent-cyan"), brightWhite: cssVar("--text-primary"),
