@@ -957,6 +957,14 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .cmt-add:hover { border-color: var(--accent-lime); }
 ::highlight(sb-cmt) { background-color: var(--tint-amber); }
 ::highlight(sb-cmt-on) { background-color: var(--tint-amber); text-decoration: underline 2px var(--accent-amber); }
+/* ⌘F in Read mode and the diff: the editor's search panel look, at the bottom of the file */
+.ffind { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--surface-2); border-top: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 12px; }
+.ffind[hidden] { display: none; }
+.ffind input { width: 240px; height: 24px; padding: 0 6px; box-sizing: border-box; font: inherit; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: 2px; }
+.ffind .meta { min-width: 72px; color: var(--text-secondary); }
+/* tints are too faint to spot a match (Monokai Dark's lime tint is 7% white): all matches half-strength amber, the current one solid */
+::highlight(sb-find) { background-color: var(--line-amber); }
+::highlight(sb-find-on) { background-color: var(--accent-amber); color: var(--bg-void); }
 .fitem > .ccnt, .tr > .ccnt { margin-left: 2px; }
 .md-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .md-read { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; }
@@ -1200,6 +1208,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
               <div id="fileCode" class="code-host" hidden></div>
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
+              <div id="fileFind" class="ffind" role="search" hidden><input id="findIn" type="text" placeholder="Find" aria-label="Find in file" spellcheck="false" autocomplete="off"><span id="findCount" class="meta" aria-live="polite"></span><button type="button" class="mb-iconbtn" data-act="find-step" data-id="-1" aria-label="Previous match" title="Previous · ⇧Enter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg></button><button type="button" class="mb-iconbtn" data-act="find-step" data-id="1" aria-label="Next match" title="Next · Enter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><button type="button" class="mb-iconbtn" data-act="find-close" aria-label="Close find" title="Close · Esc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
             </div><div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize comments" title="Drag to resize · double-click to reset" tabindex="0" data-pane="notes"></div><aside id="fileNotes" class="fnotes" aria-label="Comments" hidden></aside></div>
             <button type="button" id="cmtAdd" class="cmt-add" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Comment</button>
             <span id="fileFoot" class="ffoot"></span>
@@ -2226,7 +2235,7 @@ let editorLib = null;
 const loadScript = (src) => new Promise((ok, no) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => no(new Error("could not load " + src)); document.head.append(el); });
 function loadEditor() { return (editorLib ??= loadScript("/vendor/editor.js").then(() => window.SBEditor)); }
 function destroyEditor() { S.cm?.handle?.destroy(); S.cm = null; }
-function dropFile() { saveScroll(); S.file = null; destroyEditor(); }
+function dropFile() { saveScroll(); S.file = null; S.find = null; destroyEditor(); }
 // The file view's scroll offsets, per kind of scroller, kept on the file so it reopens where it was.
 // The editor keeps its own: a snapshot anchored to a line, since wrapped lines have estimated heights until drawn.
 const SCROLLERS = [".md-read", ".preview-in", "#fileDiff"];
@@ -3346,7 +3355,7 @@ function renderFile(t) {
   const dd = show.diff ? f.diff : null, drows = dd && !dd.error && window.SBEditor ? SBEditor.lineDiff(dd.base, f.deleted ? "" : f.text) : null;
   const dstat = drows && { a: drows.filter((r) => r.sign === "+").length, d: drows.filter((r) => r.sign === "-").length };
   const seg = modes.length > 1 ? `<div class="seg" role="radiogroup" aria-label="File mode">${modes.map(([id, label]) =>
-    `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
+    `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles, ⌘F finds") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
     : modes.length ? `<span class="ml">${modes[0][1]}</span>` : `<span class="ml">${f.image ? "Image" : f.large ? "Large file" : "Binary"}</span>`;
   const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${["write", "split", "preview"].map((v) =>
     `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${v}</button>`).join("")}</div>` : "";
@@ -3384,6 +3393,7 @@ function renderFile(t) {
     : f.root === "worktree" ? "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it."
     : `${S.trees[`${f.todoId}:project`]?.git === false ? "Topic folder" : "Main checkout"}. Editable any time; a save warns if the file changed on disk since you opened it.`;
   renderNotes(f, show);
+  runFind(false);
 }
 const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed(1)} KB` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 // One CodeMirror view at a time, rebuilt when the file, its host or read/write changes.
@@ -4079,6 +4089,59 @@ function highlightRendered(placed) {
   CSS.highlights.set("sb-cmt", new Highlight(...cmtRanges.filter((x) => x.id !== S.cmtOn).map((x) => x.range)));
   CSS.highlights.set("sb-cmt-on", new Highlight(...cmtRanges.filter((x) => x.id === S.cmtOn).map((x) => x.range)));
 }
+// ⌘F where no editor shows (rendered markdown, the diff): a find bar, case-insensitive, matches across text nodes ("a **b**"), highlighted with
+// the CSS Custom Highlight API like the comments. S.find = {q, i}. Each renderFile runs it again, so live updates keep the matches.
+const editorShown = () => !!S.cm?.handle && (!$("fileCode").hidden || (!$("fileMd").hidden && S.mdView !== "preview"));
+const findHost = () => cmtRendered() ?? (!$("fileDiff").hidden ? $("fileDiff") : null);
+let findRanges = [];
+function runFind(jump) {
+  const host = S.find && !editorShown() ? findHost() : null;
+  $("fileFind").hidden = !host;
+  findRanges = [];
+  if (host && S.find.q) {
+    const nodes = [], w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) nodes.push(w.currentNode);
+    // shortcut: toLowerCase keeps offsets except for a few letters (İ), whose matches then land a letter off.
+    const hay = nodes.map((n) => n.data).join("").toLowerCase(), q = S.find.q.toLowerCase();
+    let ni = 0, base = 0;
+    const at = (off, end) => { while (ni < nodes.length - 1 && (end ? off > base + nodes[ni].length : off >= base + nodes[ni].length)) base += nodes[ni++].length; return [nodes[ni], off - base]; };
+    for (let i = hay.indexOf(q); i >= 0; i = hay.indexOf(q, i + q.length)) {
+      const r = document.createRange();
+      r.setStart(...at(i, false)); r.setEnd(...at(i + q.length, true));
+      findRanges.push(r);
+    }
+  }
+  const n = findRanges.length;
+  if (S.find) S.find.i = n ? Math.min(S.find.i, n - 1) : 0;
+  $("findCount").textContent = !S.find?.q ? "" : n ? `${S.find.i + 1} of ${n}` : "No results";
+  if (!window.Highlight) return;
+  CSS.highlights.set("sb-find", new Highlight(...findRanges.filter((_, i) => i !== S.find.i)));
+  CSS.highlights.set("sb-find-on", new Highlight(...findRanges.filter((_, i) => i === S.find.i)));
+  // The match itself to the middle, not its element: a long paragraph is taller than the view.
+  const sc = jump && n && SCROLLERS.map(shownScroller).find((el) => el?.contains(host));
+  if (sc) { const r = findRanges[S.find.i].getBoundingClientRect(), b = sc.getBoundingClientRect(); sc.scrollTop += r.top - b.top - b.height / 2; }
+}
+function openFind() {
+  if (editorShown()) return S.cm.handle.search();
+  if (!findHost()) return;
+  S.find ??= { q: "", i: 0 };
+  runFind(false);
+  $("findIn").focus(); $("findIn").select();
+}
+function findStep(d) {
+  if (!S.find || !findRanges.length) return;
+  S.find.i = (S.find.i + d + findRanges.length) % findRanges.length;
+  runFind(true);
+}
+function closeFind() { S.find = null; runFind(false); $("findIn").blur(); }
+ACTIONS["find-step"] = (d) => findStep(Number(d));
+ACTIONS["find-close"] = closeFind;
+document.addEventListener("input", (e) => { if (e.target.id === "findIn" && S.find) { S.find.q = e.target.value; S.find.i = 0; runFind(true); } });
+document.addEventListener("keydown", (e) => {
+  if (e.target.id !== "findIn") return;
+  if (e.key === "Enter") { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); }
+  else if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+}, true);   // before the app's keys, where Esc would close the file
 // v10: the Comments column hides and shows from a button in the file header; a new comment shows it again.
 function cmtToggle(f, show) {
   const list = fileComments(f);
@@ -4292,7 +4355,7 @@ document.addEventListener("keydown", (e) => {
   if (mod && e.key === "." && S.view === "todos" && S.mode === "focus" && cur()?.status === "running") { e.preventDefault(); return ACTIONS.stop(S.sel); }
   const fileShown = !!S.file && !$("vFocus").hidden && !$("fileView").hidden;
   if (mod && k === "e" && fileShown) { e.preventDefault(); return setFileMode(S.file.mode === "edit" ? "read" : "edit"); }
-  if (mod && k === "f" && fileShown && S.file.mode === "edit" && S.cm?.handle) { e.preventDefault(); return S.cm.handle.search(); }
+  if ((mod || e.ctrlKey) && k === "f" && fileShown) { e.preventDefault(); return openFind(); }
   if (mod && k === "s" && fileShown) { e.preventDefault(); return saveFile(); }
   // Esc closes the innermost thing first (design v4): … Settings, then an open file, then Focus.
   if (e.key === "Escape") {

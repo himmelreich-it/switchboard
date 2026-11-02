@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-02 · Find in Read mode
+- Where: Files tab › file view, bottom edge above the footer note.
+- Now: ⌘F (or Ctrl+F) in Read mode, in the markdown Preview and in Changes opens a find bar, styled like the editor's search panel: a field "Find", a count "2 of 3" or "No results", up and down arrows "Previous match" and "Next match", and a close cross. Matches are marked half-strength amber, the current one solid amber with dark text, in every theme; the editor's own search uses the same colors now (its old tints were near invisible in Monokai Dark). Enter and Shift+Enter step, Esc closes. In Edit mode and in read-only code ⌘F still opens the editor's own search panel. The Read button's tooltip now reads "Read · ⌘E toggles, ⌘F finds".
+- Why: the user wanted to search the documents they read, not only the ones they edit.
+- Design question: should the bar sit at the bottom like the editor's panel, or float at the top right like a browser's find?
+
 ### 2026-11-02 · Full-screen file
 - Where: Focus › Files tab › file strip, right side, between the Comments toggle and Copy path.
 - Now: an icon button "Full screen" (maximize arrows) makes the open file fill the window. The title bar, the TODO header with its tabs, and the file list on the left are hidden. Only the file strip, the file (read, edit or diff) and the comments column stay. The button turns into "Exit full screen · Esc" (minimize arrows). Esc leaves full screen first; a second Esc closes the file. On macOS the file strip leaves room for the window buttons and drags the window. Full screen stays on for the next file until the user turns it off or reloads.
