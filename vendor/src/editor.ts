@@ -67,7 +67,7 @@ const theme = EditorView.theme({
   ".cm-content": { padding: "12px 0", caretColor: "var(--accent-lime)" },
   ".cm-line": { padding: "0 32px 0 14px" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--accent-lime)", borderLeftWidth: "2px" },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--tint-lime)" },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--selection-bg, var(--tint-lime))" },
   ".cm-gutters": { backgroundColor: "var(--surface-inset)", color: "var(--text-muted)", border: "none", borderRight: "1px solid var(--border-subtle)" },
   ".cm-lineNumbers .cm-gutterElement": { padding: "0 12px 0 16px" },
   ".cm-activeLine": { backgroundColor: "transparent" },
