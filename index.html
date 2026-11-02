@@ -912,6 +912,12 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .root-note { padding: 8px 8px 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
 /* the open file fills the pane: a header strip with the mode, path and actions, the body flush below it (design v7) */
 .fileview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Full-screen file: only the file strip, the file and its comments. On macOS the strip makes room for the traffic lights and drags the window. */
+.file-full header.top, .file-full .focus-head, .file-full #fileList, .file-full .fileswrap > .pane-sep { display: none; }
+.file-full .fileswrap { grid-template-columns: minmax(0, 1fr); }
+.electron-mac .file-full #fileHead { -webkit-app-region: drag; }
+.electron-mac .file-full #fileHead :is(button, .seg) { -webkit-app-region: no-drag; }
+.electron-mac:not(.fullscreen) .file-full #fileHead { padding-left: 80px; }
 .fstrip { flex: none; height: 36px; padding: 0 8px 0 12px; display: flex; align-items: center; gap: 8px; min-width: 0; background: var(--surface-1); border-bottom: 1px solid var(--border-subtle); }
 .fstrip.sub { padding-left: 16px; }
 .fstrip .ml { flex: none; }
@@ -1485,6 +1491,8 @@ const PLUS = '<path d="M12 5v14"/><path d="M5 12h14"/>';
 const ARCHIVE = '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>';
 const TRASH = '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>';
 const CLOSE = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
+const MAXIMIZE = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>';
+const MINIMIZE = '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="3" x2="10" y1="21" y2="14"/>';
 const CLIP = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>';
 // design v6 icons (24×24, stroke 1.5)
 const I = {
@@ -1623,6 +1631,7 @@ try { S.events = localStorage.getItem("switchboard-chat-events") === "1"; } catc
 try { const v = localStorage.getItem("switchboard-board-view"); S.board = v === "backlog" || v === "running" ? v : "board"; } catch (e) {}
 S.editing = null;   // first instruction being edited (items 94-97): {todoId, msgId, text, err}
 S.fileRoot = {};      // TODO id -> "todo" | "worktree" | "project" (item 101), until reload
+S.fileFull = false;   // the open file fills the window (only its strip and comments stay), until reload
 S.workOpen = {};      // TODO id -> true while its "Work files" group is open, until reload
 S.tabOf = {}; S.lastFile = {};   // TODO id -> its tab and its last opened file, restored when the card is opened again; until reload
 S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
@@ -2354,6 +2363,7 @@ function render() {
   $("vSettings").hidden = S.view !== "settings";
   if (!$("vOverview").hidden) renderOverview();
   if (!$("vFocus").hidden) renderFocus();
+  document.body.classList.toggle("file-full", S.fileFull && !$("vFocus").hidden && !$("filesWrap").hidden && !$("fileView").hidden);
   if (!$("vSettings").hidden) renderSettings();
   renderOperator();
   renderNew();
@@ -3353,7 +3363,7 @@ function renderFile(t) {
   const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${f.byUser ? '<span class="notetag" title="Your note · editable while the agent runs">your note</span>' : ""}${locked ? `<span title="The agent may change this file. Edit opens when its run ends." style="display:flex">${badge("Read-only · agent running")}</span>` : ""}
-    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}
+    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}${iconBtn("file-full", S.fileFull ? "Exit full screen · Esc" : "Full screen", S.fileFull ? MINIMIZE : MAXIMIZE)}
       ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : f.root === "todo" ? iconBtn("archive-file", locked ? "Archive opens when the agent's run ends" : "Archive file", ARCHIVE, locked) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
@@ -3916,6 +3926,7 @@ const ACTIONS = {
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
   // Item 144: Run now, the schedule chip on a card (opens the TODO with its popover), and the schedule editor.
   "continue-cut": (id) => act(call("POST", `/api/todos/${id}/messages`, { body: "Continue where you left off.", attachments: [] }).then(() => need("detail", "todos")), "Not sent"),
+  "file-full": () => { S.fileFull = !S.fileFull; render(); },
   "cmt-toggle": () => {
     const k = fileKey(S.file), on = !S.cmtHidden[k] || S.cmtDraft?.key === k;
     if (on) { S.cmtHidden[k] = true; if (S.cmtDraft?.key === k) S.cmtDraft = null; } else delete S.cmtHidden[k];
@@ -4354,6 +4365,7 @@ document.addEventListener("keydown", (e) => {
     if (S.editing && S.mode === "focus") { e.preventDefault(); S.editing = null; return render(); }
     if (S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" && S.nsMode[S.sel]) { e.preventDefault(); delete S.nsMode[S.sel]; return render(); }
     if (S.view === "settings" && !typing) { e.preventDefault(); return closeSettings(); }
+    if (fileShown && S.fileFull) { e.preventDefault(); return ACTIONS["file-full"](); }
     if (fileShown) { e.preventDefault(); return closeFile(); }
     if (S.view === "todos" && S.mode === "focus") { if (typing) e.target.blur(); return goOverview(); }
     return;

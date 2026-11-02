@@ -12,6 +12,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 - Why: the user wanted to search the documents they read, not only the ones they edit.
 - Design question: should the bar sit at the bottom like the editor's panel, or float at the top right like a browser's find?
 
+### 2026-11-02 · Full-screen file
+- Where: Focus › Files tab › file strip, right side, between the Comments toggle and Copy path.
+- Now: an icon button "Full screen" (maximize arrows) makes the open file fill the window. The title bar, the TODO header with its tabs, and the file list on the left are hidden. Only the file strip, the file (read, edit or diff) and the comments column stay. The button turns into "Exit full screen · Esc" (minimize arrows). Esc leaves full screen first; a second Esc closes the file. On macOS the file strip leaves room for the window buttons and drags the window. Full screen stays on for the next file until the user turns it off or reloads.
+- Why: the user wanted to read a markdown file and its comments with nothing else on screen.
+- Design question: is an icon button in the strip the right control, or should it have a shortcut and a label?
+
 ### 2026-10-30 · Archive a TODO file
 - Where: Files tab › TODO root › file header, the icon row next to "Add the path to the message".
 - Now: an agent's file has an archive icon "Archive file". A dialog "Archive file" says the file moves to the TODO's archive folder and leaves the list, with its comments; buttons Cancel and Archive. Success shows the toast "Archived <file>". While the agent runs the icon is disabled. The user's own notes keep "Delete note". A file deleted on disk now leaves the list by itself instead of showing "missing". The note under the list reads "terminal/, uploads/ and archive/ are not listed".
