@@ -10,6 +10,7 @@ bun install
 bun server.ts        # prints http://127.0.0.1:4477/#token=… (PORT to change); open that link
 bun run app          # same app in its own window (Electron); closing it stops running agents and terminals like Ctrl-C
 bun test             # pure helpers in lib.ts
+bun scripts/bench.ts # server start, list and transcript load times on a throwaway home (args: todos events)
 bun run vendor       # rebuild vendor/ (CodeMirror, xterm.js, marked, DOMPurify, fonts) after changing one of them
 bun run install-local  # build Switchboard.app (no installer) and copy it to /Applications, for Spotlight and the Dock
 bun run app:linux            # Linux: `app` without Chromium's sandbox (see below)

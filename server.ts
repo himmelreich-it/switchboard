@@ -116,27 +116,63 @@ function moveArtifactFolders() {
   if (!blocked) setMeta("artifact_layout", "todo-id");
 }
 
-// ---------- live updates (one SSE stream; the browser refetches what it shows) ----------
+// ---------- live updates (one SSE stream) ----------
+// A TODO event carries the TODO's summary and the transcript rows that changed, so the page patches them in place.
+// `full` asks the page to refetch the TODO's whole transcript: anything but setTodo, addEvent and setEvent sets it,
+// so a write the patches do not cover (messages, sessions, files, comments) is never missed.
 
 const clients = new Set<ReadableStreamDefaultController>();
 const enc = new TextEncoder();
-const outbox = new Set<string>();
-// One change often writes a status, a message and an event; sending each would make the browser refetch three times.
-export function emit(ev: object) {
-  outbox.add(JSON.stringify(ev));
-  if (outbox.size === 1) setTimeout(() => {
-    for (const s of outbox) for (const c of clients) try { c.enqueue(enc.encode(`data: ${s}\n\n`)); } catch { clients.delete(c); }
-    outbox.clear();
-  }, 50);
+// One change often writes a status, a message and an event; they go out together, 50 ms after the first.
+const outbox = new Map<string, object | { todo: number; full: boolean; events: Set<number> }>();
+let flushing: Promise<void> = Promise.resolve();
+const send = (s: string) => { for (const c of clients) try { c.enqueue(enc.encode(`data: ${s}\n\n`)); } catch { clients.delete(c); } };
+function queue(key: string, ev: object) {
+  outbox.set(key, ev);
+  if (outbox.size === 1) setTimeout(() => { flushing = flushing.then(flush, flush); }, 50);
 }
-const changed = (todoId: number | null) => emit(todoId === null ? { type: "operator" } : { type: "todo", id: todoId });
+// seq numbers the flushes. The rows a flush sends are read in the same tick its number is taken (before any await),
+// and GET /api/todos/:id reports the number current when it read the transcript: the page drops a patch that is
+// not newer than the transcript it loaded meanwhile.
+let seq = 0;
+export const flushSeq = () => seq;
+async function flush() {
+  const batch = [...outbox.values()];
+  outbox.clear();
+  const n = ++seq;
+  const out = await Promise.all(batch.map(async (ev: any) => {
+    if (typeof ev.todo !== "number") return JSON.stringify(ev);
+    const events = ev.full || !ev.events.size ? undefined
+      : (db.query(`SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE id IN (${[...ev.events].join(",")})`).all() as any[])
+        .map((e) => ({ ...e, meta: e.meta ? JSON.parse(e.meta) : null }));
+    const [todo] = await summaries("t.id = ?", [ev.todo]);
+    // A TODO deleted meanwhile has no summary: the page refetches the list.
+    return JSON.stringify(todo ? { type: "todo", id: ev.todo, seq: n, todo, events, full: ev.full || undefined } : { type: "todos" });
+  }));
+  for (const s of out) send(s);
+}
+export function emit(ev: any) {
+  if (ev.type === "todo") return noteTodo(ev.id, "summary");
+  queue(JSON.stringify(ev), ev);
+}
+// `full`: the transcript may have changed anywhere; a number: that event row changed; "summary": only the todos row.
+// Every note but a git refresh's own (`git: false`) marks the worktree's git state for a new look.
+export function noteTodo(id: number, part: "full" | "summary" | number, git = true) {
+  const key = `todo:${id}`;
+  let p = outbox.get(key) as { todo: number; full: boolean; events: Set<number> } | undefined;
+  if (!p) queue(key, p = { todo: id, full: false, events: new Set() });
+  if (part === "full") p.full = true;
+  else if (typeof part === "number") p.events.add(part);
+  if (git) gitTouched(id);
+}
+export const changed = (todoId: number | null) => todoId === null ? emit({ type: "operator" }) : noteTodo(todoId, "full");
 
 // `touch` = false for changes that must not move the TODO up its lane (last tool, read marker).
 export function setTodo(id: number, fields: Partial<Todo>, touch = true) {
   const f: Record<string, any> = touch ? { ...fields, updated_at: now() } : fields;
   const keys = Object.keys(f);
-  db.run(`UPDATE todos SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`, [...keys.map((k) => f[k]), id]);
-  changed(id);
+  if (keys.length) db.run(`UPDATE todos SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`, [...keys.map((k) => f[k]), id]);
+  noteTodo(id, "summary");
 }
 // The live session's number (items 68, 77): agent and app messages, events and files belong to the session they
 // happen in; a user message gets its session when it is delivered (take() in runner.ts).
@@ -157,13 +193,13 @@ export function addMessage(todoId: number | null, author: string, body: string, 
 export function addEvent(todoId: number | null, kind: string, actor: string, detail: string | null = null, meta: object | null = null) {
   const id = Number(db.run("INSERT INTO events (todo_id, kind, actor, detail, at, session_no, meta) VALUES (?,?,?,?,?,?,?)",
     [todoId, kind, actor, detail, now(), liveSessionNo(todoId), meta && JSON.stringify(meta)]).lastInsertRowid);
-  changed(todoId);
+  if (todoId === null) changed(null); else noteTodo(todoId, id);
   return id;
 }
 // A transcript row that grows while the agent works (a tool call's status, input, diff and output; the plan).
 export function setEvent(id: number, todoId: number, detail: string | null, meta: object | null) {
   db.run("UPDATE events SET detail = ?, meta = ? WHERE id = ?", [detail, meta && JSON.stringify(meta), id]);
-  changed(todoId);
+  noteTodo(todoId, id);
 }
 
 // ---------- shell ----------
@@ -183,7 +219,7 @@ function reveal(file: string) {
   return json({ ok: true });
 }
 
-// ---------- git state of a worktree (local, read on every list fetch) ----------
+// ---------- git state of a worktree (local, cached per path) ----------
 
 export type GitState = ReturnType<typeof parseGitStatus> & ReturnType<typeof parseRefCounts>;
 // Two git processes, ~0.03 s each. --no-optional-locks: a plain `git status` may rewrite the index and hold
@@ -196,6 +232,47 @@ export async function gitState(wt: string): Promise<GitState | null> {
   const refs = ["refs/remotes/origin/HEAD", ...(s.branch ? [`refs/remotes/origin/${s.branch}`] : [])];
   const r = await sh(["git", "-C", wt, "for-each-ref", "--format=%(refname) %(symref:short) %(ahead-behind:HEAD)", ...refs]);
   return { ...s, ...parseRefCounts(r.ok ? r.out : "", s.branch) };
+}
+
+// The list reads git state from this cache, so a list fetch starts no git process once a path was seen. A change to
+// the TODO (an agent's tool call, a status) or terminal input marks its worktree for a new look, at most one per
+// second per path; a read of an entry older than GIT_TTL_MS does too, for changes made outside the app. A new look
+// that finds a different state sends the TODO's summary again.
+type GitEntry = { value: GitState | null; at: number; run: Promise<void> | null; again: boolean; timer: Timer | null };
+const gitCache = new Map<string, GitEntry>();
+const GIT_MIN_MS = 1000, GIT_TTL_MS = 10_000;
+function gitLook(wt: string, e: GitEntry): Promise<void> {
+  if (e.run) { e.again = true; return e.run; }
+  e.run = (async () => {
+    const before = JSON.stringify(e.value), first = !e.at;
+    const v = await gitState(wt).catch(() => null);
+    e.value = v;
+    e.at = Date.now();
+    e.run = null;
+    if (!first && JSON.stringify(v) !== before)
+      for (const r of db.query("SELECT id FROM todos WHERE worktree_path = ?").all(wt) as { id: number }[]) noteTodo(r.id, "summary", false);
+    if (e.again) { e.again = false; gitSoon(wt); }
+  })();
+  return e.run;
+}
+function gitSoon(wt: string) {
+  const e = gitCache.get(wt);
+  if (!e) return; // never read: the next read looks
+  if (e.run) { e.again = true; return; }
+  if (e.timer) return;
+  e.timer = setTimeout(() => { e.timer = null; void gitLook(wt, e); }, Math.max(0, e.at + GIT_MIN_MS - Date.now()));
+}
+export async function cachedGitState(wt: string): Promise<GitState | null> {
+  let e = gitCache.get(wt);
+  if (!e) gitCache.set(wt, e = { value: null, at: 0, run: null, again: false, timer: null });
+  if (!e.at) { await (e.run ?? gitLook(wt, e)); return e.value; }
+  if (Date.now() - e.at > GIT_TTL_MS) gitSoon(wt);
+  return e.value;
+}
+const worktreeOf = (id: number) => (db.query("SELECT worktree_path FROM todos WHERE id = ?").get(id) as { worktree_path: string | null } | null)?.worktree_path;
+function gitTouched(todoId: number) {
+  const wt = worktreeOf(todoId);
+  if (wt) gitSoon(wt);
 }
 
 // ---------- pull requests (GitHub, refreshed every 2 minutes and after each run, never on a list fetch) ----------
@@ -233,7 +310,7 @@ async function fetchPrs(projectId: number) {
   const repo = remote.ok ? parseGithubRemote(remote.out) : null;
   if (!repo) return; // not on GitHub: no PR line
   const numbers = [...new Set(todos.map((t) => t.pr_number).filter((n): n is number => !!n))];
-  const branches = [...new Set((await Promise.all(todos.flatMap((t) => (!t.pr_number && t.worktree_path ? [gitState(t.worktree_path)] : []))))
+  const branches = [...new Set((await Promise.all(todos.flatMap((t) => (!t.pr_number && t.worktree_path ? [cachedGitState(t.worktree_path)] : []))))
     .map((g) => g?.branch).filter((b): b is string => !!b))];
   if (!numbers.length && !branches.length) return;
   const prev = prStore.get(projectId) ?? { at: null, byBranch: new Map(), byNumber: new Map(), error: null };
@@ -418,13 +495,12 @@ FROM todos t LEFT JOIN projects p ON p.id = t.project_id`;
 // Item 136: the TODO shows running only for the agent's background tasks, between turns.
 const backgroundWait = (r: { id: number; status: string }) => r.status === "running" && !isRunning(r.id) && backgroundCount(r.id) > 0;
 
-// ponytail: two git processes per TODO with a worktree on every list fetch; cache gitState() per path for a few seconds
-// if the list gets slow. PRs come from prStore in memory, never from a fetch.
+// Git state comes from cachedGitState, PRs from prStore in memory: a list fetch runs no git or gh process.
 export async function summaries(where = "1", args: any[] = []) {
   const rows = db.query(`${SUMMARY_SQL} WHERE ${where} ORDER BY t.updated_at DESC`).all(...args) as any[];
   return Promise.all(rows.map(async ({ file_paths, ctx, permission, config, overrides, auto_effort, suggestions, routing, schedule, schedule_last, places, ...r }) => {
     const names = (JSON.parse(file_paths) as string[]).map((p) => basename(p));
-    const git = r.worktree_path ? await gitState(r.worktree_path) : null;
+    const git = r.worktree_path ? await cachedGitState(r.worktree_path) : null;
     const store = prStore.get(r.project_id);
     // set_pr wins over the branch: a review worktree's local branch need not match the PR's head branch.
     const pr = store ? (r.pr_number ? store.byNumber.get(r.pr_number) : git?.branch ? store.byBranch.get(git.branch) : null) : null;
@@ -557,6 +633,7 @@ function registerDiskFiles(t: Todo) {
 function dropFile(todoId: number, fileId: number) {
   db.run("DELETE FROM comments WHERE todo_id = ? AND root = 'todo' AND rel = ?", [todoId, String(fileId)]);
   db.run("DELETE FROM files WHERE id = ?", [fileId]);
+  changed(todoId);
 }
 
 async function projectOut(p: Project) {
@@ -911,7 +988,8 @@ const termWs = {
   message(ws: ServerWebSocket<{ tid: number }>, msg: string | Buffer) {
     const x = terms.get(ws.data.tid);
     if (!x?.proc || x.exited) return;
-    if (typeof msg !== "string") return void x.proc.terminal?.write(msg);
+    // Typing in a TODO's terminal may run git there: its worktree gets a new look (at most one a second).
+    if (typeof msg !== "string") { gitTouched(x.todoId); return void x.proc.terminal?.write(msg); }
     const c = JSON.parse(msg);
     if (c.type !== "resize") return;
     const cols = Math.max(2, Math.min(500, c.cols | 0)), rows = Math.max(2, Math.min(300, c.rows | 0));
@@ -1224,7 +1302,10 @@ async function api(req: Request, path: string): Promise<Response> {
       for (const n of readdirSync(base)) {
         try { if (lstatSync(join(base, n)).isSymbolicLink()) { links.push(n); paths.add(n); } } catch {}
       }
-      return json({ paths: [...paths].filter((p) => marks[p] !== "D" || existsSync(join(base, p))), marks, links, base: b, dir: base, git: true });
+      const tree = { paths: [...paths].filter((p) => marks[p] !== "D" || existsSync(join(base, p))), marks, links, base: b, dir: base, git: true };
+      // The page polls the tree; a tree like the one it has (its tag) is answered without the paths.
+      const tag = String(Bun.hash(JSON.stringify(tree)));
+      return json(url.searchParams.get("tag") === tag ? { unchanged: true } : { ...tree, tag });
     }
     if (what === "fs" && method === "GET") {
       const { real } = fsTarget(t, String(root), String(rel));
@@ -1319,6 +1400,7 @@ async function api(req: Request, path: string): Promise<Response> {
       // P5: each session's agent, and how to resume it outside the app where that agent has a command for it.
       sessions: sessionsOf(id).map((s) => ({ ...s, agent: s.agent || DEFAULT_AGENT, agent_name: agentName(s.agent), resume: resumeHint(s.agent, s.session_id) })),
       artifact_dir: artifactDir(id) + "/",
+      seq: flushSeq(),
       messages: ids.map((r) => messageOut(r.id)),
       files: filesOf(id).map(fileOut),
       comments: commentsOf(id),

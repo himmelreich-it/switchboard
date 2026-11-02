@@ -12,7 +12,7 @@ import {
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOME, addEvent, addMessage, artifactDir, attachmentsOf, db, emit, filesOf, getMeta, liveSessionNo, now, projectRow, refreshPrs,
+  HOME, addEvent, addMessage, artifactDir, attachmentsOf, changed, db, emit, filesOf, getMeta, liveSessionNo, now, projectRow, refreshPrs,
   saveAttachments, sessionsOf, setEvent, setMeta, setTodo, todoRow, type Todo, type Upload,
 } from "./server";
 
@@ -344,6 +344,7 @@ function takeMessages(todoId: number | null, state: "pending" | "queued") {
   const msgs = db.query("SELECT id, body FROM messages WHERE todo_id IS ? AND state = ? ORDER BY id").all(todoId, state) as { id: number; body: string }[];
   const at = now(), no = liveSessionNo(todoId);
   for (const m of msgs) db.run("UPDATE messages SET state = 'delivered', delivered_at = ?, session_no = ? WHERE id = ?", [at, no, m.id]);
+  if (msgs.length) changed(todoId);
   return { ids: msgs.map((m) => m.id), bodies: msgs.map((m) => withAttachments(m.body, attachmentsOf(m.id).map((a) => a.path))) };
 }
 
@@ -584,6 +585,7 @@ export function newSession(todoId: number, agent?: string, scheduled?: string) {
   const prev = sessionsOf(todoId).at(-1)!;
   const no = prev.no + 1;
   db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND no = ?", [now(), todoId, prev.no]);
+  changed(todoId);
   if (t.attention) {
     setTodo(todoId, { attention: 0, attention_by: null, status: t.status === "waiting" ? "idle" : t.status });
     addEvent(todoId, "attention cleared", "user");
@@ -697,7 +699,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     } catch (e: any) {
       running.delete(todoId);
       interrupting.delete(todoId);
-      if (open && open.no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]);
+      if (open && open.no > 1) { db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]); changed(todoId); }
       if (e instanceof AuthRequired) {
         // The agent has no login yet (P5): the user logs in from Settings, then starts or sends again.
         const name = agentName(agentId);
@@ -722,7 +724,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       interrupting.delete(todoId);
       if (open) {
         closeAgent(todoId);
-        if (open.no > 1) db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]);
+        if (open.no > 1) { db.run("UPDATE sessions SET ended_at = NULL WHERE todo_id = ? AND no = ?", [todoId, open.no - 1]); changed(todoId); }
       } else parkAgent(todoId);
       addEvent(todoId, "interrupted", by ?? "app");
       backToStart(todoId, open);
@@ -737,6 +739,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       db.run("INSERT INTO sessions (todo_id, no, session_id, started_at, agent) VALUES (?, ?, ?, ?, ?)", [todoId, open.no, live.sessionId, now(), agentId]);
       // The operator's routing messages (801) and app messages before the start belong to session 1.
       if (open.no === 1) db.run("UPDATE messages SET session_no = 1 WHERE todo_id = ? AND state = 'delivered' AND session_no IS NULL", [todoId]);
+      changed(todoId);
       // The TODO's own mode and options were its last agent's: on another agent they would not mean the same.
       const switched = (t.agent || DEFAULT_AGENT) !== agentId;
       setTodo(todoId, { session_id: live.sessionId, ctx: null, plan: null, agent: agentId, ...(switched ? { mode: null, overrides: null } : {}) });
@@ -922,6 +925,7 @@ function unprompted(todoId: number, agent: Agent, u: Update) {
 function backToStart(todoId: number, open: { no: number } | null) {
   if (open?.no === 1) {
     db.run("UPDATE messages SET state = 'pending' WHERE todo_id = ? AND state = 'queued'", [todoId]);
+    changed(todoId);
     setTodo(todoId, { status: "not_started" });
   } else setTodo(todoId, { status: statusAfterRun(todoRow(todoId)!.attention) });
 }
@@ -1065,6 +1069,7 @@ export function changeRepo(todoId: number, projectId: number | null, branch: str
   if (!t.session_id) return;
   closeAgent(todoId);
   db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND ended_at IS NULL", [now(), todoId]);
+  changed(todoId);
   const again = [back.worktree_path && `worktree ${back.worktree_path}`, back.pr_number && `PR #${back.pr_number}`].filter(Boolean).join(" and ");
   addMessage(todoId, "app", `Topic changed from ${from} to ${projectRow(projectId)?.name ?? "no topic"}.${again ? ` Back to its ${again} there.` : ""} Your next message starts session ${sessionsOf(todoId).length + 1} there.`);
 }
