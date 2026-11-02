@@ -956,8 +956,9 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .ffind[hidden] { display: none; }
 .ffind input { width: 240px; height: 24px; padding: 0 6px; box-sizing: border-box; font: inherit; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: 2px; }
 .ffind .meta { min-width: 72px; color: var(--text-secondary); }
-::highlight(sb-find) { background-color: var(--tint-amber); }
-::highlight(sb-find-on) { background-color: var(--tint-lime); }
+/* tints are too faint to spot a match (Monokai Dark's lime tint is 7% white): all matches half-strength amber, the current one solid */
+::highlight(sb-find) { background-color: var(--line-amber); }
+::highlight(sb-find-on) { background-color: var(--accent-amber); color: var(--bg-void); }
 .fitem > .ccnt, .tr > .ccnt { margin-left: 2px; }
 .md-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .md-read { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; }
