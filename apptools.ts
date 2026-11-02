@@ -12,7 +12,7 @@ import { AUTO_EFFORTS, deliveryAction, followUpError, isInside, lineCount, sched
 import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOST, PORT, addEvent, addMessage, attachmentsOf, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
+  HOST, PORT, addEvent, addMessage, attachmentsOf, changed, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
 export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule", "set_effort"].map((n) => `mcp__app__${n}`);
@@ -140,6 +140,7 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     // A file found on disk earlier has no session yet; registering it claims it for this one.
     db.run("INSERT INTO files (todo_id, path, session_no) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET session_no = COALESCE(session_no, excluded.session_no)",
       [todoId, real, liveSessionNo(todoId)]);
+    changed(todoId);
     addEvent(todoId, "attach_file", "agent", basename(real));
     return ok(`attached as ${basename(real)}`);
   });
@@ -185,6 +186,7 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     const c = db.query("SELECT id, path FROM comments WHERE id = ? AND todo_id = ?").get(id, todoId) as { id: number; path: string } | null;
     if (!c) return err(`this TODO has no comment ${id}`);
     db.run("UPDATE comments SET reply = ?, state = 'replied', replied_at = ? WHERE id = ?", [reply.trim(), new Date().toISOString(), id]);
+    changed(todoId);
     addEvent(todoId, "reply_comment", "agent", `${basename(c.path)} · ${reply.trim().slice(0, 80)}`);
     return ok();
   });

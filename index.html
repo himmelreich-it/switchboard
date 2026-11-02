@@ -703,6 +703,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .chatwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #chatLog { flex: 1; min-height: 0; overflow: auto; padding: 8px 20px 24px; }
 .tl { display: flex; flex-direction: column; }
+.tl-part { display: contents; }   /* one per timeline item, so an update replaces only the items that changed */
 .flist .empty { padding: 4px 8px; }
 .tl > .empty { padding: 16px 0; }
 .ses-div { display: flex; align-items: center; gap: 10px; padding: 16px 0 4px; }
@@ -1452,7 +1453,18 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener"); } });
 // No data-* or style: markdown from a repo or an agent must not carry data-act (it would run app actions on click)
 // or cover the page.
-const md = (s) => DOMPurify.sanitize(marked.parse(String(s ?? "")), { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"] });
+// Memoized: the chat renders every agent message again on each update, and parsing is the costly part.
+const mdCache = new Map();
+const md = (s) => {
+  s = String(s ?? "");
+  let h = mdCache.get(s);
+  if (h === undefined) {
+    h = DOMPurify.sanitize(marked.parse(s), { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"] });
+    if (mdCache.size >= 500) mdCache.delete(mdCache.keys().next().value);
+    mdCache.set(s, h);
+  }
+  return h;
+};
 // Plain-text chat: http(s) URLs become links (target="_blank"; Electron opens them in the browser). Trailing punctuation stays text.
 const linkify = (s) => String(s ?? "").split(/(https?:\/\/[^\s<>"']*[^\s<>"'.,;:!?)\]])/).map((x, i) => i % 2 ? `<a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a>` : esc(x)).join("");
 const short = (s, n = 34) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
@@ -1779,8 +1791,10 @@ const loaders = {
     const id = S.sel;
     if (typeof id !== "number") return;
     let d;
+    const buf = detailBuf = [];
     try { d = await call("GET", `/api/todos/${id}`); }
     catch (e) { if (e.status === 404 && S.sel === id) { toast("info", "TODO not found", e.message); goOverview(); } return; }
+    finally { if (detailBuf === buf) detailBuf = null; }
     if (S.sel !== id) return;   // you moved on while it loaded
     const key = `todo:${id}`;
     if (drafts[key] === undefined) {
@@ -1789,6 +1803,8 @@ const loaders = {
     }
     if (S.pendingPill?.key === key) S.pendingPill = null;
     S.detail = d;
+    // Patches that came while it loaded and are newer than what it read (seq) go on top.
+    for (const ev of buf) if (ev.id === id && ev.seq > d.seq) patchDetail(ev);
     if (d.todo.unread) call("POST", `/api/todos/${id}/read`).catch(() => {});   // only emits an event when something was unread
     const f = S.file;
     if (f && f.todoId === id && f.root === "todo" && !isDirty(f)) {   // a clean open file follows the disk; a dirty one keeps its base mtime so Save can detect the change
@@ -1812,13 +1828,16 @@ const loaders = {
     if (!t || !root) return;
     const key = `${t.id}:${root}`;
     try {
-      const tr = await call("GET", `/api/todos/${t.id}/tree?root=${root}`);
-      if (!S.treeOpen[key]) {   // first look: open every folder on the way to a change
-        const open = new Set();
-        for (const p of Object.keys(tr.marks)) { const parts = p.split("/"); for (let i = 1; i < parts.length; i++) open.add(parts.slice(0, i).join("/")); }
-        S.treeOpen[key] = open;
+      const had = S.trees[key];
+      const tr = await call("GET", `/api/todos/${t.id}/tree?root=${root}${had?.tag ? `&tag=${had.tag}` : ""}`);
+      if (!tr.unchanged) {   // unchanged: the tree is as it was, but an open file may still have changed (below)
+        if (!S.treeOpen[key]) {   // first look: open every folder on the way to a change
+          const open = new Set();
+          for (const p of Object.keys(tr.marks)) { const parts = p.split("/"); for (let i = 1; i < parts.length; i++) open.add(parts.slice(0, i).join("/")); }
+          S.treeOpen[key] = open;
+        }
+        S.trees[key] = tr;
       }
-      S.trees[key] = tr;
     } catch (e) { S.trees[key] = { error: e.message }; }
     const f = S.file;
     if (f && f.todoId === t.id && f.root === root && !isDirty(f)) await reloadFile(f);
@@ -1826,7 +1845,7 @@ const loaders = {
 };
 const want = new Set();
 let pumping = false;
-// ponytail: every TODO event refetches the whole list (the server runs two git commands per worktree); fine for tens of TODOs.
+let detailBuf = null;   // TODO events for the open TODO that came while its transcript loads
 function need(...keys) {
   keys.forEach((k) => want.add(k));
   if (!pumping) { pumping = true; queueMicrotask(pump); }
@@ -3142,7 +3161,7 @@ const sessRange = (s) => {
 function streamHtml(t, msgs, evs, liveSession) {
   const out = timelineItems(msgs, evs);
   const lastWork = liveSession && t.status === "running" ? out.findLastIndex((x) => x.work && !x.end) : -1;
-  return out.map((x, i) => x.msg ? msgHtml(x.msg, t) : x.ev ? (S.events ? evRow(x.ev, true) : "") : workHtml(x, t, i === lastWork, `${t.id}:${x.start.id}`)).join("");
+  return out.map((x, i) => x.msg ? msgHtml(x.msg, t) : x.ev ? (S.events ? evRow(x.ev, true) : "") : workHtml(x, t, i === lastWork, `${t.id}:${x.start.id}`));
 }
 // The firing that opened session `s` (item 144): the last "scheduled run" before it started, after the session before it.
 const firingOf = (d, s) => {
@@ -3150,25 +3169,26 @@ const firingOf = (d, s) => {
   return e && (!prev || e.at >= prev.started_at) ? e : null;
 };
 // Item 76: every session in one timeline. Earlier sessions fold to a summary line; the live one has a divider.
+// A list of HTML parts, one per timeline item, so renderChat replaces only the parts that changed.
 function chatHtml(t, d) {
   const sessions = d.sessions, last = sessions.length, path = S.projects.find((p) => p.id === t.project_id)?.local_path ?? "the project folder";
   if (!last) return streamHtml(t, d.messages, d.events, true);
   const evsOf = (no) => d.events.filter((e) => (e.session_no ?? (no === 1 ? 1 : -1)) === no);
-  return sessions.map((s) => {
+  return sessions.flatMap((s) => {
     const isLive = s.no === last, key = `${t.id}:${s.no}`;
     const msgs = d.messages.filter((m) => (m.session_no ?? (isLive ? last : -1)) === s.no);
     const agent = esc(s.agent_name || agentLabel(s.agent));
     // Item 144: a session a firing opened is labelled by it, "scheduled 09:00" or "run now 11:02".
     const f = firingOf(d, s), how = f && (f.detail.startsWith("run now") ? "run now" : "scheduled");
-    if (isLive) return `<div class="ses-div"><i></i><span class="ml">Session ${s.no} · ${agent} · ${esc(f ? `${how} ${hm(f.at)}` : sessRange(s))}</span><i></i></div>` + streamHtml(t, msgs, evsOf(s.no), true);
+    if (isLive) return [`<div class="ses-div"><i></i><span class="ml">Session ${s.no} · ${agent} · ${esc(f ? `${how} ${hm(f.at)}` : sessRange(s))}</span><i></i></div>`, ...streamHtml(t, msgs, evsOf(s.no), true)];
     const open = S.openSess.has(key), lastAgent = [...msgs].reverse().find((m) => m.author === "agent");
     const files = d.files.filter((f) => f.session_no === s.no);
     return `<div class="ses-old"><button type="button" data-act="sess-toggle" data-id="${key}" aria-expanded="${open}">${SVG(open ? CHEV_D : CHEV_R, 14)}<span class="no">Session ${s.no}</span>${sessions.some((x) => x.agent !== "claude") ? `<span class="ml">${agent}</span>` : ""}<span class="lbl">${esc(f ? `${how} ${dayAt(f.at)}${f.detail.startsWith("catch-up") ? " · catch-up" : ""}` : sessLabel(msgs))}</span><span class="rng">${esc(sessRange(s))}</span></button>
       ${open ? `<div class="body"><span class="sum"><span class="ml">Agent</span>${lastAgent ? esc(lastAgent.body) : "No agent message in this session."}</span>
         ${files.length ? `<div class="flags">${files.map((f) => `<button type="button" class="file-chip" data-act="open-file" data-id="${f.id}">${SVG(FILE, 13)}${esc(f.name)}</button>`).join("")}</div>` : ""}
         <span class="resume">${esc(s.session_id.slice(0, 8))}${s.resume ? ` · ${esc(s.resume)} from ${esc(path)}` : ""} · read-only here</span>
-        ${streamHtml(t, msgs, evsOf(s.no), false).replaceAll('data-act="edit-first"', "")}</div>` : ""}</div>`;
-  }).join("");
+        ${streamHtml(t, msgs, evsOf(s.no), false).join("").replaceAll('data-act="edit-first"', "")}</div>` : ""}</div>`;
+  });
 }
 
 // P3: the open permission request, docked above the composer (design v6). Keys 1-4 pick an option.
@@ -3187,18 +3207,36 @@ function approvalHtml(t) {
   </div>`;
 }
 
+// Puts each part in its own wrapper in host's .tl and replaces only the wrappers whose HTML changed. True if any did.
+function patchParts(host, parts) {
+  let tl = host.firstElementChild;
+  if (!host._parts || tl?.className !== "tl") { host.innerHTML = '<div class="tl"></div>'; host._html = null; host._parts = []; tl = host.firstElementChild; }
+  const old = host._parts, kids = tl.children;
+  let any = false;
+  for (let i = 0; i < parts.length; i++) {
+    if (old[i] === parts[i] && kids[i]) continue;
+    const w = document.createElement("div");
+    w.className = "tl-part";
+    w.innerHTML = parts[i];
+    if (kids[i]) kids[i].replaceWith(w); else tl.append(w);
+    any = true;
+  }
+  while (kids.length > parts.length) { tl.lastElementChild.remove(); any = true; }
+  host._parts = parts;
+  return any;
+}
 function renderChat(t, d) {
   const key = draftKey();
   const running = t.status === "running";
-  let html = d ? chatHtml(t, d) : "";
-  if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, t);
-  if (!html) html = `<span class="empty">${d ? "No messages yet." : "Loading…"}</span>`;
-  html = `<div class="tl">${html}</div>`;
+  const parts = (d ? chatHtml(t, d) : []).filter(Boolean);
+  if (S.sending?.key === key) parts.push(msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, t));
   const sig = `${key}:${d?.messages.length ?? 0}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
-  if (chatLog._html !== html) {
-    const hadFocus = document.activeElement?.id === "editFirst";
-    chatLog.innerHTML = html; chatLog._html = html;
+  const hadFocus = document.activeElement?.id === "editFirst";
+  let rebuilt = false;
+  if (parts.length) rebuilt = patchParts(chatLog, parts);
+  else { setHtml(chatLog, `<div class="tl"><span class="empty">${d ? "No messages yet." : "Loading…"}</span></div>`); chatLog._parts = null; }
+  if (rebuilt) {
     const ta = $("editFirst");   // the edit box is rebuilt with its starting text; put the typed text back
     if (ta && S.editing) { ta.value = S.editing.text; if (hadFocus) ta.focus(); }
   }
@@ -4536,10 +4574,21 @@ const treeVisible = () => S.view === "todos" && S.mode === "focus" && typeof S.s
 setInterval(() => { if (treeVisible() && !document.hidden) need("tree"); }, 5000);
 function onEvent(ev) {
   const focusTodo = S.view === "todos" && S.mode === "focus" && typeof S.sel === "number";
-  if (ev.type === "todo" || ev.type === "todos") {
+  if (ev.type === "todos") {
     need("todos");   // header counts and the tab title are always on screen
-    if (focusTodo && (ev.type === "todos" || ev.id === S.sel)) need("detail");
-    if (focusTodo && ev.id === S.sel && treeVisible()) need("tree");   // a run that ended may have changed files
+    if (focusTodo) need("detail");
+    if (focusTodo && treeVisible()) need("tree");
+  } else if (ev.type === "todo") {
+    // The event carries the TODO's summary and its changed transcript rows; `full` asks for the whole transcript.
+    const prev = S.todos.find((t) => t.id === ev.id);
+    applyTodo(ev.todo);
+    const mine = focusTodo && ev.id === S.sel;
+    if (mine && (ev.full || S.detail?.todo.id !== ev.id)) need("detail");
+    else if (mine) { patchDetail(ev); detailBuf?.push(ev); }
+    if (mine && ev.todo.unread) call("POST", `/api/todos/${ev.id}/read`).catch(() => {});
+    // a run that ended may have changed files
+    if (mine && treeVisible() && (ev.full || prev?.status !== ev.todo.status || JSON.stringify(prev?.git) !== JSON.stringify(ev.todo.git))) need("tree");
+    renderFrame();
   } else if (ev.type === "operator") {
     need("operator");
   } else if (ev.type === "projects") need("projects");
@@ -4550,6 +4599,26 @@ function onEvent(ev) {
     if ((focusTodo && ev.id === S.sel && S.tab === "chat") || (S.view === "todos" && S.mode === "overview" && S.board === "board")) renderSoon();
   }
 }
+// A TODO event's summary replaces the TODO in the list (newest first, as the server sends it) and in the open detail.
+function applyTodo(t) {
+  const i = S.todos.findIndex((x) => x.id === t.id);
+  if (i < 0) S.todos.push(t); else S.todos[i] = t;
+  S.todos.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  if (S.detail?.todo.id === t.id) S.detail.todo = t;
+}
+// Transcript rows by id: a changed row replaces its old copy, a new one goes in id order.
+function patchDetail(ev) {
+  const d = S.detail;
+  if (!d || d.todo.id !== ev.id || !ev.events) return;
+  for (const e of ev.events) {
+    const i = d.events.findIndex((x) => x.id === e.id);
+    if (i >= 0) d.events[i] = e;
+    else { d.events.push(e); if (d.events.length > 1 && d.events.at(-2).id > e.id) d.events.sort((a, b) => a.id - b.id); }
+  }
+}
+// Patched data shows at the next frame; several events in one frame make one render.
+let frame = 0;
+function renderFrame() { if (!frame) frame = requestAnimationFrame(() => { frame = 0; render(); }); }
 // The agent writes every 100 ms; the board and chat follow at most every 250 ms.
 let renderTimer = 0;
 function renderSoon() { if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = 0; render(); }, 250); }
