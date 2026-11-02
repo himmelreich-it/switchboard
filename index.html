@@ -3430,7 +3430,10 @@ let termLib = null;
 function loadTermLib() {
   if (!termLib) {
     const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "/vendor/terminal.css"; document.head.append(css);
-    termLib = Promise.all([loadScript("/vendor/terminal.js"), document.fonts.ready]).then(() => window.SBTerm);
+    // The WebGL atlas caches each glyph on first draw; a weight not loaded yet would be cached in the fallback font.
+    // fonts.ready only covers faces the page already asked for, and nothing else uses mono bold.
+    const fonts = ["13px 'JetBrains Mono'", "bold 13px 'JetBrains Mono'"].map((f) => document.fonts.load(f));
+    termLib = Promise.all([loadScript("/vendor/terminal.js"), ...fonts]).then(() => window.SBTerm);
   }
   return termLib;
 }
