@@ -1,0 +1,1173 @@
+{
+ "worker": {
+  "tools": [
+   {
+    "name": "post_message",
+    "description": "Post a one or two line chat message to the user. Pass file_name to link a file you registered with attach_file.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "body": {
+       "type": "string"
+      },
+      "file_name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "body"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "remove_todo",
+    "description": "Remove a TODO this TODO created with create_todo, only when the user's instruction says to: like the user's Remove, its run stops and it moves to the Removed fold, where the user can restore it.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_schedule",
+    "description": "Set, change, pause or remove (schedule null) the schedule of a TODO this TODO created with create_todo, only when the user's instruction says to. schedule: {days: [1,2,3,4,5], times: [\"09:00\"]} or {days, every: 30, from: \"08:00\", to: \"18:00\"} (days 0 = Sunday, local time), optional prompt (each run's first message; left out, the TODO's first instruction) and paused.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "schedule": {}
+     },
+     "required": [
+      "todo_id",
+      "schedule"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_title",
+    "description": "Set this TODO's title: a short summary of the task.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "title": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "title"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_attention",
+    "description": "Raise the attention flag (raised: true) when you need the user; clear it (raised: false) once their reply resolves it.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "raised": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "raised"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "attach_file",
+    "description": "Register a file you wrote in this TODO's artifact folder (/tmp/sb-data/1) so the user can open it. Pass its absolute path.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_worktree",
+    "description": "Register the absolute path of the git worktree this TODO works in.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_pr",
+    "description": "Register the number of the GitHub pull request this TODO works on, in its topic's GitHub repository. The app shows its state, checks and reviews.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "number": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "number"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_effort",
+    "description": "Switch your effort level: low, medium, high or xhigh. reason: a few words the user reads, such as \"verifying the fix\". Refused when the user set the effort.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "level": {
+       "type": "string",
+       "enum": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+       ]
+      },
+      "reason": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "level",
+      "reason"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "list_comments",
+    "description": "List the user's open comments on files of this TODO: each has the file's path, the line where the selected text started (when known), the selected text (quote), the comment, and your earlier reply if the user edited the comment after it. Answer each with reply_comment.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {}
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "reply_comment",
+    "description": "Reply to one of the user's comments from list_comments. You changed the file for it: start the reply with \"Applied\" and say what you changed in a few words. A question: answer it, no edit. Unclear: ask your question as the reply. The user resolves the comment or edits it to follow up.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "reply": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "id",
+      "reply"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "suggest_follow_ups",
+    "description": "Suggest one or two follow-ups the user can send you with a click, each one line written as their instruction to you (e.g. \"Approve the PR\"). A later call replaces the earlier ones.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     "required": [
+      "items"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_todo",
+    "description": "Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_file",
+    "description": "Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "todo_id",
+      "name"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "create_todo",
+    "description": "Create a TODO with its first instruction. title: a short title for its card; leave it out and the TODO's agent sets one. topic: one of Alpha, beta, or \"none\" for a thinking-only TODO; leave it out and routing picks it at the start. start: true starts it now, only when the user's words say to start it; otherwise it lands in the user's backlog. key: a dedupe key such as \"pr:copilot-service#490\"; when a TODO has that key already, removed ones too, nothing is created. schedule: {days: [1,2,3,4,5], times: [\"09:00\"]} or {days, every: 30, from: \"08:00\", to: \"18:00\"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "instruction": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      },
+      "start": {
+       "type": "boolean"
+      },
+      "key": {
+       "type": "string"
+      },
+      "schedule": {}
+     },
+     "required": [
+      "instruction"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   }
+  ]
+ },
+ "worker_terminal": {
+  "tools": [
+   {
+    "name": "post_message",
+    "description": "Post a one or two line chat message to the user. Pass file_name to link a file you registered with attach_file.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "body": {
+       "type": "string"
+      },
+      "file_name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "body"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "remove_todo",
+    "description": "Remove a TODO this TODO created with create_todo, only when the user's instruction says to: like the user's Remove, its run stops and it moves to the Removed fold, where the user can restore it.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_schedule",
+    "description": "Set, change, pause or remove (schedule null) the schedule of a TODO this TODO created with create_todo, only when the user's instruction says to. schedule: {days: [1,2,3,4,5], times: [\"09:00\"]} or {days, every: 30, from: \"08:00\", to: \"18:00\"} (days 0 = Sunday, local time), optional prompt (each run's first message; left out, the TODO's first instruction) and paused.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "schedule": {}
+     },
+     "required": [
+      "todo_id",
+      "schedule"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_title",
+    "description": "Set this TODO's title: a short summary of the task.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "title": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "title"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_attention",
+    "description": "Raise the attention flag (raised: true) when you need the user; clear it (raised: false) once their reply resolves it.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "raised": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "raised"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "attach_file",
+    "description": "Register a file you wrote in this TODO's artifact folder (/tmp/sb-data/1) so the user can open it. Pass its absolute path.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_worktree",
+    "description": "Register the absolute path of the git worktree this TODO works in.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_pr",
+    "description": "Register the number of the GitHub pull request this TODO works on, in its topic's GitHub repository. The app shows its state, checks and reviews.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "number": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "number"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "list_comments",
+    "description": "List the user's open comments on files of this TODO: each has the file's path, the line where the selected text started (when known), the selected text (quote), the comment, and your earlier reply if the user edited the comment after it. Answer each with reply_comment.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {}
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "reply_comment",
+    "description": "Reply to one of the user's comments from list_comments. You changed the file for it: start the reply with \"Applied\" and say what you changed in a few words. A question: answer it, no edit. Unclear: ask your question as the reply. The user resolves the comment or edits it to follow up.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "reply": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "id",
+      "reply"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_todo",
+    "description": "Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_file",
+    "description": "Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "todo_id",
+      "name"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "create_todo",
+    "description": "Create a TODO with its first instruction. title: a short title for its card; leave it out and the TODO's agent sets one. topic: one of Alpha, beta, or \"none\" for a thinking-only TODO; leave it out and routing picks it at the start. start: true starts it now, only when the user's words say to start it; otherwise it lands in the user's backlog. key: a dedupe key such as \"pr:copilot-service#490\"; when a TODO has that key already, removed ones too, nothing is created. schedule: {days: [1,2,3,4,5], times: [\"09:00\"]} or {days, every: 30, from: \"08:00\", to: \"18:00\"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "instruction": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      },
+      "start": {
+       "type": "boolean"
+      },
+      "key": {
+       "type": "string"
+      },
+      "schedule": {}
+     },
+     "required": [
+      "instruction"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   }
+  ]
+ },
+ "worker_codex": {
+  "tools": [
+   {
+    "name": "post_message",
+    "description": "Post a one or two line chat message to the user. Pass file_name to link a file you registered with attach_file.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "body": {
+       "type": "string"
+      },
+      "file_name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "body"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "remove_todo",
+    "description": "Remove a TODO this TODO created with create_todo, only when the user's instruction says to: like the user's Remove, its run stops and it moves to the Removed fold, where the user can restore it.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_schedule",
+    "description": "Set, change, pause or remove (schedule null) the schedule of a TODO this TODO created with create_todo, only when the user's instruction says to. schedule: {days: [1,2,3,4,5], times: [\"09:00\"]} or {days, every: 30, from: \"08:00\", to: \"18:00\"} (days 0 = Sunday, local time), optional prompt (each run's first message; left out, the TODO's first instruction) and paused.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "schedule": {}
+     },
+     "required": [
+      "todo_id",
+      "schedule"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_title",
+    "description": "Set this TODO's title: a short summary of the task.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "title": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "title"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_attention",
+    "description": "Raise the attention flag (raised: true) when you need the user; clear it (raised: false) once their reply resolves it.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "raised": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "raised"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "attach_file",
+    "description": "Register a file you wrote in this TODO's artifact folder (/tmp/sb-data/2) so the user can open it. Pass its absolute path.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_worktree",
+    "description": "Register the absolute path of the git worktree this TODO works in.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "set_pr",
+    "description": "Register the number of the GitHub pull request this TODO works on, in its topic's GitHub repository. The app shows its state, checks and reviews.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "number": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "number"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "list_comments",
+    "description": "List the user's open comments on files of this TODO: each has the file's path, the line where the selected text started (when known), the selected text (quote), the comment, and your earlier reply if the user edited the comment after it. Answer each with reply_comment.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {}
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "reply_comment",
+    "description": "Reply to one of the user's comments from list_comments. You changed the file for it: start the reply with \"Applied\" and say what you changed in a few words. A question: answer it, no edit. Unclear: ask your question as the reply. The user resolves the comment or edits it to follow up.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "reply": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "id",
+      "reply"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "suggest_follow_ups",
+    "description": "Suggest one or two follow-ups the user can send you with a click, each one line written as their instruction to you (e.g. \"Approve the PR\"). A later call replaces the earlier ones.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     "required": [
+      "items"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_todo",
+    "description": "Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_file",
+    "description": "Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "todo_id",
+      "name"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "create_todo",
+    "description": "Create a TODO with its first instruction. title: a short title for its card; leave it out and the TODO's agent sets one. topic: one of Alpha, beta, or \"none\" for a thinking-only TODO; leave it out and routing picks it at the start. start: true starts it now, only when the user's words say to start it; otherwise it lands in the user's backlog. key: a dedupe key such as \"pr:copilot-service#490\"; when a TODO has that key already, removed ones too, nothing is created. schedule: {days: [1,2,3,4,5], times: [\"09:00\"]} or {days, every: 30, from: \"08:00\", to: \"18:00\"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "instruction": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      },
+      "start": {
+       "type": "boolean"
+      },
+      "key": {
+       "type": "string"
+      },
+      "schedule": {}
+     },
+     "required": [
+      "instruction"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   }
+  ]
+ },
+ "operator": {
+  "tools": [
+   {
+    "name": "read_todo",
+    "description": "Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_file",
+    "description": "Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "todo_id",
+      "name"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "list_todos",
+    "description": "List the TODOs: number (T-<id>), title, topic (null: not picked yet; \"none\": thinking only), status (not_started = in the backlog, or the Scheduled lane with a schedule), attention, branch, git state, pull request, session count, files, schedule and next run, the TODO that created it, and the latest messages. Removed TODOs only with include_removed.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "include_removed": {
+       "type": "boolean"
+      }
+     }
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "send_message",
+    "description": "Send a message to a TODO on the user's behalf. It is delivered like a message the user commits.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "body": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "todo_id",
+      "body"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "remove_todo",
+    "description": "Remove a TODO, only when the user asks: like the user's Remove, its run stops and it moves to the Removed fold, where the user can restore it.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "create_todo",
+    "description": "Create a TODO with its first instruction. title: a short title for its card; leave it out and the TODO's agent sets one. topic: one of Alpha, beta, or \"none\" for a thinking-only TODO; leave it out and routing picks it at the start. start: true starts it now, only when the user's words say to start it; otherwise it lands in the user's backlog. key: a dedupe key such as \"pr:copilot-service#490\"; when a TODO has that key already, removed ones too, nothing is created. schedule: {days: [1,2,3,4,5], times: [\"09:00\"]} or {days, every: 30, from: \"08:00\", to: \"18:00\"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "instruction": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      },
+      "start": {
+       "type": "boolean"
+      },
+      "key": {
+       "type": "string"
+      },
+      "schedule": {}
+     },
+     "required": [
+      "instruction"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   }
+  ]
+ },
+ "router": {
+  "tools": [
+   {
+    "name": "read_todo",
+    "description": "Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      }
+     },
+     "required": [
+      "todo_id"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "read_file",
+    "description": "Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "todo_id": {
+       "type": "integer",
+       "minimum": -9007199254740991,
+       "maximum": 9007199254740991
+      },
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "todo_id",
+      "name"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "route_todo",
+    "description": "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium. Stop after this call.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "topic": {
+       "type": "string"
+      },
+      "reason": {
+       "type": "string"
+      },
+      "effort": {
+       "type": "string",
+       "enum": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+       ]
+      }
+     },
+     "required": [
+      "topic",
+      "reason"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   },
+   {
+    "name": "ask_topic",
+    "description": "Ask the user which topic this TODO belongs to, when you cannot tell: a short question and the 2 or 3 likely topics by name. The user also gets a \"No topic\" choice. Stop after this call.",
+    "inputSchema": {
+     "$schema": "http://json-schema.org/draft-07/schema#",
+     "type": "object",
+     "properties": {
+      "question": {
+       "type": "string"
+      },
+      "options": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     "required": [
+      "question",
+      "options"
+     ]
+    },
+    "execution": {
+     "taskSupport": "forbidden"
+    }
+   }
+  ]
+ }
+}

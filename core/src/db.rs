@@ -122,3 +122,30 @@ macro_rules! params {
     () => { &[] as &[serde_json::Value] };
     ($($x:expr),+ $(,)?) => { &[$(serde_json::json!($x)),+] as &[serde_json::Value] };
 }
+
+/// The tests' database: one per test binary (the connection is global), in a temporary SWITCHBOARD_HOME, with the real
+/// schema and the rows apptools' golden files assume (topics Alpha 2 and beta 1; TODO 1 on the default agent, 2 on
+/// codex, 5 removed with key "pr:x#1", 6 with comment 3). Tests that write take turns through the returned guard and
+/// make their own rows beyond these.
+#[cfg(test)]
+pub fn test_db() -> std::sync::MutexGuard<'static, ()> {
+    static TURN: Mutex<()> = Mutex::new(());
+    static INIT: OnceLock<()> = OnceLock::new();
+    let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    INIT.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("switchboard-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("SWITCHBOARD_HOME", &dir);
+        open(&crate::util::join(crate::util::home(), "db.sqlite")).unwrap();
+        crate::helpers::migrate_db(&conn()).unwrap();
+        exec(
+            "INSERT INTO projects (id, name, slug, local_path, created_at) VALUES (2, 'Alpha', 'alpha', '/tmp/sb-alpha', 'x'), (1, 'beta', 'beta', '/tmp/sb-beta', 'x');
+             INSERT INTO todos (id, title, status, created_at, updated_at, agent) VALUES (1, 't1', 'idle', 'x', 'x', NULL), (2, 't2', 'idle', 'x', 'x', 'codex');
+             INSERT INTO todos (id, title, status, created_at, updated_at, key, removed_at) VALUES (5, 't5', 'idle', 'x', 'x', 'pr:x#1', '2026-10-01T10:00:00.000Z');
+             INSERT INTO todos (id, title, status, created_at, updated_at) VALUES (6, 't6', 'idle', 'x', 'x');
+             INSERT INTO comments (id, todo_id, root, rel, path, quote, body, state, created_at) VALUES (3, 6, 'todo', '1', '/tmp/sb-data/6/plan.md', 'q', 'b', 'open', 'x');",
+        );
+    });
+    turn
+}

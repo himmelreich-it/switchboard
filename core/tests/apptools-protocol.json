@@ -1,0 +1,1545 @@
+[
+ {
+  "name": "initialize, supported version",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"0\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"app\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "initialize, unknown version",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"1999-01-01\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"0\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"app\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "initialize, operator",
+  "grant": "operator",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"0\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"app\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "initialize, invalid params",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"string\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"protocolVersion\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected string, received number\\\"\\n  },\\n  {\\n    \\\"expected\\\": \\\"object\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"capabilities\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected object, received undefined\\\"\\n  },\\n  {\\n    \\\"expected\\\": \\\"object\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"clientInfo\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected object, received undefined\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "initialized notification",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
+  "status": 202,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "unknown notification",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/whatever\",\"params\":{\"a\":1}}",
+  "status": 202,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "ping",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "ping, string id",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"ping\",\"params\":{}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":\"abc\"}"
+ },
+ {
+  "name": "unknown method",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"resources/list\",\"params\":{}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}"
+ },
+ {
+  "name": "tools/list, router",
+  "grant": "router",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"tools\":[{\"name\":\"read_todo\",\"description\":\"Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"todo_id\":{\"type\":\"integer\",\"minimum\":-9007199254740991,\"maximum\":9007199254740991}},\"required\":[\"todo_id\"]},\"execution\":{\"taskSupport\":\"forbidden\"}},{\"name\":\"read_file\",\"description\":\"Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"todo_id\":{\"type\":\"integer\",\"minimum\":-9007199254740991,\"maximum\":9007199254740991},\"name\":{\"type\":\"string\"}},\"required\":[\"todo_id\",\"name\"]},\"execution\":{\"taskSupport\":\"forbidden\"}},{\"name\":\"route_todo\",\"description\":\"Decide which topic this TODO belongs to: a topic's name, or \\\"none\\\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium. Stop after this call.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"topic\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"effort\":{\"type\":\"string\",\"enum\":[\"low\",\"medium\",\"high\",\"xhigh\"]}},\"required\":[\"topic\",\"reason\"]},\"execution\":{\"taskSupport\":\"forbidden\"}},{\"name\":\"ask_topic\",\"description\":\"Ask the user which topic this TODO belongs to, when you cannot tell: a short question and the 2 or 3 likely topics by name. The user also gets a \\\"No topic\\\" choice. Stop after this call.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"question\",\"options\"]},\"execution\":{\"taskSupport\":\"forbidden\"}}]},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "batch",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"},{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"nope\"}]",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "[{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1},{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}]"
+ },
+ {
+  "name": "batch of one",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "[{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"ping\"}]",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":5}"
+ },
+ {
+  "name": "batch of notifications",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "[{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}]",
+  "status": 202,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "empty batch",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "[]",
+  "status": 202,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "response message",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{}}",
+  "status": 202,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "batch too large",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "[{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":16,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":17,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":18,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":19,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":20,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":22,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":23,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":24,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":25,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":26,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":27,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":28,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":29,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":30,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":32,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":33,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":34,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":35,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":36,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":37,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":38,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":39,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":40,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":41,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":43,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":44,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":45,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":46,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":47,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":48,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":49,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":50,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":51,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":52,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":53,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":54,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":55,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":56,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":57,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":58,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":59,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":60,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":61,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":62,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":63,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":64,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":65,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":66,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":67,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":68,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":69,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":70,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":71,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":72,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":73,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":74,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":75,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":76,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":77,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":78,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":79,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":80,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":81,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":82,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":83,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":84,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":85,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":86,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":87,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":88,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":89,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":90,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":91,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":92,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":93,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":94,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":95,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":96,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":97,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":98,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"id\":100,\"method\":\"ping\"}]",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Invalid Request: Batch must not exceed 100 messages\"},\"id\":null}"
+ },
+ {
+  "name": "bad secret",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "nope",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 403,
+  "content_type": null,
+  "allow": null,
+  "response": "unknown session"
+ },
+ {
+  "name": "no secret",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 403,
+  "content_type": null,
+  "allow": null,
+  "response": "unknown session"
+ },
+ {
+  "name": "GET",
+  "grant": "worker",
+  "method": "GET",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "text/event-stream"
+  },
+  "body": null,
+  "status": 405,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "DELETE",
+  "grant": "worker",
+  "method": "DELETE",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream"
+  },
+  "body": null,
+  "status": 405,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "PUT",
+  "grant": "worker",
+  "method": "PUT",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 405,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "bad secret, GET",
+  "grant": "worker",
+  "method": "GET",
+  "headers": {
+   "x-switchboard-session": "nope",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": null,
+  "status": 403,
+  "content_type": null,
+  "allow": null,
+  "response": "unknown session"
+ },
+ {
+  "name": "accept json only",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 406,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Not Acceptable: Client must accept both application/json and text/event-stream\"},\"id\":null}"
+ },
+ {
+  "name": "no accept",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 406,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Not Acceptable: Client must accept both application/json and text/event-stream\"},\"id\":null}"
+ },
+ {
+  "name": "text content type",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "text/plain"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 415,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Unsupported Media Type: Content-Type must be application/json\"},\"id\":null}"
+ },
+ {
+  "name": "json content type with charset",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "Application/JSON; charset=utf-8"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "invalid json",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{nope",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON\"},\"id\":null}"
+ },
+ {
+  "name": "empty body",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON\"},\"id\":null}"
+ },
+ {
+  "name": "not json-rpc",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"foo\":1}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "extra key",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"extra\":1}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "wrong jsonrpc version",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "float id",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1.5,\"method\":\"ping\"}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "unsupported protocol header",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json",
+   "mcp-protocol-version": "1999-01-01"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Bad Request: Unsupported protocol version: 1999-01-01 (supported versions: 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05, 2024-10-07)\"},\"id\":null}"
+ },
+ {
+  "name": "supported protocol header",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json",
+   "mcp-protocol-version": "2025-06-18"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "tools/call, unknown tool",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"nope\",\"arguments\":{}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Tool nope not found\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "tools/call, operator tool from a worker",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"list_todos\",\"arguments\":{}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Tool list_todos not found\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "tools/call, no params",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"object\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected object, received undefined\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "tools/call, no name",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"arguments\":{}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"string\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"name\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected string, received undefined\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "tools/call, arguments a string",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_title\",\"arguments\":\"x\"}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"record\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"arguments\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected record, received string\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "tools/call, arguments an array",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_title\",\"arguments\":[1]}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"record\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"arguments\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected record, received array\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "post_message, no arguments",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"post_message\"}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool post_message: Invalid input: expected string, received undefined at body\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "post_message, wrong types",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"post_message\",\"arguments\":{\"body\":1,\"file_name\":null}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool post_message: Invalid input: expected string, received number at body\\nInvalid input: expected string, received null at file_name\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "post_message, empty body",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"post_message\",\"arguments\":{\"body\":\"  \"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"body is empty\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "post_message, three lines",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"post_message\",\"arguments\":{\"body\":\"a\\nb\\nc\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Chat messages are one or two lines. Put the longer content in a markdown file in /tmp/sb-data/1, register it with attach_file, and link it with file_name.\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_title, empty",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_title\",\"arguments\":{\"title\":\" \",\"extra\":1}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"title is empty\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_attention, string",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_attention\",\"arguments\":{\"raised\":\"yes\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_attention: Invalid input: expected boolean, received string at raised\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "attach_file, relative path",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"attach_file\",\"arguments\":{\"path\":\"a.md\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"path must be absolute\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "attach_file, missing file",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"attach_file\",\"arguments\":{\"path\":\"/nonexistent/sb/a.md\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"/nonexistent/sb/a.md does not exist\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_worktree, relative path",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_worktree\",\"arguments\":{\"path\":\"wt\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"wt is not an existing directory (absolute path required)\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_pr, zero",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_pr\",\"arguments\":{\"number\":0}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_pr: Too small: expected number to be >0 at number\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_pr, fraction",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_pr\",\"arguments\":{\"number\":1.5}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_pr: Invalid input: expected int, received number at number\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_pr, negative fraction",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_pr\",\"arguments\":{\"number\":-1.5}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_pr: Invalid input: expected int, received number at number\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_pr, string",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_pr\",\"arguments\":{\"number\":\"3\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_pr: Invalid input: expected number, received string at number\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_pr, too big",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_pr\",\"arguments\":{\"number\":9007199254740992}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_pr: Too big: expected int to be <=9007199254740991 at number\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_pr, too small",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_pr\",\"arguments\":{\"number\":-9007199254740993}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_pr: Too small: expected int to be >=-9007199254740991 at number\\nToo small: expected number to be >0 at number\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_pr, exponent",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_pr\",\"arguments\":{\"number\":1e21}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_pr: Too big: expected int to be <=9007199254740991 at number\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "reply_comment, float-valued int",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"reply_comment\",\"arguments\":{\"id\":2.0,\"reply\":\" \"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"reply is empty\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_effort, bad level",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_effort\",\"arguments\":{\"level\":\"max\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_effort: Invalid option: expected one of \\\"low\\\"|\\\"medium\\\"|\\\"high\\\"|\\\"xhigh\\\" at level\\nInvalid input: expected string, received undefined at reason\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_effort, from a terminal",
+  "grant": "worker_terminal",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_effort\",\"arguments\":{\"level\":\"low\",\"reason\":\"x\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Tool set_effort not found\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_effort, codex",
+  "grant": "worker_codex",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_effort\",\"arguments\":{\"level\":\"low\",\"reason\":\"x\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Tool set_effort not found\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "suggest_follow_ups, bad items",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"suggest_follow_ups\",\"arguments\":{\"items\":[1,\"a\",null]}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool suggest_follow_ups: Invalid input: expected string, received number at items[0]\\nInvalid input: expected string, received null at items[2]\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "suggest_follow_ups, object",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"suggest_follow_ups\",\"arguments\":{\"items\":{}}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool suggest_follow_ups: Invalid input: expected array, received object at items\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "suggest_follow_ups, none",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"suggest_follow_ups\",\"arguments\":{\"items\":[]}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Suggest one or two follow-ups.\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "reply_comment, empty reply",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"reply_comment\",\"arguments\":{\"id\":3,\"reply\":\"\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"reply is empty\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "reply_comment, missing id",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"reply_comment\",\"arguments\":{\"reply\":\"ok\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool reply_comment: Invalid input: expected number, received undefined at id\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "set_schedule, no schedule key",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_schedule\",\"arguments\":{\"todo_id\":3}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool set_schedule: Invalid input: expected nonoptional, received undefined at schedule\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "remove_todo, bool id",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"remove_todo\",\"arguments\":{\"todo_id\":true}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool remove_todo: Invalid input: expected number, received boolean at todo_id\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "create_todo, empty",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"create_todo\",\"arguments\":{}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool create_todo: Invalid input: expected string, received undefined at instruction\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "create_todo, wrong optionals",
+  "grant": "operator",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"create_todo\",\"arguments\":{\"instruction\":\"x\",\"title\":null,\"start\":\"yes\",\"topic\":3}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool create_todo: Invalid input: expected string, received null at title\\nInvalid input: expected string, received number at topic\\nInvalid input: expected boolean, received string at start\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "create_todo, empty instruction",
+  "grant": "operator",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"create_todo\",\"arguments\":{\"instruction\":\" \"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"instruction is empty\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "list_todos, bad flag",
+  "grant": "operator",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"list_todos\",\"arguments\":{\"include_removed\":1}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool list_todos: Invalid input: expected boolean, received number at include_removed\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "send_message, missing",
+  "grant": "operator",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"send_message\",\"arguments\":{}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool send_message: Invalid input: expected number, received undefined at todo_id\\nInvalid input: expected string, received undefined at body\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "read_file, wrong types",
+  "grant": "operator",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"read_file\",\"arguments\":{\"todo_id\":\"1\",\"name\":2}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool read_file: Invalid input: expected number, received string at todo_id\\nInvalid input: expected string, received number at name\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "route_todo, bad effort",
+  "grant": "router",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"route_todo\",\"arguments\":{\"topic\":\"Alpha\",\"reason\":\"r\",\"effort\":\"max\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool route_todo: Invalid option: expected one of \\\"low\\\"|\\\"medium\\\"|\\\"high\\\"|\\\"xhigh\\\" at effort\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "ask_topic, options a string",
+  "grant": "router",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"ask_topic\",\"arguments\":{\"question\":\"q\",\"options\":\"Alpha\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Input validation error: Invalid arguments for tool ask_topic: Invalid input: expected array, received string at options\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "post_message from the router",
+  "grant": "router",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"post_message\",\"arguments\":{\"body\":\"x\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"MCP error -32602: Tool post_message not found\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "tools/call with a task",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_title\",\"arguments\":{\"title\":\" \"},\"task\":{}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"Server does not support task creation (required for tools/call)\"}}"
+ },
+ {
+  "name": "tools/call with an invalid task",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_title\",\"arguments\":{\"title\":\" \"},\"task\":{\"ttl\":\"x\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"number\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"task\\\",\\n      \\\"ttl\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected number, received string\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "ping with a task",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":{\"task\":{\"ttl\":5}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"Server does not support task creation (required for ping)\"}}"
+ },
+ {
+  "name": "unknown method with a task",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"nope\",\"params\":{\"task\":{}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}"
+ },
+ {
+  "name": "tools/list, numeric cursor",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{\"cursor\":5}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"string\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"cursor\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected string, received number\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "tools/list, string cursor",
+  "grant": "router",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{\"cursor\":\"x\",\"_meta\":{\"progressToken\":\"t\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{\"tools\":[{\"name\":\"read_todo\",\"description\":\"Read one TODO by its number (T-42 is 42), removed ones too: its details, its sessions with their chat messages, and its file list.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"todo_id\":{\"type\":\"integer\",\"minimum\":-9007199254740991,\"maximum\":9007199254740991}},\"required\":[\"todo_id\"]},\"execution\":{\"taskSupport\":\"forbidden\"}},{\"name\":\"read_file\",\"description\":\"Read one of a TODO's text files by its name: its attached markdown files and the user's uploads. For an image or other binary file it returns the path to open with Read.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"todo_id\":{\"type\":\"integer\",\"minimum\":-9007199254740991,\"maximum\":9007199254740991},\"name\":{\"type\":\"string\"}},\"required\":[\"todo_id\",\"name\"]},\"execution\":{\"taskSupport\":\"forbidden\"}},{\"name\":\"route_todo\",\"description\":\"Decide which topic this TODO belongs to: a topic's name, or \\\"none\\\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium. Stop after this call.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"topic\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"effort\":{\"type\":\"string\",\"enum\":[\"low\",\"medium\",\"high\",\"xhigh\"]}},\"required\":[\"topic\",\"reason\"]},\"execution\":{\"taskSupport\":\"forbidden\"}},{\"name\":\"ask_topic\",\"description\":\"Ask the user which topic this TODO belongs to, when you cannot tell: a short question and the 2 or 3 likely topics by name. The user also gets a \\\"No topic\\\" choice. Stop after this call.\",\"inputSchema\":{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"question\",\"options\"]},\"execution\":{\"taskSupport\":\"forbidden\"}}]},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "initialize, no params",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"object\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected object, received undefined\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "initialize, clientInfo without version",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":1,\"title\":2,\"icons\":3}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"string\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"clientInfo\\\",\\n      \\\"name\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected string, received number\\\"\\n  },\\n  {\\n    \\\"expected\\\": \\\"string\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"clientInfo\\\",\\n      \\\"title\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected string, received number\\\"\\n  },\\n  {\\n    \\\"expected\\\": \\\"array\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"clientInfo\\\",\\n      \\\"icons\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected array, received number\\\"\\n  },\\n  {\\n    \\\"expected\\\": \\\"string\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"clientInfo\\\",\\n      \\\"version\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected string, received undefined\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "initialize, capabilities a number",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":5,\"clientInfo\":{\"name\":\"a\",\"version\":\"1\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"object\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"capabilities\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected object, received number\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "initialize, protocolVersion number only",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":2025,\"capabilities\":{},\"clientInfo\":{\"name\":\"a\",\"version\":\"1\"}}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"string\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"protocolVersion\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected string, received number\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "params null",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":null}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "params array",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":[]}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "_meta with a float progress token",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":{\"_meta\":{\"progressToken\":1.5}}}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "_meta a string",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":{\"_meta\":\"x\"}}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "id null",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"ping\"}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "integer-valued float id",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":3.0,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":3}"
+ },
+ {
+  "name": "negative id",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":-4,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":-4}"
+ },
+ {
+  "name": "method a number",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":5}",
+  "status": 400,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error: Invalid JSON-RPC message\"},\"id\":null}"
+ },
+ {
+  "name": "cancelled notification",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":1}}",
+  "status": 202,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "error response message",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-1,\"message\":\"x\"}}",
+  "status": 202,
+  "content_type": null,
+  "allow": null,
+  "response": ""
+ },
+ {
+  "name": "tools/call, arguments null",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"set_title\",\"arguments\":null}}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"record\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"params\\\",\\n      \\\"arguments\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected record, received null\\\"\\n  }\\n]\"}}"
+ },
+ {
+  "name": "whitespace around json",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json"
+  },
+  "body": "  {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "json content type with bad params",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json; a=b,c"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 415,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Unsupported Media Type: Content-Type must be application/json\"},\"id\":null}"
+ },
+ {
+  "name": "json content type with trailing semicolon",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json;"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "json content type with quoted param",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": "application/json; a=\"b,c\""
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "content type with space",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "application/json, text/event-stream",
+   "content-type": " application/json "
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 200,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":1}"
+ },
+ {
+  "name": "accept wildcard",
+  "grant": "worker",
+  "method": "POST",
+  "headers": {
+   "x-switchboard-session": "$secret",
+   "accept": "*/*",
+   "content-type": "application/json"
+  },
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "status": 406,
+  "content_type": "application/json",
+  "allow": null,
+  "response": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000,\"message\":\"Not Acceptable: Client must accept both application/json and text/event-stream\"},\"id\":null}"
+ }
+]

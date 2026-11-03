@@ -877,42 +877,7 @@ mod tests {
     use super::*;
     use std::sync::OnceLock;
 
-    /// A database in a temporary SWITCHBOARD_HOME with the columns this module touches. Shared by every test in the
-    /// binary (the connection is global), so each test works on its own TODOs.
-    /// db::transaction does not keep other threads off the connection between BEGIN and COMMIT, so tests that write
-    /// take turns.
-    fn test_db() -> std::sync::MutexGuard<'static, ()> {
-        static TURN: Mutex<()> = Mutex::new(());
-        let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
-        static INIT: OnceLock<()> = OnceLock::new();
-        INIT.get_or_init(|| {
-            let dir = std::env::temp_dir().join(format!("switchboard-ops-test-{}", std::process::id()));
-            std::fs::create_dir_all(&dir).unwrap();
-            if std::env::var("SWITCHBOARD_HOME").is_err() {
-                std::env::set_var("SWITCHBOARD_HOME", &dir);
-            }
-            let _ = db::open(&join(home(), "db.sqlite")); // another module's tests may have opened it already
-            db::exec(
-                "
-CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, local_path TEXT NOT NULL,
-  agent_prompt TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, default_agent TEXT, defaults TEXT, profile_edited INTEGER, independent INTEGER);
-CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY, project_id INTEGER, title TEXT NOT NULL, status TEXT NOT NULL, attention INTEGER NOT NULL DEFAULT 0,
-  session_id TEXT, worktree_path TEXT, pr_number INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, removed_at TEXT, removed_by TEXT,
-  agent TEXT, parent_id INTEGER, key TEXT, routed_at TEXT, schedule TEXT, next_run_at TEXT, suggestions TEXT);
-CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, todo_id INTEGER, author TEXT NOT NULL, body TEXT NOT NULL, state TEXT NOT NULL,
-  file_id INTEGER, committed_at TEXT NOT NULL, delivered_at TEXT, session_no INTEGER, via TEXT);
-CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE, session_no INTEGER, by_user INTEGER);
-CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, todo_id INTEGER, kind TEXT NOT NULL, actor TEXT NOT NULL, detail TEXT, at TEXT NOT NULL,
-  session_no INTEGER, meta TEXT);
-CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, no INTEGER NOT NULL, session_id TEXT NOT NULL,
-  started_at TEXT NOT NULL, ended_at TEXT, agent TEXT);
-CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY, todo_id INTEGER NOT NULL, root TEXT NOT NULL, rel TEXT NOT NULL, path TEXT NOT NULL,
-  quote TEXT NOT NULL, line INTEGER, body TEXT NOT NULL, reply TEXT, state TEXT NOT NULL, created_at TEXT NOT NULL, replied_at TEXT);",
-            );
-        });
-        turn
-    }
+    use crate::db::test_db;
     fn last_event(id: i64) -> Value {
         db::get("SELECT kind, actor, detail FROM events WHERE todo_id = ? ORDER BY id DESC LIMIT 1", params![id]).unwrap()
     }

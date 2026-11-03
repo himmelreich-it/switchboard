@@ -1774,7 +1774,6 @@ mod tests {
         assert!(b.contains("<html") || b.contains("<!doctype") || b.contains("<!DOCTYPE"));
     }
     #[tokio::test]
-    #[ignore = "needs helpers::token_ok, ported in parallel"]
     async fn missing_token_is_401() {
         let (s, _, b) = send(req("GET", "/api/todos", &host(), None)).await;
         assert_eq!(s, StatusCode::UNAUTHORIZED);
