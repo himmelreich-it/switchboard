@@ -113,10 +113,17 @@ const lastLine = (log: string) => log.trim().split("\n").at(-1)!.slice(0, 300);
 // first, because a shell's jobs, nohup or disowned commands and Claude Code's background shells (item 136) each run in
 // their own process group, and move to pid 1 once their parent ends. Windows has no signals: taskkill /T /F at once.
 // ponytail: a daemon that already left the tree (parent pid 1) is missed; the SIGKILL goes to the pids read at the start.
-export function killTree(pid: number, signal: NodeJS.Signals) {
-  if (process.platform === "win32") return void Bun.spawnSync(["taskkill", "/PID", String(pid), "/T", "/F"], { windowsHide: true });
+// Async: taskkill and ps take 50-300 ms, which a sync spawn would block the server for. Resolves once `signal` is sent.
+export async function killTree(pid: number, signal: NodeJS.Signals) {
+  if (process.platform === "win32") {
+    try { await Bun.spawn(["taskkill", "/PID", String(pid), "/T", "/F"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", windowsHide: true }).exited; } catch {}
+    return;
+  }
   let pids = [pid];
-  try { pids = [pid, ...descendants(Bun.spawnSync(["/bin/ps", "-A", "-o", "pid=,ppid="]).stdout.toString(), pid)]; } catch {}
+  try {
+    const ps = Bun.spawn(["/bin/ps", "-A", "-o", "pid=,ppid="], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+    pids = [pid, ...descendants(await new Response(ps.stdout).text(), pid)];
+  } catch {}
   const send = (s: NodeJS.Signals) => { for (const p of pids) try { process.kill(p, s); } catch {} };
   send(signal);
   const kill = () => { clearTimeout(timer); pendingKills.delete(kill); send("SIGKILL"); };
@@ -162,9 +169,9 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     },
     close() {
       if (!alive) return;
-      // Before the connection closes: the agent may exit on it, and its children would no longer be found below it.
-      killTree(a.proc.pid, "SIGTERM");
-      a.conn.close();
+      alive = false;
+      // The connection closes after the tree is read: the agent may exit on it, and its children would no longer be found below it.
+      void killTree(a.proc.pid, "SIGTERM").finally(() => a.conn.close());
     },
     // Dead as soon as either its process exited or its connection closed, whichever is seen first.
     get alive() { return alive && !a.conn.signal.aborted && a.proc.exitCode === null; },
