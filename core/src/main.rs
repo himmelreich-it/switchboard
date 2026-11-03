@@ -28,7 +28,10 @@ async fn main() {
         eprintln!("switchboard: cannot open {db_path}: {e}");
         std::process::exit(1);
     }
-    helpers::migrate_db(&db::conn());
+    if let Err(e) = helpers::migrate_db(&db::conn()) {
+        eprintln!("switchboard: cannot migrate {db_path}: {e}");
+        std::process::exit(1);
+    }
     if fresh {
         server_ops::migrate();
     }
