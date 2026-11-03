@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-03 · Theme button cycles Light, Dark, Auto
+- Where: title bar, the theme icon button left of Settings.
+- Now: the button shows the current mode instead of the one it switches to: a sun for Light, a moon for Dark, a half-filled circle for Auto. Each click steps Light › Dark › Auto › Light. The tooltip names the mode, the theme in use and the next step, for example "Auto · Catppuccin Mocha · click for Light".
+- Why: the user wanted to reach Auto from the title bar, not only from Settings › Appearance.
+- Design question: is a three-step cycle clear enough, or should the button open a small menu with the three modes?
+
 ### 2026-11-03 · Catppuccin themes
 - Where: Settings › Appearance › Light theme and Dark theme tiles.
 - Now: four new theme tiles in the official Catppuccin palette. "Catppuccin Latte" (Pale lavender-grey, mauve actions) sits next to Cyberpunk Light and Monokai Light. "Catppuccin Frappé" (Muted slate blue, pastel accents), "Catppuccin Macchiato" (Deep slate, pastel accents) and "Catppuccin Mocha" (Darkest flavor, pastel accents) sit next to Cyberpunk Dark and Monokai Dark, so the dark grid has five tiles over two rows. All four use Monokai's shape and type: Inter, sentence case, rounded corners, round state dots. Buttons are mauve, links and the focus ring lavender (blue links and a mauve ring in Latte). The page is the flavor's mantle, cards its base, inputs and terminals its crust. Waiting is yellow, done green, errors red. The hint under Mode names the flavor, for example "Always dark. Catppuccin Mocha is in use.", and the title-bar theme button's tooltip reads "Light theme · Catppuccin Latte".

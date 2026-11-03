@@ -10,6 +10,7 @@
 // Cyberpunk and Monokai have a light and a dark side; each Catppuccin flavor is one side only: Latte light, the others dark.
 const FAM = { cyberpunk: "Cyberpunk", monokai: "Monokai", latte: "Catppuccin Latte", frappe: "Catppuccin Frappé", macchiato: "Catppuccin Macchiato", mocha: "Catppuccin Mocha" };
 const SIDE = { light: ["cyberpunk", "monokai", "latte"], dark: ["cyberpunk", "monokai", "frappe", "macchiato", "mocha"] };
+const NEXT_MODE = { light: "dark", dark: "auto", auto: "light" };
 const famName = (f, dark) => f === "cyberpunk" || f === "monokai" ? `${FAM[f]} ${dark ? "Dark" : "Light"}` : FAM[f];
 function appearance() {
   let a = null; try { a = JSON.parse(localStorage.getItem("switchboard-appearance")) ?? { mode: localStorage.getItem("switchboard-theme") }; } catch (e) {}
@@ -1293,7 +1294,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
   <div class="tb-right">
     <button type="button" id="ghBtn" class="gh-btn" data-act="gh-retry" hidden></button>
     <button type="button" id="opBtn" class="op-btn" data-act="op-toggle" aria-pressed="false" title="Operator · ⌘K"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/><circle cx="12" cy="12" r="2"/></svg><span>Operator</span><span id="opUnread" class="unread" title="New reply" hidden></span></button>
-    <button type="button" id="themeBtn" class="mb-iconbtn" data-act="theme-toggle" aria-label="Toggle theme"></button>
+    <button type="button" id="themeBtn" class="mb-iconbtn" data-act="theme-toggle" aria-label="Theme mode"></button>
     <button type="button" id="gearBtn" class="mb-iconbtn" data-act="open-settings" aria-label="Settings" title="Settings · ⌘,"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   </div>
 </header>
@@ -1723,6 +1724,7 @@ const I = {
   plan: '<path d="M3 17l2 2 4-4"/><path d="M3 7l2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  auto: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/>',
 };
 // ACP tool kinds (lib.ts ToolMeta.kind) to the design's icon set
 const KIND_ICON = { read: "read", edit: "edit", delete: "edit", move: "edit", execute: "run", search: "search", fetch: "fetch", think: "think" };
@@ -2613,8 +2615,11 @@ function renderHeader() {
   $("opBtn").setAttribute("aria-pressed", S.opOpen);
   $("opUnread").hidden = !S.opUnread || S.opOpen;
   const dark = isDark(), ap = appearance();
-  setHtml($("themeBtn"), SVG(dark ? I.sun : I.moon, 15));
-  $("themeBtn").title = dark ? `Light theme · ${FAM[ap.light]}` : `Dark theme · ${FAM[ap.dark]}`;
+  // The button shows the mode and steps Light → Dark → Auto.
+  const modeName = { auto: "Auto", light: "Light", dark: "Dark" };
+  setHtml($("themeBtn"), SVG(ap.mode === "auto" ? I.auto : ap.mode === "dark" ? I.moon : I.sun, 15));
+  $("themeBtn").title = `${modeName[ap.mode]} · ${famName(dark ? ap.dark : ap.light, dark)} · click for ${modeName[NEXT_MODE[ap.mode]]}`;
+  $("themeBtn").setAttribute("aria-label", `Theme mode: ${modeName[ap.mode]}`);
   const errT = lv.find((t) => (t.git || t.pr_number) && t.gh_error), ghErr = errT?.gh_error, gh = $("ghBtn");
   gh.hidden = !ghErr;
   if (ghErr) {
@@ -4189,7 +4194,7 @@ const ACTIONS = {
   "op-toggle": () => toggleOperator(),
   "new-open": openNew,
   "new-close": closeNew,
-  "theme-toggle": () => { setAppearance({ mode: isDark() ? "light" : "dark" }); render(); },
+  "theme-toggle": () => { setAppearance({ mode: NEXT_MODE[appearance().mode] }); render(); },
   // one popover or menu at a time; a second click on its button closes it
   pop: (id) => {
     S.pop = S.pop === id ? null : id; render();
