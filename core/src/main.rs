@@ -22,6 +22,7 @@ static STOPPING: AtomicBool = AtomicBool::new(false);
 
 #[tokio::main]
 async fn main() {
+    util::set_runtime(tokio::runtime::Handle::current());
     let db_path = join(home(), "db.sqlite");
     let fresh = !util::exists(&db_path);
     if let Err(e) = db::open(&db_path) {

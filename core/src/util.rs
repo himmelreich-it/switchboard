@@ -196,13 +196,21 @@ pub fn no_window(c: &mut tokio::process::Command) {
     let _ = c;
 }
 
-/// Runs a future in the background (a promise nobody awaits). A panic is logged, not fatal.
+/// The server's runtime, for spawning from threads outside it (a terminal's output reader).
+static RT: OnceLock<tokio::runtime::Handle> = OnceLock::new();
+pub fn set_runtime(h: tokio::runtime::Handle) {
+    let _ = RT.set(h);
+}
+fn rt() -> tokio::runtime::Handle {
+    tokio::runtime::Handle::try_current().unwrap_or_else(|_| RT.get().expect("runtime not set").clone())
+}
+/// Runs a future in the background (a promise nobody awaits).
 pub fn spawn<F: std::future::Future<Output = ()> + Send + 'static>(f: F) {
-    tokio::spawn(f);
+    rt().spawn(f);
 }
 /// `setTimeout(f, ms)`.
 pub fn after<F: std::future::Future<Output = ()> + Send + 'static>(ms: u64, f: F) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
+    rt().spawn(async move {
         tokio::time::sleep(Duration::from_millis(ms)).await;
         f.await
     })

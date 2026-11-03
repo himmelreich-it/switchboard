@@ -147,11 +147,11 @@ static CLIENTS: LazyLock<Mutex<Vec<mpsc::UnboundedSender<String>>>> = LazyLock::
 /// The page's event stream (GET /api/events): each item is one event's JSON.
 pub fn subscribe() -> mpsc::UnboundedReceiver<String> {
     let (tx, rx) = mpsc::unbounded_channel();
-    CLIENTS.lock().unwrap().push(tx);
+    CLIENTS.lock().unwrap_or_else(|e| e.into_inner()).push(tx);
     rx
 }
 fn send(s: &str) {
-    CLIENTS.lock().unwrap().retain(|c| c.send(s.to_string()).is_ok());
+    CLIENTS.lock().unwrap_or_else(|e| e.into_inner()).retain(|c| c.send(s.to_string()).is_ok());
 }
 
 enum Pending {
@@ -170,7 +170,7 @@ pub fn flush_seq() -> i64 {
 }
 
 fn queue(key: String, ev: Pending) {
-    let mut o = OUTBOX.lock().unwrap();
+    let mut o = OUTBOX.lock().unwrap_or_else(|e| e.into_inner());
     if !o.1.contains_key(&key) {
         o.0.push(key.clone());
     }
@@ -182,7 +182,7 @@ fn queue(key: String, ev: Pending) {
 async fn flush() {
     let _turn = FLUSHING.lock().await;
     let batch: Vec<Pending> = {
-        let mut o = OUTBOX.lock().unwrap();
+        let mut o = OUTBOX.lock().unwrap_or_else(|e| e.into_inner());
         let keys = std::mem::take(&mut o.0);
         keys.into_iter().filter_map(|k| o.1.remove(&k)).collect()
     };
@@ -257,7 +257,7 @@ pub enum Part {
 /// Every note but a git refresh's own (`git: false`) marks the worktree's git state for a new look.
 pub fn note_todo(id: i64, part: Part, git: bool) {
     {
-        let mut o = OUTBOX.lock().unwrap();
+        let mut o = OUTBOX.lock().unwrap_or_else(|e| e.into_inner());
         let key = format!("todo:{id}");
         let fresh = !o.1.contains_key(&key);
         if fresh {
@@ -385,7 +385,7 @@ const GIT_TTL_MS: i64 = 10_000;
 
 /// Starts a look unless one runs (then it runs again after). Returns the notifier of its end.
 fn git_look(wt: String) -> Arc<Notify> {
-    let mut c = GIT_CACHE.lock().unwrap();
+    let mut c = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let e = c.get_mut(&wt).expect("git entry");
     let done = e.done.clone();
     if e.running {
@@ -398,7 +398,7 @@ fn git_look(wt: String) -> Arc<Notify> {
     util::spawn(async move {
         let v = git_state(&wt).await;
         let again = {
-            let mut c = GIT_CACHE.lock().unwrap();
+            let mut c = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
             let e = c.get_mut(&wt).expect("git entry");
             e.value = v.clone();
             e.at = util::now_ms();
@@ -410,7 +410,7 @@ fn git_look(wt: String) -> Arc<Notify> {
                 note_todo(r.i("id").unwrap_or(0), Part::Summary, false);
             }
         }
-        GIT_CACHE.lock().unwrap().get(&wt).map(|e| e.done.clone()).expect("git entry").notify_waiters();
+        GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(&wt).map(|e| e.done.clone()).expect("git entry").notify_waiters();
         if again {
             git_soon(&wt);
         }
@@ -418,7 +418,7 @@ fn git_look(wt: String) -> Arc<Notify> {
     done
 }
 fn git_soon(wt: &str) {
-    let mut c = GIT_CACHE.lock().unwrap();
+    let mut c = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let Some(e) = c.get_mut(wt) else { return }; // never read: the next read looks
     if e.running {
         e.again = true;
@@ -431,7 +431,7 @@ fn git_soon(wt: &str) {
     let wait = (e.at + GIT_MIN_MS - util::now_ms()).max(0) as u64;
     let wt = wt.to_string();
     util::after(wait, async move {
-        if let Some(e) = GIT_CACHE.lock().unwrap().get_mut(&wt) {
+        if let Some(e) = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&wt) {
             e.timer = false;
         }
         git_look(wt);
@@ -439,7 +439,7 @@ fn git_soon(wt: &str) {
 }
 pub async fn cached_git_state(wt: &str) -> Option<Value> {
     let done = {
-        let mut c = GIT_CACHE.lock().unwrap();
+        let mut c = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         let e = c.entry(wt.to_string()).or_insert_with(|| GitEntry { value: None, at: 0, running: false, again: false, timer: false, done: Arc::new(Notify::new()) });
         if e.at != 0 {
             let stale = util::now_ms() - e.at > GIT_TTL_MS;
@@ -456,7 +456,7 @@ pub async fn cached_git_state(wt: &str) -> Option<Value> {
     let notified = done.notified();
     tokio::pin!(notified);
     let running = {
-        let c = GIT_CACHE.lock().unwrap();
+        let c = GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         notified.as_mut().enable();
         match c.get(wt) {
             Some(e) if e.at != 0 => return e.value.clone(),
@@ -468,7 +468,7 @@ pub async fn cached_git_state(wt: &str) -> Option<Value> {
         git_look(wt.to_string());
     }
     notified.await;
-    GIT_CACHE.lock().unwrap().get(wt).and_then(|e| e.value.clone())
+    GIT_CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(wt).and_then(|e| e.value.clone())
 }
 fn worktree_of(id: i64) -> Option<String> {
     db::get("SELECT worktree_path FROM todos WHERE id = ?", params![id]).and_then(|r| r.s("worktree_path").map(String::from))
