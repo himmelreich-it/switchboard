@@ -8,3 +8,5 @@ use serde_json::Value;
 pub fn pr_for(_project_id: Option<i64>, _pr_number: Option<i64>, _branch: Option<&str>) -> (Option<Value>, Option<String>, Value) {
     todo!("port")
 }
+pub fn migrate() { todo!("port") }
+pub async fn refresh_all_prs() { todo!("port") }

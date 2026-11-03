@@ -14,3 +14,8 @@ pub fn background_count(_todo_id: i64) -> i64 {
 pub fn background_tasks(_todo_id: i64) -> Value {
     todo!("port")
 }
+pub const TERMINAL_CONTRACT: &str = "";
+pub fn cancel_routing(_todo_id: i64) { todo!("port") }
+pub fn fire_due(_startup: bool) { todo!("port") }
+pub async fn stop_all() { todo!("port") }
+pub fn close_agents() { todo!("port") }
