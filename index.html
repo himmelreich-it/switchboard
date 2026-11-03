@@ -703,6 +703,7 @@ a.tchip:hover { text-decoration: none; filter: brightness(1.15); }
 .chatwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #chatLog { flex: 1; min-height: 0; overflow: auto; padding: 8px 20px 24px; }
 .tl { display: flex; flex-direction: column; }
+.tl-part { display: contents; }   /* one per timeline item, so an update replaces only the items that changed */
 .flist .empty { padding: 4px 8px; }
 .tl > .empty { padding: 16px 0; }
 .ses-div { display: flex; align-items: center; gap: 10px; padding: 16px 0 4px; }
@@ -1452,7 +1453,19 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 DOMPurify.addHook("afterSanitizeAttributes", (n) => { if (n.tagName === "A") { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener"); } });
 // No data-* or style: markdown from a repo or an agent must not carry data-act (it would run app actions on click)
 // or cover the page.
-const md = (s) => DOMPurify.sanitize(marked.parse(String(s ?? "")), { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"] });
+// Memoized: the chat renders every agent message again on each update, and parsing is the costly part. Least recently
+// used goes first, so a long transcript's messages stay while a streaming one churns.
+const mdCache = new Map();
+const md = (s) => {
+  s = String(s ?? "");
+  let h = mdCache.get(s);
+  if (h === undefined) {
+    h = DOMPurify.sanitize(marked.parse(s), { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"] });
+    if (mdCache.size >= 500) mdCache.delete(mdCache.keys().next().value);
+  } else mdCache.delete(s);
+  mdCache.set(s, h);
+  return h;
+};
 // Plain-text chat: http(s) URLs become links (target="_blank"; Electron opens them in the browser). Trailing punctuation stays text.
 const linkify = (s) => String(s ?? "").split(/(https?:\/\/[^\s<>"']*[^\s<>"'.,;:!?)\]])/).map((x, i) => i % 2 ? `<a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a>` : esc(x)).join("");
 const short = (s, n = 34) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
@@ -1779,8 +1792,10 @@ const loaders = {
     const id = S.sel;
     if (typeof id !== "number") return;
     let d;
+    const buf = detailBuf = [];
     try { d = await call("GET", `/api/todos/${id}`); }
     catch (e) { if (e.status === 404 && S.sel === id) { toast("info", "TODO not found", e.message); goOverview(); } return; }
+    finally { if (detailBuf === buf) detailBuf = null; }
     if (S.sel !== id) return;   // you moved on while it loaded
     const key = `todo:${id}`;
     if (drafts[key] === undefined) {
@@ -1789,6 +1804,8 @@ const loaders = {
     }
     if (S.pendingPill?.key === key) S.pendingPill = null;
     S.detail = d;
+    // Patches that came while it loaded and are newer than what it read (seq) go on top.
+    for (const ev of buf) if (ev.id === id && ev.seq > d.seq) patchDetail(ev);
     if (d.todo.unread) call("POST", `/api/todos/${id}/read`).catch(() => {});   // only emits an event when something was unread
     const f = S.file;
     if (f && f.todoId === id && f.root === "todo" && !isDirty(f)) {   // a clean open file follows the disk; a dirty one keeps its base mtime so Save can detect the change
@@ -1812,34 +1829,42 @@ const loaders = {
     if (!t || !root) return;
     const key = `${t.id}:${root}`;
     try {
-      const tr = await call("GET", `/api/todos/${t.id}/tree?root=${root}`);
-      if (!S.treeOpen[key]) {   // first look: open every folder on the way to a change
-        const open = new Set();
-        for (const p of Object.keys(tr.marks)) { const parts = p.split("/"); for (let i = 1; i < parts.length; i++) open.add(parts.slice(0, i).join("/")); }
-        S.treeOpen[key] = open;
+      const had = S.trees[key];
+      const tr = await call("GET", `/api/todos/${t.id}/tree?root=${root}${had?.tag ? `&tag=${had.tag}` : ""}`);
+      if (!tr.unchanged) {   // unchanged: the tree is as it was, but an open file may still have changed (below)
+        if (!S.treeOpen[key]) {   // first look: open every folder on the way to a change
+          const open = new Set();
+          for (const p of Object.keys(tr.marks)) { const parts = p.split("/"); for (let i = 1; i < parts.length; i++) open.add(parts.slice(0, i).join("/")); }
+          S.treeOpen[key] = open;
+        }
+        S.trees[key] = tr;
       }
-      S.trees[key] = tr;
     } catch (e) { S.trees[key] = { error: e.message }; }
     const f = S.file;
     if (f && f.todoId === t.id && f.root === root && !isDirty(f)) await reloadFile(f);
   },
 };
-const want = new Set();
-let pumping = false;
-// ponytail: every TODO event refetches the whole list (the server runs two git commands per worktree); fine for tens of TODOs.
+// One load per resource at a time; asked again while it loads, it loads once more after. Resources do not wait for
+// each other, so a slow list or topic scan never holds up the open TODO.
+const loadQueued = new Set(), loadRunning = new Set();
+let detailBuf = null;   // TODO events for the open TODO that came while its transcript loads
 function need(...keys) {
-  keys.forEach((k) => want.add(k));
-  if (!pumping) { pumping = true; queueMicrotask(pump); }
-}
-async function pump() {
-  while (want.size) {
-    const keys = [...want];
-    want.clear();
-    await Promise.all(keys.map((k) => loaders[k]().catch((e) => console.warn(`load ${k}: ${e.message}`))));
-    render();
+  for (const k of keys) {
+    if (loadQueued.has(k)) continue;
+    loadQueued.add(k);
+    if (!loadRunning.has(k)) queueMicrotask(() => load(k));
   }
-  pumping = false;
 }
+async function load(k) {
+  loadQueued.delete(k); loadRunning.add(k);
+  try { await loaders[k](); } catch (e) { console.warn(`load ${k}: ${e.message}`); }
+  loadRunning.delete(k);
+  if (loadQueued.has(k)) load(k);
+  renderLoaded();
+}
+// Loads that end in the same task make one render.
+let loadedTimer = 0;
+function renderLoaded() { if (!loadedTimer) loadedTimer = setTimeout(() => { loadedTimer = 0; render(); }, 0); }
 function refreshVisible() {
   need("todos", "projects", "operator");
   if (S.view === "todos" && S.mode === "focus" && typeof S.sel === "number") need("detail");
@@ -1972,8 +1997,9 @@ async function commit(key, el) {
   const nsNo = ns ? (S.detail?.sessions?.length ?? 1) + 1 : 0;
   S.sending = { key, body: body || (ns ? "continue" : ""), files };
   render();
+  let sent = null;
   try {
-    await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
+    sent = await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
     if (ns) nsStarted(tid, nsNo);
   } catch (e) {
     drafts[key] = body;
@@ -1982,8 +2008,10 @@ async function commit(key, el) {
     toast("danger", "Not sent", e.message);
   }
   S.sending = null;
+  // A plain message shows at once from the answer; its TODO event brings the summary. A new session changes more.
+  if (sent && tid !== null && !ns && S.detail?.todo.id === tid) { if (!S.detail.messages.some((m) => m.id === sent.id)) patchRows(S.detail.messages, [sent]); }   // the event may have brought a newer state
+  else need(key === "operator" ? "operator" : "detail", "todos");
   render();
-  need(key === "operator" ? "operator" : "detail", "todos");
 }
 
 // ---------- TODO actions ----------
@@ -3142,7 +3170,7 @@ const sessRange = (s) => {
 function streamHtml(t, msgs, evs, liveSession) {
   const out = timelineItems(msgs, evs);
   const lastWork = liveSession && t.status === "running" ? out.findLastIndex((x) => x.work && !x.end) : -1;
-  return out.map((x, i) => x.msg ? msgHtml(x.msg, t) : x.ev ? (S.events ? evRow(x.ev, true) : "") : workHtml(x, t, i === lastWork, `${t.id}:${x.start.id}`)).join("");
+  return out.map((x, i) => x.msg ? msgHtml(x.msg, t) : x.ev ? (S.events ? evRow(x.ev, true) : "") : workHtml(x, t, i === lastWork, `${t.id}:${x.start.id}`));
 }
 // The firing that opened session `s` (item 144): the last "scheduled run" before it started, after the session before it.
 const firingOf = (d, s) => {
@@ -3150,25 +3178,26 @@ const firingOf = (d, s) => {
   return e && (!prev || e.at >= prev.started_at) ? e : null;
 };
 // Item 76: every session in one timeline. Earlier sessions fold to a summary line; the live one has a divider.
+// A list of HTML parts, one per timeline item, so renderChat replaces only the parts that changed.
 function chatHtml(t, d) {
   const sessions = d.sessions, last = sessions.length, path = S.projects.find((p) => p.id === t.project_id)?.local_path ?? "the project folder";
   if (!last) return streamHtml(t, d.messages, d.events, true);
   const evsOf = (no) => d.events.filter((e) => (e.session_no ?? (no === 1 ? 1 : -1)) === no);
-  return sessions.map((s) => {
+  return sessions.flatMap((s) => {
     const isLive = s.no === last, key = `${t.id}:${s.no}`;
     const msgs = d.messages.filter((m) => (m.session_no ?? (isLive ? last : -1)) === s.no);
     const agent = esc(s.agent_name || agentLabel(s.agent));
     // Item 144: a session a firing opened is labelled by it, "scheduled 09:00" or "run now 11:02".
     const f = firingOf(d, s), how = f && (f.detail.startsWith("run now") ? "run now" : "scheduled");
-    if (isLive) return `<div class="ses-div"><i></i><span class="ml">Session ${s.no} · ${agent} · ${esc(f ? `${how} ${hm(f.at)}` : sessRange(s))}</span><i></i></div>` + streamHtml(t, msgs, evsOf(s.no), true);
+    if (isLive) return [`<div class="ses-div"><i></i><span class="ml">Session ${s.no} · ${agent} · ${esc(f ? `${how} ${hm(f.at)}` : sessRange(s))}</span><i></i></div>`, ...streamHtml(t, msgs, evsOf(s.no), true)];
     const open = S.openSess.has(key), lastAgent = [...msgs].reverse().find((m) => m.author === "agent");
     const files = d.files.filter((f) => f.session_no === s.no);
     return `<div class="ses-old"><button type="button" data-act="sess-toggle" data-id="${key}" aria-expanded="${open}">${SVG(open ? CHEV_D : CHEV_R, 14)}<span class="no">Session ${s.no}</span>${sessions.some((x) => x.agent !== "claude") ? `<span class="ml">${agent}</span>` : ""}<span class="lbl">${esc(f ? `${how} ${dayAt(f.at)}${f.detail.startsWith("catch-up") ? " · catch-up" : ""}` : sessLabel(msgs))}</span><span class="rng">${esc(sessRange(s))}</span></button>
       ${open ? `<div class="body"><span class="sum"><span class="ml">Agent</span>${lastAgent ? esc(lastAgent.body) : "No agent message in this session."}</span>
         ${files.length ? `<div class="flags">${files.map((f) => `<button type="button" class="file-chip" data-act="open-file" data-id="${f.id}">${SVG(FILE, 13)}${esc(f.name)}</button>`).join("")}</div>` : ""}
         <span class="resume">${esc(s.session_id.slice(0, 8))}${s.resume ? ` · ${esc(s.resume)} from ${esc(path)}` : ""} · read-only here</span>
-        ${streamHtml(t, msgs, evsOf(s.no), false).replaceAll('data-act="edit-first"', "")}</div>` : ""}</div>`;
-  }).join("");
+        ${streamHtml(t, msgs, evsOf(s.no), false).join("").replaceAll('data-act="edit-first"', "")}</div>` : ""}</div>`;
+  });
 }
 
 // P3: the open permission request, docked above the composer (design v6). Keys 1-4 pick an option.
@@ -3187,18 +3216,36 @@ function approvalHtml(t) {
   </div>`;
 }
 
+// Puts each part in its own wrapper in host's .tl and replaces only the wrappers whose HTML changed. True if any did.
+function patchParts(host, parts) {
+  let tl = host.firstElementChild;
+  if (!host._parts || tl?.className !== "tl") { host.innerHTML = '<div class="tl"></div>'; host._html = null; host._parts = []; tl = host.firstElementChild; }
+  const old = host._parts, kids = tl.children;
+  let any = false;
+  for (let i = 0; i < parts.length; i++) {
+    if (old[i] === parts[i] && kids[i]) continue;
+    const w = document.createElement("div");
+    w.className = "tl-part";
+    w.innerHTML = parts[i];
+    if (kids[i]) kids[i].replaceWith(w); else tl.append(w);
+    any = true;
+  }
+  while (kids.length > parts.length) { tl.lastElementChild.remove(); any = true; }
+  host._parts = parts;
+  return any;
+}
 function renderChat(t, d) {
   const key = draftKey();
   const running = t.status === "running";
-  let html = d ? chatHtml(t, d) : "";
-  if (S.sending?.key === key) html += msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, t);
-  if (!html) html = `<span class="empty">${d ? "No messages yet." : "Loading…"}</span>`;
-  html = `<div class="tl">${html}</div>`;
+  const parts = (d ? chatHtml(t, d) : []).filter(Boolean);
+  if (S.sending?.key === key) parts.push(msgHtml({ id: "sending", author: "user", body: S.sending.body, attachments: S.sending.files, state: "sending", at: new Date().toISOString() }, t));
   const sig = `${key}:${d?.messages.length ?? 0}:${!!S.sending}:${S.events}`;
   const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 40;
-  if (chatLog._html !== html) {
-    const hadFocus = document.activeElement?.id === "editFirst";
-    chatLog.innerHTML = html; chatLog._html = html;
+  const hadFocus = document.activeElement?.id === "editFirst";
+  let rebuilt = false;
+  if (parts.length) rebuilt = patchParts(chatLog, parts);
+  else { setHtml(chatLog, `<div class="tl"><span class="empty">${d ? "No messages yet." : "Loading…"}</span></div>`); chatLog._parts = null; }
+  if (rebuilt) {
     const ta = $("editFirst");   // the edit box is rebuilt with its starting text; put the typed text back
     if (ta && S.editing) { ta.value = S.editing.text; if (hadFocus) ta.focus(); }
   }
@@ -3339,15 +3386,32 @@ const TOOL_ICONS = {
 };
 const TOOL_TITLES = { heading: "Heading", bold: "Bold", italic: "Italic", quote: "Quote", link: "Link", code: "Code", ul: "Bullet list", ol: "Numbered list", task: "Task", hr: "Rule", table: "Table" };
 const isMd = (name) => /\.(md|markdown)$/i.test(name ?? "");
+// While the user types in the editor the preview, the counts and the comment places keep their last state, and a pause
+// renders them once: on a 160 KB file they cost ~150 ms per key. The pause is twice what that render took last time
+// with its layout, 200 ms to 1 s, so a slow typist on a big file is not held up by one between keys.
+let typingTimer = 0, typingMs = 200;
+// The strip's size, line and word counts: passes over the whole text, so done once per text.
+const countsOf = new WeakMap();
+function fileCounts(f, keep) {
+  const c = countsOf.get(f);
+  if (c && (keep || c.text === f.text)) return c;
+  const t = f.text ?? "";
+  let lines = 0;
+  for (let i = t.indexOf("\n"); i >= 0; i = t.indexOf("\n", i + 1)) lines++;
+  if (!t.endsWith("\n")) lines++;   // a last line without a newline; an empty file has one line
+  const n = { text: f.text, lines, size: new Blob([t]).size, words: isMd(f.name) ? (t.match(/\S+/g) ?? []).length : 0 };
+  countsOf.set(f, n);
+  return n;
+}
 function renderFile(t) {
-  const f = S.file, locked = fileLocked(f), dirty = isDirty(f), md0 = isMd(f.name);
+  const f = S.file, locked = fileLocked(f), dirty = isDirty(f), md0 = isMd(f.name), typing = !!typingTimer && S.cm?.f === f;
   const text0 = !f.binary && !f.image && !f.large && f.content != null;
   const canDiff = f.root !== "todo" && S.trees[`${f.todoId}:${f.root}`]?.git !== false && !f.binary && !f.image && !f.large && (f.mark || dirty || f.saved || f.deleted);
   if (f.mode === "edit" && (locked || !text0)) f.mode = "read";
   if (f.mode === "diff" && !canDiff) f.mode = "read";
   const mode = f.mode, shown = f.root === "todo" ? f.abs : f.rel, m = f.mark && MARK[f.mark];
-  const lines = f.text != null ? f.text.split("\n").length - (f.text.endsWith("\n") ? 1 : 0) : 0;
-  const sizeText = f.deleted ? "" : f.binary || f.image || f.large ? fmtBytes(f.size) : `${fmtBytes(new Blob([f.text ?? ""]).size)} · ${plural(lines, "line")}`;
+  const counts = fileCounts(f, typing);
+  const sizeText = f.deleted ? "" : f.binary || f.image || f.large ? fmtBytes(f.size) : `${fmtBytes(counts.size)} · ${plural(f.text != null ? counts.lines : 0, "line")}`;
   const modes = f.binary || f.image || f.large ? [] : f.deleted ? [["diff", "Diff"]] : [["read", "Read"], ["edit", locked ? "Edit · locked" : "Edit"], ...(canDiff ? [["diff", "Diff"]] : [])];
   $("fileLocked").hidden = !locked || mode === "diff";
   const show = { read: false, md: false, code: false, diff: false, msg: false };
@@ -3364,7 +3428,7 @@ function renderFile(t) {
     : modes.length ? `<span class="ml">${modes[0][1]}</span>` : `<span class="ml">${f.image ? "Image" : f.large ? "Large file" : "Binary"}</span>`;
   const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${[["write", "Write"], ["split", "Split"], ["preview", "Preview"]].map(([v, l]) =>
     `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${l}</button>`).join("")}</div>` : "";
-  const words = show.md ? ` · ${plural((f.text.match(/\S+/g) ?? []).length, "word")}` : "";
+  const words = show.md ? ` · ${plural(counts.words, "word")}` : "";
   const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${f.byUser ? '<span class="notetag" title="Your note · editable while the agent runs">your note</span>' : ""}${locked ? `<span title="The agent may change this file. Edit opens when its run ends." style="display:flex">${badge("Read-only · agent running")}</span>` : ""}
@@ -3381,7 +3445,7 @@ function renderFile(t) {
   if (show.md) {
     setHtml($("mdTools"), Object.keys(TOOL_ICONS).map((k) => `<button type="button" data-act="md-tool" data-id="${k}" title="${TOOL_TITLES[k]}" aria-label="${TOOL_TITLES[k]}">${SVG(TOOL_ICONS[k], 15)}</button>`).join(""));
     $("mdSplit").className = "split" + (S.mdView === "write" ? " write" : S.mdView === "preview" ? " preview-only" : "");
-    setMd($("filePreview"), f.text);
+    if (S.mdView !== "write" && !typing) setMd($("filePreview"), f.text);   // hidden in Write; Split and Preview get it at the pause
   }
   if (show.diff) {
     destroyEditor();
@@ -3397,7 +3461,7 @@ function renderFile(t) {
     : f.root === "todo" ? "Saving writes to disk only. The agent isn't notified. Tell it in chat when you want it to act."
     : f.root === "worktree" ? "Saves to the worktree. The agent isn't notified. A save warns if the file changed on disk since you opened it."
     : `${S.trees[`${f.todoId}:project`]?.git === false ? "Topic folder" : "Main checkout"}. Editable any time; a save warns if the file changed on disk since you opened it.`;
-  renderNotes(f, show);
+  renderNotes(f, show, typing);
   runFind(false);
 }
 const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed(1)} KB` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`);
@@ -3412,8 +3476,16 @@ function mountEditor(f, host, rw, locked) {
   const handle = SBEditor.create(host, { doc: f.text ?? "", name: f.name, readOnly: locked || rw === "ro", onChange: (text) => {
     const was = isDirty(f);
     f.text = text; syncEdit(f);
-    if (was !== isDirty(f)) render();   // the file list's unsaved square too
-    else renderFile(cur());   // header strip and preview; the editor itself is kept
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {   // header strip, preview, comments
+      typingTimer = 0;
+      if (S.file !== f) return;
+      const t0 = performance.now();
+      renderFile(cur());
+      // Measured up to the next frame, so the layout of the new preview counts too.
+      requestAnimationFrame(() => setTimeout(() => { typingMs = Math.min(1000, Math.max(200, 2 * (performance.now() - t0))); }));
+    }, typingMs);
+    if (was !== isDirty(f)) render();   // the file list's unsaved square and Save, at once
   } });
   S.cm = { key, handle, f };
   focusEditor();
@@ -3657,8 +3729,13 @@ function mdNumbered(src) {
   // marked drops link definitions ([x]: url) from the tokens, so positions are searched, not summed.
   const find = (raw, from) => { const i = s.indexOf(raw, from); return i < 0 ? from : i; };
   const lineAt = (i) => { for (; lnPos < i; lnPos++) if (s[lnPos] === "\n") ln++; return ln; };
+  // A block's HTML depends only on its source and the link definitions: while the user types, one block changes.
+  const links = JSON.stringify(toks.links ?? {});
+  if (blockCache.links !== links || blockCache.map.size > 5000) blockCache = { links, map: new Map() };
   const html = toks.map((t) => {
-    const i = find(t.raw, pos), out = marked.parser(Object.assign([t], { links: toks.links }));
+    let out = blockCache.map.get(t.raw);
+    if (out === undefined) blockCache.map.set(t.raw, out = marked.parser(Object.assign([t], { links: toks.links })));
+    const i = find(t.raw, pos);
     pos = i + t.raw.length;
     if (t.type === "space" || t.type === "html") return out;
     let attr;
@@ -3668,13 +3745,44 @@ function mdNumbered(src) {
   }).join("");
   return DOMPurify.sanitize(html, { ALLOW_DATA_ATTR: false, FORBID_ATTR: ["style"], ADD_ATTR: ["data-line", "data-items"] });
 }
+let blockCache = { links: null, map: new Map() };
+// Only the top-level blocks whose HTML changed are replaced: laying out a whole 160 KB preview takes ~300 ms, one
+// block a few. Blocks compare without their line numbers, which an added line shifts for every block below it; the
+// kept ones take the new numbers.
+const LINE_ATTRS = / data-(?:line|items)="[^"]*"/g;
+const nodeHtml = (n) => n.nodeType === 1 ? n.outerHTML : `${n.nodeType}:${n.nodeValue}`;
 function setMd(el, text) {
   if (el._src === text) return;
-  el.innerHTML = mdNumbered(text); el._src = text;
-  for (const l of el.querySelectorAll(":scope > [data-items]")) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = mdNumbered(text);
+  for (const l of tpl.content.children) {   // :scope does not work on a fragment
+    if (!l.dataset.items) continue;
     const lines = l.dataset.items.split(" ");
     [...l.children].forEach((li, k) => { if (li.tagName === "LI" && lines[k]) li.dataset.line = lines[k]; });
   }
+  const next = [...tpl.content.childNodes], html = next.map(nodeHtml), keys = html.map((h) => h.replace(LINE_ATTRS, ""));
+  const old = [...el.childNodes], same = el._blocks?.html.length === old.length;
+  const oldHtml = same ? el._blocks.html : old.map(nodeHtml), oldKeys = same ? el._blocks.keys : oldHtml.map((h) => h.replace(LINE_ATTRS, ""));
+  let a = 0, b = 0;
+  while (a < next.length && a < old.length && keys[a] === oldKeys[a]) a++;
+  while (b < next.length - a && b < old.length - a && keys[next.length - 1 - b] === oldKeys[old.length - 1 - b]) b++;
+  const keep = (i, j) => { if (html[i] !== oldHtml[j]) syncLines(old[j], next[i]); next[i].remove(); };
+  for (let i = 0; i < a; i++) keep(i, i);
+  for (let i = 1; i <= b; i++) keep(next.length - i, old.length - i);
+  for (const n of old.slice(a, old.length - b)) n.remove();
+  el.insertBefore(tpl.content, old[old.length - b] ?? null);   // what is left in the template: the changed blocks
+  el._src = text; el._blocks = { html, keys };
+}
+// Same elements apart from the line numbers (their keys match), so the two trees walk in step.
+function syncLines(o, n) {
+  if (o.nodeType !== 1) return;
+  const os = [o, ...o.getElementsByTagName("*")], ns = [n, ...n.getElementsByTagName("*")];
+  os.forEach((x, k) => {
+    for (const a of ["data-line", "data-items"]) {
+      const v = ns[k].getAttribute(a);
+      if (v === null) x.removeAttribute(a); else if (x.getAttribute(a) !== v) x.setAttribute(a, v);
+    }
+  });
 }
 function renderSettings() {
   $("cProjects").textContent = S.projects.length;
@@ -4048,16 +4156,28 @@ const cmtDot = (todoId, root, rel) => {
 };
 // Whitespace and markdown signs are skipped on both sides, so a quote picked in the rendered view ("bold") matches the source ("**bold**").
 // ponytail: link targets are not skipped, so a quote across a link is found only in the rendered view.
-const CMT_SKIP = /[\s*_`#>~|\\]/;
+const CMT_SKIP = /[\s*_`#>~|\\]+/g;
+// hay: the chunks' text without the skipped signs; chunk[i] and off[i]: where hay's i-th letter sits. Typed arrays and
+// slices, as a 160 KB file has 160,000 letters. The last source text's index is kept: each render asks for it.
+let srcIndex = { text: null, ix: null };
 function quoteIndex(chunks) {
-  const hay = [], pos = [];
-  chunks.forEach((s, ci) => { for (let i = 0; i < s.length; i++) if (!CMT_SKIP.test(s[i])) { hay.push(s[i]); pos.push([ci, i]); } });
-  return { hay: hay.join(""), pos };
+  if (chunks.length === 1 && srcIndex.text === chunks[0]) return srcIndex.ix;
+  const total = chunks.reduce((n, s) => n + s.length, 0), chunk = new Uint32Array(total), off = new Uint32Array(total), parts = [];
+  let n = 0;
+  chunks.forEach((s, ci) => {
+    const keep = (from, to) => { parts.push(s.slice(from, to)); for (let i = from; i < to; i++) { chunk[n] = ci; off[n++] = i; } };
+    let at = 0;
+    for (const m of s.matchAll(CMT_SKIP)) { keep(at, m.index); at = m.index + m[0].length; }
+    keep(at, s.length);
+  });
+  const ix = { hay: parts.join(""), chunk, off };
+  if (chunks.length === 1) srcIndex = { text: chunks[0], ix };
+  return ix;
 }
 function quoteMatches(ix, quote) {
-  const q = quote.split("").filter((ch) => !CMT_SKIP.test(ch)).join(""), out = [];
+  const q = quote.replace(CMT_SKIP, ""), out = [];
   if (!q) return out;
-  for (let i = ix.hay.indexOf(q); i >= 0; i = ix.hay.indexOf(q, i + 1)) { const e = ix.pos[i + q.length - 1]; out.push({ from: ix.pos[i], to: [e[0], e[1] + 1] }); }
+  for (let i = ix.hay.indexOf(q); i >= 0; i = ix.hay.indexOf(q, i + 1)) { const e = i + q.length - 1; out.push({ from: [ix.chunk[i], ix.off[i]], to: [ix.chunk[e], ix.off[e] + 1] }); }
   return out;
 }
 const lineOf = (text, off) => { let n = 1; for (let i = text.indexOf("\n"); i >= 0 && i < off; i = text.indexOf("\n", i + 1)) n++; return n; };
@@ -4071,28 +4191,49 @@ function placeComments(f, list) {
     return { c, ...best };
   });
 }
+// The places per open file, found again when its text or its comments change. While the user types (`keep`) the last
+// ones stay: the editor moves its marks with the edits, and the pause after the last key places them again.
+const placedOf = new WeakMap();
+function placedFor(f, list, keep) {
+  const key = list.map((c) => `${c.id}:${c.line}`).join(), p = placedOf.get(f);
+  if (p?.key === key && (keep || p.text === f.text)) return p.placed;
+  const placed = placeComments(f, list);
+  placedOf.set(f, { key, text: f.text, placed });
+  return placed;
+}
 // The visible rendered markdown: Read mode, or the preview of Split and Preview.
 const cmtRendered = () => (!$("fileRead").hidden ? $("fileRead").querySelector(".md") : !$("fileMd").hidden && S.mdView !== "write" ? $("filePreview") : null);
 let cmtRanges = [];    // [{id, range}] in the rendered markdown, for a click on a highlight
+let cmtShown = null;   // [host, key of its ranges, the active comment] as the highlights show them
+let renderedIndex = null;
 // Highlights with the CSS Custom Highlight API: no element is added, so the sanitized markdown stays as it is.
+// The ranges are found again only when the rendered markdown or the placed comments change; another active comment
+// only regroups them.
 function highlightRendered(placed) {
-  const host = cmtRendered(), key = host && JSON.stringify([host._src, placed.map((p) => [p.c.id, p.nth]), S.cmtOn]);
-  if (host?._cmtKey === key) return;
-  cmtRanges = [];
-  if (host) {
-    host._cmtKey = key;
-    const nodes = [], w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
-    while (w.nextNode()) nodes.push(w.currentNode);
-    const ix = quoteIndex(nodes.map((n) => n.data));
-    for (const p of placed) {
-      if (p.outdated) continue;
-      const ms = quoteMatches(ix, p.c.quote), m = ms[Math.min(p.nth, ms.length - 1)];   // the nth match in the source is the nth on screen
-      if (!m) continue;
-      const r = document.createRange();
-      r.setStart(nodes[m.from[0]], m.from[1]); r.setEnd(nodes[m.to[0]], m.to[1]);
-      cmtRanges.push({ id: p.c.id, range: r });
+  const host = cmtRendered(), key = host && JSON.stringify([host._src, placed.map((p) => [p.c.id, p.nth])]);
+  if (!cmtShown || cmtShown[0] !== host || cmtShown[1] !== key) {
+    cmtRanges = [];
+    if (host) {
+      // The text nodes and their index, kept while the rendered markdown stays: a resolved comment only drops a range.
+      if (renderedIndex?.host !== host || renderedIndex.src !== host._src) {
+        const nodes = [], w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        while (w.nextNode()) nodes.push(w.currentNode);
+        renderedIndex = { host, src: host._src, nodes, ix: quoteIndex(nodes.map((n) => n.data)) };
+      }
+      const { nodes, ix } = renderedIndex;
+      for (const p of placed) {
+        if (p.outdated) continue;
+        const ms = quoteMatches(ix, p.c.quote), m = ms[Math.min(p.nth, ms.length - 1)];   // the nth match in the source is the nth on screen
+        if (!m) continue;
+        const r = document.createRange();
+        r.setStart(nodes[m.from[0]], m.from[1]); r.setEnd(nodes[m.to[0]], m.to[1]);
+        cmtRanges.push({ id: p.c.id, range: r });
+      }
     }
+    cmtShown = [host, key, undefined];
   }
+  if (cmtShown[2] === S.cmtOn) return;
+  cmtShown[2] = S.cmtOn;
   if (!window.Highlight) return;   // ponytail: no highlights without the API (Chromium and Electron have it)
   CSS.highlights.set("sb-cmt", new Highlight(...cmtRanges.filter((x) => x.id !== S.cmtOn).map((x) => x.range)));
   CSS.highlights.set("sb-cmt-on", new Highlight(...cmtRanges.filter((x) => x.id === S.cmtOn).map((x) => x.range)));
@@ -4157,12 +4298,12 @@ function cmtToggle(f, show) {
   const on = !S.cmtHidden[fileKey(f)] || S.cmtDraft?.key === fileKey(f);
   return `<button type="button" class="cmt-tog" data-act="cmt-toggle" data-fk="cmt-toggle" aria-pressed="${on}" title="Show or hide the comments">${SVG(BUBBLE, 12)}Comments · ${list.filter((c) => c.state !== "resolved").length}</button>`;
 }
-function renderNotes(f, show) {
+function renderNotes(f, show, typing) {
   const box = $("fileNotes"), list = fileComments(f);
   const draft = S.cmtDraft?.key === fileKey(f) ? S.cmtDraft : null;
   const on = (show.read || show.md || show.code) && (draft || (list.length && !S.cmtHidden[fileKey(f)]));
   box.hidden = !on;
-  const placed = on ? placeComments(f, list.filter((c) => c.state !== "resolved")) : [];
+  const placed = on ? placedFor(f, list.filter((c) => c.state !== "resolved"), typing) : [];
   highlightRendered(placed);
   const h = S.cm?.f === f && S.cm.handle, mk = h && JSON.stringify([f.mtime, placed.map((p) => [p.c.id, p.from]), S.cmtOn]);
   if (h && S.cm.marks !== mk) {
@@ -4258,17 +4399,36 @@ async function saveComment() {
   try {
     const r = await call("POST", `/api/todos/${f.todoId}/comments`, { root: f.root, file_id: f.id, path: f.rel, quote: d.quote, line: d.line, body: text });
     S.cmtDraft = null; S.cmtOn = r.id;
-    need("detail");
+    if (S.detail?.todo.id === f.todoId) S.detail.comments = r.comments;
+    render();
   } catch (e) { toast("danger", "Comment not saved", e.message); }
 }
-const cmtCall = (id, method, body, title) => act(call(method, `/api/todos/${S.file.todoId}/comments/${id}`, body).then(() => need("detail")), title);
+// A change to a comment shows at the click. The answer brings the TODO's comments; an error puts the old ones back,
+// unless a live update replaced them meanwhile.
+function cmtCall(id, method, body, title, failed) {
+  const todoId = S.file.todoId, d = S.detail?.todo.id === todoId ? S.detail : null, before = d?.comments, cid = Number(id);
+  if (d) {
+    d.comments = method === "DELETE" ? before.filter((c) => c.id !== cid)
+      : before.map((c) => c.id !== cid ? c : body.body ? { ...c, body: body.body, state: "open" } : { ...c, state: body.state });
+    render();
+  }
+  const mine = d?.comments;
+  call(method, `/api/todos/${todoId}/comments/${id}`, body).then(
+    (r) => { if (S.detail?.todo.id === todoId && r.comments) { S.detail.comments = r.comments; render(); } },
+    (e) => { if (d && d.comments === mine) d.comments = before; failed?.(); render(); toast("danger", title, e.message); });
+}
 Object.assign(ACTIONS, {
   "cmt-on": showComment,
   "cmt-save": saveComment,
   "cmt-cancel": () => { S.cmtDraft = null; render(); },
   "cmt-edit": (id) => { S.cmtEdit = Number(id); S.cmtEditText = null; S.cmtOn = Number(id); render(); $("cmtEditIn")?.focus(); },
   "cmt-edit-cancel": () => { S.cmtEdit = null; render(); },
-  "cmt-edit-save": (id) => { const v = $("cmtEditIn")?.value.trim(); if (!v) return; S.cmtEdit = null; cmtCall(id, "PATCH", { body: v }, "Comment not saved"); },
+  "cmt-edit-save": (id) => {
+    const v = $("cmtEditIn")?.value.trim();
+    if (!v) return;
+    S.cmtEdit = null;
+    cmtCall(id, "PATCH", { body: v }, "Comment not saved", () => { S.cmtEdit = Number(id); S.cmtEditText = v; });   // not saved: the box opens again with the text
+  },
   "cmt-state": (v) => { const [id, state] = v.split(":"); cmtCall(id, "PATCH", { state }, "Comment not changed"); },
   "cmt-del": (id) => openDialog({ title: "Delete comment", body: "The comment and the agent's reply are deleted.", buttons: [["Cancel", "ghost"], ["Delete", "danger", () => cmtCall(id, "DELETE", undefined, "Comment not deleted")]] }),
   "cmt-resolved": () => { S.cmtResolved = !S.cmtResolved; render(); },
@@ -4536,10 +4696,21 @@ const treeVisible = () => S.view === "todos" && S.mode === "focus" && typeof S.s
 setInterval(() => { if (treeVisible() && !document.hidden) need("tree"); }, 5000);
 function onEvent(ev) {
   const focusTodo = S.view === "todos" && S.mode === "focus" && typeof S.sel === "number";
-  if (ev.type === "todo" || ev.type === "todos") {
+  if (ev.type === "todos") {
     need("todos");   // header counts and the tab title are always on screen
-    if (focusTodo && (ev.type === "todos" || ev.id === S.sel)) need("detail");
-    if (focusTodo && ev.id === S.sel && treeVisible()) need("tree");   // a run that ended may have changed files
+    if (focusTodo) need("detail");
+    if (focusTodo && treeVisible()) need("tree");
+  } else if (ev.type === "todo") {
+    // The event carries the TODO's summary and its changed transcript rows; `full` asks for the whole transcript.
+    const prev = S.todos.find((t) => t.id === ev.id);
+    applyTodo(ev.todo);
+    const mine = focusTodo && ev.id === S.sel;
+    if (mine && (ev.full || S.detail?.todo.id !== ev.id)) need("detail");
+    else if (mine) { patchDetail(ev); detailBuf?.push(ev); }
+    if (mine && ev.todo.unread) call("POST", `/api/todos/${ev.id}/read`).catch(() => {});
+    // a run that ended may have changed files
+    if (mine && treeVisible() && (ev.full || prev?.status !== ev.todo.status || JSON.stringify(prev?.git) !== JSON.stringify(ev.todo.git))) need("tree");
+    renderFrame();
   } else if (ev.type === "operator") {
     need("operator");
   } else if (ev.type === "projects") need("projects");
@@ -4550,6 +4721,32 @@ function onEvent(ev) {
     if ((focusTodo && ev.id === S.sel && S.tab === "chat") || (S.view === "todos" && S.mode === "overview" && S.board === "board")) renderSoon();
   }
 }
+// A TODO event's summary replaces the TODO in the list (newest first, as the server sends it) and in the open detail.
+function applyTodo(t) {
+  const i = S.todos.findIndex((x) => x.id === t.id);
+  if (i < 0) S.todos.push(t); else S.todos[i] = t;
+  S.todos.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  if (S.detail?.todo.id === t.id) S.detail.todo = t;
+}
+// Transcript rows and messages by id: a changed row replaces its old copy, a new one goes in id order. Comments come
+// as the TODO's whole list.
+function patchDetail(ev) {
+  const d = S.detail;
+  if (!d || d.todo.id !== ev.id) return;
+  if (ev.events) patchRows(d.events, ev.events);
+  if (ev.messages) patchRows(d.messages, ev.messages);
+  if (ev.comments) d.comments = ev.comments;
+}
+function patchRows(rows, changed) {
+  for (const r of changed) {
+    const i = rows.findLastIndex((x) => x.id === r.id);
+    if (i >= 0) rows[i] = r;
+    else { rows.push(r); if (rows.length > 1 && rows.at(-2).id > r.id) rows.sort((a, b) => a.id - b.id); }
+  }
+}
+// Patched data shows at the next frame; several events in one frame make one render.
+let frame = 0;
+function renderFrame() { if (!frame) frame = requestAnimationFrame(() => { frame = 0; render(); }); }
 // The agent writes every 100 ms; the board and chat follow at most every 250 ms.
 let renderTimer = 0;
 function renderSoon() { if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = 0; render(); }, 250); }

@@ -782,6 +782,8 @@ CREATE INDEX IF NOT EXISTS messages_todo ON messages (todo_id, state);
 CREATE INDEX IF NOT EXISTS comments_todo ON comments (todo_id);
 CREATE INDEX IF NOT EXISTS events_todo ON events (todo_id);
 CREATE INDEX IF NOT EXISTS attachments_message ON attachments (message_id);
+CREATE INDEX IF NOT EXISTS files_todo ON files (todo_id);
+CREATE INDEX IF NOT EXISTS events_todo_kind ON events (todo_id, kind);
 `);
   const addColumn = (table: string, col: string, type: string) => {
     if (db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(col)) return false;
