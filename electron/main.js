@@ -1,4 +1,4 @@
-// Desktop window around the unchanged Bun server: Electron runs Node, and server.ts needs Bun (bun:sqlite, Bun.serve).
+// Desktop window around the app's server, the Rust binary built from core/ (bun run core).
 import { app, BrowserWindow, Menu, dialog, shell } from "electron";
 import { execFile, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -81,11 +81,12 @@ app.whenReady().then(async () => {
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   Object.assign(process.env, await shellEnv);
   // A server already running on the port wins: this copy exits on EADDRINUSE and the window attaches to the live one.
-  server = spawn("bun", ["server.ts"], {
-    cwd: join(import.meta.dirname, ".."),
+  const root = join(import.meta.dirname, "..");
+  server = spawn(join(root, "core", "target", "release", windows ? "switchboard.exe" : "switchboard"), [], {
+    cwd: root,
     stdio: ["pipe", "inherit", "inherit"],
-    env: { ...process.env, SWITCHBOARD_PARENT: "electron" },
-    // bun.exe is a console program: launched from the GUI app on Windows it opens its own console window without this.
+    env: { ...process.env, SWITCHBOARD_PARENT: "electron", SWITCHBOARD_APP: root },
+    // A console program launched from the GUI app on Windows opens its own console window without this.
     windowsHide: true,
   });
   await waitForServer();
@@ -95,5 +96,5 @@ app.whenReady().then(async () => {
 }).catch((e) => { dialog.showErrorBox("switchboard", e.message); app.quit(); });
 
 app.on("window-all-closed", () => app.quit());
-// Closing stdin works on Windows too, where kill("SIGTERM") is a hard kill that skips shutdown() in server.ts.
+// Closing stdin works on Windows too, where kill("SIGTERM") is a hard kill that skips the server's shutdown.
 app.on("will-quit", () => server?.stdin.end());

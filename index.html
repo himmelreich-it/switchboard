@@ -1817,7 +1817,7 @@ const loaders = {
     let r;
     try { r = await call("GET", `/api/todos/${id}/terminals`); }
     catch (e) { S.terms[id] ??= []; throw e; }   // known as empty, so the tab does not ask again in a loop
-    S.terms[id] = r.terminals; S.termsUnsupported = r.unsupported; S.termWs = r.ws;
+    S.terms[id] = r.terminals; S.termsUnsupported = r.unsupported;
     for (const x of r.terminals) { const v = xterms.get(x.id); if (v) v.info = x; }
     for (const [tid, v] of xterms) if (v.todoId === id && !r.terminals.some((x) => x.id === tid)) { v.gone = true; if (v.ws?.readyState !== 1) dropXterm(tid); }
   },
@@ -3560,8 +3560,7 @@ const fitTerm = (v) => { if (v.fit && v.host.offsetWidth) v.fit.fit(); };
 // One WebSocket per open terminal: binary frames are terminal bytes both ways, text frames JSON control (resize, exit).
 function connectTerm(v) {
   try { v.ws?.close(); } catch (e) {}
-  // The terminal host (switchboard-core) serves the socket on its own port; the terminals list names it.
-  const ws = new WebSocket(withToken(`${S.termWs}/api/todos/${v.todoId}/terminals/${v.info.id}/ws`));
+  const ws = new WebSocket(withToken(`${location.origin.replace(/^http/, "ws")}/api/todos/${v.todoId}/terminals/${v.info.id}/ws`));
   ws.binaryType = "arraybuffer";
   v.ws = ws; v.down = false;
   ws.onopen = () => { v.down = false; fitTerm(v); ws.send(JSON.stringify({ type: "resize", cols: v.term.cols, rows: v.term.rows })); renderTermFoot(); };
