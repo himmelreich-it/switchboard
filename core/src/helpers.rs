@@ -1081,6 +1081,8 @@ pub fn permission_of(r: &Value, at: &str) -> Value {
 // asks, a Monitor of its own still runs. Otherwise the lane is the status. The tab title and ⌘J count lanes, not statuses.
 // A scheduled TODO that is idle or not started is in the Scheduled lane (item 144); running or waiting, it is where any TODO is.
 // `t`: { status, permission, background_wait?, attention_by?, schedule? }
+// Not called by the server: index.html has its own laneOf, and this copy with its tests pins the rules.
+#[allow(dead_code)]
 pub fn lane_of(t: &Value) -> String {
     let status = t.s("status");
     if status == Some("running") && (t.truthy("permission") || (t.truthy("background_wait") && t.s("attention_by") == Some("agent"))) {
@@ -1130,9 +1132,6 @@ pub fn config_view(raw: &Value) -> Value {
     Value::Array(view.collect())
 }
 
-// The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config).
-// The permission mode has its own setting (P3); options without a category (Claude's `agent`) are left to the agent.
-pub const CONFIG_CATEGORIES: [&str; 3] = ["model", "thought_level", "model_config"];
 
 fn offers(o: &Value, value: &Value) -> bool {
     arr(o.get("options")).iter().any(|x| x.get("value").is_some_and(|v| same(v, value)))

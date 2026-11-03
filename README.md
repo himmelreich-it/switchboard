@@ -7,23 +7,26 @@ TODOs and acts only when told. Spec: `designs/feature-spec-switchboard.md`.
 
 ```sh
 bun install
-bun server.ts        # prints http://127.0.0.1:4477/#token=… (PORT to change); open that link
+bun run serve        # builds and starts the server; prints http://127.0.0.1:4477/#token=… (PORT to change); open that link
 bun run app          # same app in its own window (Electron); closing it stops running agents and terminals like Ctrl-C
-bun test             # pure helpers in lib.ts
+bun run test         # the server's tests (cargo test)
 bun scripts/bench.ts # server start, list and transcript load times on a throwaway home (args: todos events)
 bun run vendor       # rebuild vendor/ (CodeMirror, xterm.js, marked, DOMPurify, fonts) after changing one of them
-bun run core         # build switchboard-core (core/, Rust), the terminal host; needs cargo
+bun run core         # build the server alone (core/target/release/switchboard)
 bun run install-local  # build Switchboard.app (no installer) and copy it to /Applications, for Spotlight and the Dock
 bun run app:linux            # Linux: `app` without Chromium's sandbox (see below)
 bun run install-local:linux  # Linux: build for this machine's arch, install to ~/.local/share/switchboard with a launcher
 bun run install-local:win    # Windows: build for this machine's arch (x64 or ARM64), install to %LOCALAPPDATA%\Programs\Switchboard
 ```
 
-The API needs the launch token the server picks at each start. `bun server.ts` prints a link with it, and the window
+The server is a Rust program in `core/` (`core/PORTING.md` maps it to the TypeScript server it replaced); building it
+needs Rust's `cargo`. `serve`, `app`, the packaging and the `install-local` commands build it first. Agents still run
+on a JS runtime: the bundled Claude adapter (`node_modules/@agentclientprotocol/claude-agent-acp`) runs on `bun`, else
+`node`, from PATH (`SWITCHBOARD_JS` to pick one).
+
+The API needs the launch token the server picks at each start. `bun run serve` prints a link with it, and the window
 app reads it from `~/.switchboard/token`. After a server restart, open the new link. Everything the page loads is in
-`vendor/`, so the app works offline. Terminals run in switchboard-core, a small Rust program in `core/`: build it once
-with `bun run core` (it needs Rust's `cargo`) and again after changing `core/`. The packaging and `install-local`
-commands build it themselves. Terminals on Windows are not tested yet.
+`vendor/`, so the app works offline. Terminals on Windows are not tested yet.
 
 `install-local` quits a running Switchboard first, which stops its running agents and terminals. The installed app
 runs a copy of the code: run `install-local` again to update it. It still needs `bun` installed; it reads PATH and

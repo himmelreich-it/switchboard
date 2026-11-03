@@ -159,7 +159,9 @@ enum Pending {
     Todo { todo: i64, full: bool, events: Vec<i64> },
 }
 /// One change often writes a status, a message and an event; they go out together, 50 ms after the first.
-static OUTBOX: LazyLock<Mutex<(Vec<String>, HashMap<String, Pending>)>> = LazyLock::new(Default::default);
+/// The keys in the order they were first queued, and what each holds.
+type Outbox = (Vec<String>, HashMap<String, Pending>);
+static OUTBOX: LazyLock<Mutex<Outbox>> = LazyLock::new(Default::default);
 /// Flushes run one after another, so events leave in the order they were made.
 static FLUSHING: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(Default::default);
 /// seq numbers the flushes. The rows a flush sends are read before any await, and GET /api/todos/:id reports the
@@ -232,6 +234,37 @@ async fn flush() {
     for s in out {
         send(&s);
     }
+}
+/// A TODO's transcript events as the JSON array the page reads, written straight from the rows: a long transcript is
+/// thousands of events, and building them as values first was most of a transcript load. `meta` is stored JSON
+/// (written by add_event and set_event), so it goes in as it is.
+pub fn events_json(todo_id: i64) -> String {
+    use std::fmt::Write;
+    let c = db::conn();
+    let mut out = String::from("[");
+    let mut stmt = c.prepare_cached("SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id").expect("events query");
+    let mut rows = stmt.query([todo_id]).expect("events query");
+    let text = |v: Option<String>| v.map_or_else(|| "null".to_string(), |s| Value::String(s).to_string());
+    while let Ok(Some(r)) = rows.next() {
+        if out.len() > 1 {
+            out.push(',');
+        }
+        let id: i64 = r.get(0).unwrap_or(0);
+        let session: Option<i64> = r.get(5).unwrap_or(None);
+        let meta: Option<String> = r.get(6).unwrap_or(None);
+        let meta = meta.filter(|m| serde_json::from_str::<serde::de::IgnoredAny>(m).is_ok()).unwrap_or_else(|| "null".into());
+        let _ = write!(
+            out,
+            r#"{{"id":{id},"kind":{},"actor":{},"detail":{},"at":{},"session_no":{},"meta":{meta}}}"#,
+            text(r.get(1).ok()),
+            text(r.get(2).ok()),
+            text(r.get(3).unwrap_or(None)),
+            text(r.get(4).ok()),
+            session.map_or("null".to_string(), |n| n.to_string()),
+        );
+    }
+    out.push(']');
+    out
 }
 /// An event row as the page reads it: meta parsed.
 pub fn event_out(mut e: Value) -> Value {

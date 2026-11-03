@@ -15,6 +15,7 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["clock"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 libc = "0.2"
+mimalloc = "0.1"
 parking_lot = "0.12"
 portable-pty = "0.9"
 rand = "0.8"

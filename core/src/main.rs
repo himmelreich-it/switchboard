@@ -18,6 +18,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use util::{home, join, J};
 
+// Rows, events and responses are many small JSON values; glibc's allocator made building them the slowest part of a
+// transcript load (the second pass over the same data was 8× faster).
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 static STOPPING: AtomicBool = AtomicBool::new(false);
 
 #[tokio::main]

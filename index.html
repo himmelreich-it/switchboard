@@ -1531,7 +1531,7 @@ const I = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
 };
-// ACP tool kinds (lib.ts ToolMeta.kind) to the design's icon set
+// ACP tool kinds (the server's tool meta `kind`, core/src/helpers.rs tool_meta) to the design's icon set
 const KIND_ICON = { read: "read", edit: "edit", delete: "edit", move: "edit", execute: "run", search: "search", fetch: "fetch", think: "think" };
 const ico = (k, size = 13, color = "var(--text-muted)") => SVG(I[KIND_ICON[k] ?? (I[k] ? k : "other")], size, color);
 const DOTS = (size = 15) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">${I.dots}</svg>`;
@@ -1612,7 +1612,7 @@ function showGate() {
   try { es.close(); } catch (e) {}   // stops the reconnect loop; es is declared further down
   document.body.insertAdjacentHTML("beforeend", `<div id="gate" class="gate" role="alert"><div>
     <span class="panel-title">This page needs a new link</span>
-    <p>Switchboard picks a new launch token each time it starts. Open the link the server printed when it started (<code>bun server.ts</code> prints <code>http://127.0.0.1:${esc(location.port)}/#token=…</code>). The window app opens it on its own.</p>
+    <p>Switchboard picks a new launch token each time it starts. Open the link the server printed when it started (<code>bun run serve</code> prints <code>http://127.0.0.1:${esc(location.port)}/#token=…</code>). The window app opens it on its own.</p>
   </div></div>`);
 }
 
@@ -1672,7 +1672,7 @@ const cur = () => (S.detail && S.detail.todo.id === S.sel ? S.detail.todo : S.to
 // TODOs without a topic (801).
 const filterProject = () => (S.filter === "none" ? { id: "none", name: "No topic" } : S.projects.find((p) => String(p.id) === S.filter) ?? null);
 const inFilter = (t) => { const p = filterProject(); return !p || (p.id === "none" ? t.project_id == null : t.project_id === p.id); };
-// P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (lib.ts laneOf),
+// P3: the lane is the status, except that a running agent waiting for a permission answer shows in Waiting (core/src/helpers.rs lane_of pins these rules),
 // and so does one that waits only for background tasks after the agent raised attention itself (item 136).
 // Item 144: a scheduled TODO that is idle or not started is in the Scheduled lane.
 const laneOf = (t) => (t.status === "running" && (t.permission || (t.background_wait && t.attention_by === "agent")) ? "waiting"
@@ -1687,7 +1687,7 @@ const agentLabel = (id) => agentsAll().find((a) => a.id === (id || "claude"))?.n
 // Per agent, the config options last seen from any of its sessions (meta).
 const agentConfig = (agent) => S.meta?.agent_config?.[agent || "claude"] ?? [];
 const agentSelect = (value, attrs) => `<select ${attrs}>${agentsFound().map((a) => `<option value="${esc(a.id)}"${(value || "claude") === a.id ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select>`;
-// The permission modes (lib.ts MODES); the UI's labels for them. They are Claude's: another agent's modes are its own
+// The permission modes (core/src/helpers.rs MODES); the UI's labels for them. They are Claude's: another agent's modes are its own
 // `mode` option, from its session or the last one seen.
 const MODES = { auto: "Auto", default: "Default (ask)", acceptEdits: "Accept edits", plan: "Plan", bypassPermissions: "Bypass permissions" };
 const modeChoices = (agent, t) => (agent || "claude") === "claude" ? Object.entries(MODES)
@@ -1700,7 +1700,7 @@ const modeOptions = (value, projectDefault, agent, t) => {
   const first = projectDefault !== undefined ? [["", `Topic's (${projectDefault ? name(projectDefault) : claude ? MODES.auto : "agent's own"})`]] : claude ? [] : [["", "Agent's own"]];
   return first.concat(choices).map(([v, l]) => `<option value="${esc(v)}"${(value ?? "") === v ? " selected" : ""}>${esc(l)}</option>`).join("");
 };
-// P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
+// P4: the agent's config options a project or TODO sets (by category): model, effort, fast. The list
 // is the TODO's session's as the agent last reported it, else the last one seen from any session of that agent (meta).
 const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
 const configList = (t, agent) => (t?.config ?? agentConfig(t?.agent ?? agent)).filter((o) => CONFIG_CATEGORIES.includes(o.category));

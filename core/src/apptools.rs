@@ -6,8 +6,8 @@
 //! The TS code used @modelcontextprotocol/sdk (McpServer over WebStandardStreamableHTTPServerTransport, stateless,
 //! `enableJsonResponse: true`) and zod. This file speaks that protocol itself: the transport's checks and answers,
 //! JSON-RPC dispatch (initialize, ping, tools/list, tools/call), the zod schemas as JSON Schema, and zod's argument
-//! validation with its messages. core/tests/apptools-*.json hold what the TS module answered (see
-//! core/tests/apptools-golden/gen.sh); the tests below replay them.
+//! validation with its messages. core/tests/apptools-*.json hold what the TS module answered (recorded from apptools.ts
+//! with SDK 1.32.1 and zod 4.6.5 at commit 2d1a247, the last with the TS server); the tests below replay them.
 
 use crate::server::{self, add_event, add_message, changed, todo_row};
 use crate::util::{self, basename, J};
@@ -1354,11 +1354,14 @@ async fn call_tool(tools: &[Tool], name: &str, args: Option<&Value>) -> Value {
 }
 
 #[cfg(test)]
+// The db::test_db guard is held across awaits on purpose: it keeps tests off the shared database while one runs, and
+// each #[tokio::test] has its own runtime, so nothing else waits on it there.
+#[allow(clippy::await_holding_lock)]
 mod tests {
     use super::*;
     use std::sync::OnceLock;
 
-    /// A database with the rows the golden files assume (stub.ts): topics Alpha (2) and beta (1), TODO 1 with the
+    /// The rows the golden files assume (db::test_db makes them): topics Alpha (2) and beta (1), TODO 1 with the
     /// default agent and TODO 2 on codex. One grant per golden grant name.
     fn setup() -> (std::sync::MutexGuard<'static, ()>, &'static HashMap<String, String>) {
         let turn = db::test_db();

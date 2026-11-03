@@ -94,7 +94,6 @@ fn js_string(v: Option<&Value>) -> String {
 pub struct RpcError {
     pub code: i64,
     pub message: String,
-    pub data: Value,
 }
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -261,7 +260,6 @@ impl Conn {
                     Some(e) if !e.is_null() => Err(Fail::Rpc(RpcError {
                         code: e.get("code").and_then(Value::as_i64).unwrap_or(0),
                         message: e.get("message").and_then(Value::as_str).unwrap_or("").to_string(),
-                        data: e.get("data").cloned().unwrap_or(Value::Null),
                     })),
                     _ => Ok(msg.get("result").cloned().unwrap_or(Value::Null)),
                 };
@@ -609,10 +607,6 @@ impl Live {
     pub fn commands(&self) -> Vec<Command> {
         self.0.a.conn.state.lock().unwrap().commands.clone()
     }
-    /// Swaps the handlers, so the same process serves the next turn's run.
-    pub fn set_handlers(&self, h: Arc<dyn Handlers>) {
-        *self.0.a.conn.handlers.lock().unwrap() = Some(h);
-    }
 
     /// Resolves when the turn ends: the prompt response is the end of the turn (ACP v1). Fails on a protocol error or
     /// exit. Returns the stopReason.
@@ -700,13 +694,14 @@ impl Live {
     }
 
     /// The agent's last log lines, for error events.
+    #[cfg(test)]
+    pub fn pid(&self) -> Option<u32> {
+        self.0.a.pid
+    }
     pub fn stderr(&self) -> String {
         self.0.a.log()
     }
 
-    pub fn pid(&self) -> Option<u32> {
-        self.0.a.pid
-    }
 }
 
 fn session_params(session_id: Option<&str>, o: &SessionOpts) -> Value {

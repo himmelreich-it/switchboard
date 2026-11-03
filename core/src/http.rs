@@ -1239,11 +1239,17 @@ async fn api(req: Request, path: &str) -> anyhow::Result<Response> {
         let messages: Vec<Value> = ids.iter().map(|r| server_ops::message_out(r.i("id").unwrap_or(0))).collect();
         let files: Vec<Value> = server::files_of(id).iter().map(server_ops::file_out).collect();
         let comments = server::comments_of(id, "1");
-        let events: Vec<Value> = db::all("SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE todo_id = ? ORDER BY id", params![id]).into_iter().map(server::event_out).collect();
-        return ok(json!({
-            "todo": todo, "sessions": sessions, "artifact_dir": artifact, "seq": seq, "messages": messages, "files": files,
-            "comments": comments, "events": events, "draft": server::get_draft(&format!("todo:{id}")),
-        }));
+        // The events go in as text (server::events_json): the rest is serialized, then the array is spliced in its place.
+        let events = server::events_json(id);
+        let head = json!({
+            "todo": todo, "sessions": sessions, "artifact_dir": artifact, "seq": seq, "messages": messages, "files": files, "comments": comments,
+        })
+        .to_string();
+        let draft = Value::String(server::get_draft(&format!("todo:{id}"))).to_string();
+        let body = format!(r#"{},"events":{events},"draft":{draft}}}"#, &head[..head.len() - 1]);
+        let mut r = Response::new(Body::from(body));
+        r.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json;charset=utf-8"));
+        return Ok(r);
     }
 
     if let (Some(c), "PUT") = (re!(r"^/api/todos/([0-9]+)/draft$").captures(path), m) {

@@ -875,7 +875,6 @@ pub fn migrate() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::OnceLock;
 
     use crate::db::test_db;
     fn last_event(id: i64) -> Value {

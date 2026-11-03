@@ -74,7 +74,6 @@ pub fn get(sql: &str, params: &[Value]) -> Option<Value> {
 }
 
 pub struct RunResult {
-    pub changes: usize,
     pub last_insert_rowid: i64,
 }
 
@@ -84,8 +83,8 @@ pub fn run(sql: &str, params: &[Value]) -> RunResult {
     let c = conn();
     let ps: Vec<P> = params.iter().map(P).collect();
     let refs: Vec<&dyn ToSql> = ps.iter().map(|p| p as &dyn ToSql).collect();
-    let changes = c.prepare_cached(sql).and_then(|mut s| s.execute(refs.as_slice())).unwrap_or_else(|e| panic!("SQL {sql}: {e}"));
-    RunResult { changes, last_insert_rowid: c.last_insert_rowid() }
+    c.prepare_cached(sql).and_then(|mut s| s.execute(refs.as_slice())).unwrap_or_else(|e| panic!("SQL {sql}: {e}"));
+    RunResult { last_insert_rowid: c.last_insert_rowid() }
 }
 
 /// Several statements, no parameters (`db.exec`).

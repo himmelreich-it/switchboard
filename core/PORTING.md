@@ -1,26 +1,25 @@
-# Porting the Bun server to Rust
+# The server, and the TypeScript it was ported from
 
-The Rust crate in `core/` replaces `server.ts`, `runner.ts`, `apptools.ts`, `acp.ts`, `agents.ts` and `lib.ts`. It
-serves the same HTTP API, live event stream and terminal WebSockets to the unchanged `index.html`. The port is
-**faithful**: same behaviour, same JSON field names and shapes, same SQL, same event and message texts, same comments
-(rewrapped where needed). Port line by line; do not redesign. When the TS code has a comment, keep it (shortened is
-fine). Where Rust forces a difference, say why in a comment.
+The Rust crate in `core/` replaced `server.ts`, `runner.ts`, `apptools.ts`, `acp.ts`, `agents.ts` and `lib.ts`
+(their last version is in commit 28d3285). It serves the same HTTP API, live event stream and terminal WebSockets to
+the unchanged `index.html`. The port was faithful: same behaviour, same JSON field names and shapes, same SQL, same
+event and message texts, same comments. Differences Rust forced are marked `// PORT:` in the code.
 
-## Modules (one per TS file or part)
+## Modules
 
-| Rust module | Ported from | Owner |
-|---|---|---|
-| `db.rs`, `util.rs` | bun:sqlite, node:fs/path, `sh()` | foundation (done) |
-| `helpers.rs` | `lib.ts` (+ `lib.test.ts` as `#[cfg(test)]` tests) | agent |
-| `server.rs` | `server.ts` storage, live updates, git cache, read models (`summaries`) | foundation |
-| `server_ops.rs` | `server.ts` PRs, worktree scan, ports, shared writes (`createTodo`, `removeTodo`, `setSchedule`), migration from auto-coder | agent |
-| `http.rs` | `server.ts` HTTP: `api()` routes, static files, SSE, the Bun.serve fetch handler | agent |
-| `terms.rs` | `server.ts` terminals + the PTY host | foundation |
-| `acp.rs` | `acp.ts` | agent |
-| `agents.rs` | `agents.ts` | agent |
-| `runner.rs` | `runner.ts` | agent |
-| `apptools.rs` | `apptools.ts` (MCP over HTTP, no SDK) | agent |
-| `main.rs` | `server.ts` startup and shutdown | foundation |
+| Rust module | Ported from |
+|---|---|
+| `db.rs`, `util.rs` | bun:sqlite, node:fs/path, `sh()` |
+| `helpers.rs` | `lib.ts` (+ `lib.test.ts` as `#[cfg(test)]` tests) |
+| `server.rs` | `server.ts` storage, live updates, git cache, read models (`summaries`) |
+| `server_ops.rs` | `server.ts` PRs, worktree scan, ports, shared writes (`createTodo`, `removeTodo`, `setSchedule`), migration from auto-coder |
+| `http.rs` | `server.ts` HTTP: `api()` routes, static files, SSE, the Bun.serve fetch handler |
+| `terms.rs` | `server.ts` terminals + the PTY host |
+| `acp.rs` | `acp.ts` |
+| `agents.rs` | `agents.ts` |
+| `runner.rs` | `runner.ts` |
+| `apptools.rs` | `apptools.ts` (MCP over HTTP, no SDK) |
+| `main.rs` | `server.ts` startup and shutdown |
 
 Names: TS `camelCase` → Rust `snake_case`, in the module of the TS file it came from. Constants stay
 `SCREAMING_CASE`.
@@ -63,13 +62,6 @@ Names: TS `camelCase` → Rust `snake_case`, in the module of the TS file it cam
   saying what differs and why.
 - Code style: comments say why, not what; no comment on obvious code. `cargo clippy` clean.
 
-## Calling another module that is not ported yet
+## Done means (for a change)
 
-Call it by its snake_case name with the signature the conventions give. If it does not exist in that module's file
-yet, add a stub there: `pub fn name(args) -> Ret { todo!("port") }` (or `pub async fn`), and list it in your final
-report. Edit only your own module otherwise.
-
-## Done means
-
-`cargo build` and `cargo clippy` pass for the crate, your module has no `todo!()` left, and its tests (where the TS
-had tests, or where behaviour can be tested in isolation) pass with `cargo test`.
+`cargo build`, `cargo clippy` and `cargo test` pass. Tests that touch the database take `db::test_db()`.

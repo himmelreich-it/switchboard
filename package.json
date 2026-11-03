@@ -2,13 +2,14 @@
   "name": "switchboard",
   "productName": "Switchboard",
   "version": "0.1.0",
-  "module": "server.ts",
   "main": "electron/main.js",
   "type": "module",
   "private": true,
   "scripts": {
-    "app": "electron electron/main.js",
-    "app:linux": "electron electron/main.js --no-sandbox",
+    "serve": "cargo run --release --manifest-path core/Cargo.toml",
+    "test": "cargo test --manifest-path core/Cargo.toml",
+    "app": "bun run core && electron electron/main.js",
+    "app:linux": "bun run core && electron electron/main.js --no-sandbox",
     "vendor": "bun vendor/build.ts",
     "core": "cargo build --release --manifest-path core/Cargo.toml",
     "package:mac": "bun run core && electron-builder --mac --dir",
@@ -26,19 +27,13 @@
     },
     "files": [
       "electron/**",
-      "server.ts",
-      "runner.ts",
-      "acp.ts",
-      "agents.ts",
-      "apptools.ts",
-      "lib.ts",
       "index.html",
       "images/**",
       "vendor/*.js",
       "vendor/*.css",
       "vendor/fonts/**",
-      "core/target/release/switchboard-core",
-      "core/target/release/switchboard-core.exe",
+      "core/target/release/switchboard",
+      "core/target/release/switchboard.exe",
       "package.json",
       "!node_modules/@anthropic-ai/claude-agent-sdk-*-musl/**"
     ],
@@ -93,9 +88,6 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.89.1",
-    "@agentclientprotocol/sdk": "1.7.0",
-    "@modelcontextprotocol/sdk": "1.32.1",
-    "zod": "^4.6.5"
+    "@agentclientprotocol/claude-agent-acp": "0.89.1"
   }
 }
