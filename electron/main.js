@@ -34,7 +34,19 @@ async function waitForServer() {
   throw new Error(`switchboard server did not start on ${URL()}`);
 }
 
-const ICONS = join(import.meta.dirname, "../images/icons");
+// A beta build (install-local with --beta / -Beta) shares ~/.switchboard and the port with the regular app, so its
+// TODOs and history are the same; it installs next to it under its own name and icon. The two cannot run at once: a
+// second server on the same data would end the first one's runs and fire its schedules twice.
+const CHANNEL = JSON.parse(readFileSync(join(import.meta.dirname, "../package.json"), "utf8")).channel ?? "stable";
+const beta = CHANNEL === "beta";
+const NAME = beta ? "Switchboard Beta" : "Switchboard";
+const ICONS = join(import.meta.dirname, beta ? "../images/beta-icons" : "../images/icons");
+const FLAT = beta ? "flat/switchboard-beta" : "flat/switchboard";
+
+// The channel of the server already on the port, null when the port is free. A server from before channels sends no header: stable.
+async function runningChannel() {
+  try { return (await fetch(URL(), { signal: AbortSignal.timeout(2000) })).headers.get("x-switchboard-channel") ?? "stable"; } catch { return null; }
+}
 const page = (js) => win?.webContents.executeJavaScript(js).catch(() => {});
 
 // The window controls take the title bar's colors, now and after each theme change (the page's sb-theme event).
@@ -62,11 +74,16 @@ function menu() {
 
 app.whenReady().then(async () => {
   // macOS ignores the BrowserWindow icon and shows the dock icon instead.
-  app.dock?.setIcon(join(ICONS, "macos/switchboard-macos-512.png"));
+  app.dock?.setIcon(join(ICONS, beta ? "macos/switchboard-beta-macos-512.png" : "macos/switchboard-macos-512.png"));
   menu();
+  // The other build on the same data: refuse before opening anything.
+  const other = await runningChannel();
+  if (other && other !== CHANNEL) throw new Error(`${other === "beta" ? "Switchboard Beta" : "Switchboard"} is running on the same data. Quit it first, then start ${NAME}.`);
   // The window opens at once, in the page's background color; the page loads once the server answers.
   win = new BrowserWindow({
-    width: 1400, height: 900, minWidth: 960, minHeight: 600, title: "switchboard", icon: join(ICONS, "flat/switchboard-flat-256.png"),
+    width: 1400, height: 900, minWidth: 960, minHeight: 600, title: "switchboard",
+    // Windows shows the window icon in the taskbar; its .ico fills the frame like other apps, the padded PNG did not.
+    icon: join(ICONS, windows ? `${FLAT}.ico` : `${FLAT}-flat-256.png`),
     backgroundColor: "#0A0813",
     // macOS: our 40px title bar holds the traffic lights (item 121). Linux and Windows: it holds Electron's window
     // controls, above its 1px bottom border, and there is no menu bar (the accelerators still work).
@@ -84,7 +101,7 @@ app.whenReady().then(async () => {
   server = spawn("bun", ["server.ts"], {
     cwd: join(import.meta.dirname, ".."),
     stdio: ["pipe", "inherit", "inherit"],
-    env: { ...process.env, SWITCHBOARD_PARENT: "electron" },
+    env: { ...process.env, SWITCHBOARD_PARENT: "electron", SWITCHBOARD_CHANNEL: CHANNEL },
     // bun.exe is a console program: launched from the GUI app on Windows it opens its own console window without this.
     windowsHide: true,
   });
@@ -92,7 +109,7 @@ app.whenReady().then(async () => {
   // The launch token (item 120): the server writes it once its port is bound, also when this window attaches to a running one.
   const token = readFileSync(join(HOME(), "token"), "utf8").trim();
   win.loadURL(`${URL()}/#token=${token}`);
-}).catch((e) => { dialog.showErrorBox("switchboard", e.message); app.quit(); });
+}).catch((e) => { dialog.showErrorBox(NAME, e.message); app.quit(); });
 
 app.on("window-all-closed", () => app.quit());
 // Closing stdin works on Windows too, where kill("SIGTERM") is a hard kill that skips shutdown() in server.ts.

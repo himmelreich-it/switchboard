@@ -19,6 +19,7 @@ import {
 // No login on this server: it must only ever listen on 127.0.0.1.
 export const HOST = "127.0.0.1";
 export const PORT = Number(process.env.PORT ?? 4477);
+const CHANNEL = process.env.SWITCHBOARD_CHANNEL ?? "stable"; // set by electron/main.js: "beta" in a beta build
 
 // ---------- storage ----------
 
@@ -1722,7 +1723,8 @@ const httpServer = Bun.serve({
     // Cross-site forms can only send simple content types; requiring JSON forces a CORS preflight, which this server never answers.
     if (req.method !== "GET" && !req.headers.get("content-type")?.startsWith("application/json")) return fail("JSON body required", 415);
     // The page, the icon and the bundled libraries hold no data, so they stay open.
-    if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")));
+    // The channel lets a window of the other build (stable or beta, same data) see this one runs and refuse to start.
+    if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")), { headers: { "x-switchboard-channel": CHANNEL } });
     if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/flat/switchboard-flat-small.svg")));
     if (url.pathname.startsWith("/vendor/")) {
       const file = resolve(VENDOR, "." + decodeURIComponent(url.pathname.slice(7)));
