@@ -1,19 +1,28 @@
 [package]
-name = "switchboard-core"
+name = "switchboard"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
-[dependencies]
-portable-pty = "0.9"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-std", "io-util", "sync", "time"] }
-tokio-tungstenite = "0.24"
-futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+[[bin]]
+name = "switchboard"
+path = "src/main.rs"
 
-[target.'cfg(unix)'.dependencies]
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["ws"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["clock"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 libc = "0.2"
+portable-pty = "0.9"
+rand = "0.8"
+regex = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 
 [profile.release]
 lto = "thin"
