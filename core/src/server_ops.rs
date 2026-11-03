@@ -229,6 +229,10 @@ static WORKTREE_SCANNING: Mutex<Option<Flight>> = Mutex::new(None);
 pub fn worktree_scan() -> Option<Value> {
     WORKTREE_SCAN.lock().unwrap().clone()
 }
+/// `ghLogins = null` (POST /api/gh/retry): the next refresh reads the gh accounts again, to see a `gh auth login`.
+pub fn forget_gh_logins() {
+    *GH_LOGINS.lock().unwrap() = None;
+}
 
 /// Commits of `ref` on no remote branch, minus the PR's: a merged PR's branch is often deleted on GitHub, so its
 /// commits are then on no remote, but GitHub keeps them in the PR. "<sha8> <subject>" each.

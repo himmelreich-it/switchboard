@@ -25,6 +25,9 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
 [profile.release]
 lto = "thin"
 strip = true

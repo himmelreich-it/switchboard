@@ -34,3 +34,13 @@ pub fn parse_worktree_list(_out: &str) -> Value { todo!("port") }
 pub fn worktree_verdict(_f: &Value) -> Value { todo!("port") }
 pub fn gh_outcome(_code: Option<i64>, _stdout: &str, _stderr: &str) -> Value { todo!("port") }
 pub fn next_run(_s: &Value, _after: chrono::DateTime<chrono::Local>) -> Option<chrono::DateTime<chrono::Local>> { todo!("port") }
+
+// Stubs added for http.rs (lib.ts names, PORTING.md signatures).
+pub const MODES: &[&str] = &["auto", "default", "acceptEdits", "plan", "bypassPermissions"];
+pub fn config_in(_v: &Value) -> Value { todo!("port") }
+pub fn is_inside(_path: &str, _dir: &str) -> bool { todo!("port") }
+pub fn token_ok(_token: &str, _header: Option<&str>, _query: Option<&str>) -> bool { todo!("port") }
+pub fn parse_marks(_name_status_z: &str, _untracked_z: &str) -> Value { todo!("port") }
+pub fn reveal_command(_platform: &str, _file: &str) -> Vec<String> { todo!("port") }
+pub fn vscode_command(_platform: &str, _dir: &str) -> Vec<String> { todo!("port") }
+pub fn schedule_in(_v: &Value) -> Result<Value, String> { todo!("port") }

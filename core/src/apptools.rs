@@ -9,3 +9,5 @@ impl Grant {
 pub fn grant(_g: Grant, _header: impl Fn(&str) -> String) -> (String, Value) { todo!("port") }
 pub fn revoke(_secret: &str) { todo!("port") }
 pub fn worker_tools() -> Vec<String> { todo!("port") }
+/// The agents' route to the app's MCP tools (/mcp/app): each agent session carries its own secret. Stub for http.rs.
+pub async fn handle_mcp(_req: axum::extract::Request) -> axum::response::Response { todo!("port") }
