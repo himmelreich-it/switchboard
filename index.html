@@ -7,19 +7,22 @@
 <script>
 // Appearance (design v8) in localStorage: the mode ("auto" follows the OS) and the theme family each mode uses.
 // Before v8 the key "switchboard-theme" held the mode alone; it seeds the mode until the first change.
-const FAM = { cyberpunk: "Cyberpunk", monokai: "Monokai" };
+// Cyberpunk and Monokai have a light and a dark side; each Catppuccin flavor is one side only: Latte light, the others dark.
+const FAM = { cyberpunk: "Cyberpunk", monokai: "Monokai", latte: "Catppuccin Latte", frappe: "Catppuccin Frappé", macchiato: "Catppuccin Macchiato", mocha: "Catppuccin Mocha" };
+const SIDE = { light: ["cyberpunk", "monokai", "latte"], dark: ["cyberpunk", "monokai", "frappe", "macchiato", "mocha"] };
+const famName = (f, dark) => f === "cyberpunk" || f === "monokai" ? `${FAM[f]} ${dark ? "Dark" : "Light"}` : FAM[f];
 function appearance() {
   let a = null; try { a = JSON.parse(localStorage.getItem("switchboard-appearance")) ?? { mode: localStorage.getItem("switchboard-theme") }; } catch (e) {}
-  const fam = (f) => f === "cyberpunk" ? "cyberpunk" : "monokai";
-  return { mode: a?.mode === "dark" || a?.mode === "light" ? a.mode : "auto", light: fam(a?.light), dark: fam(a?.dark) };
+  const fam = (k) => SIDE[k].includes(a?.[k]) ? a[k] : "monokai";
+  return { mode: a?.mode === "dark" || a?.mode === "light" ? a.mode : "auto", light: fam("light"), dark: fam("dark") };
 }
 function setAppearance(patch) { try { localStorage.setItem("switchboard-appearance", JSON.stringify({ ...appearance(), ...patch })); } catch (e) {} applyTheme(); }
-const isDark = () => !document.documentElement.dataset.theme.endsWith("light");
-// data-theme: "dark" / "light" (Cyberpunk), "monokai-dark" / "monokai-light".
+const isDark = () => !/light|latte/.test(document.documentElement.dataset.theme);
+// data-theme: "dark" / "light" (Cyberpunk), "monokai-dark" / "monokai-light", "catppuccin-latte" / -frappe / -macchiato / -mocha.
 function applyTheme() {
   const a = appearance(), osDark = !matchMedia("(prefers-color-scheme: light)").matches;
   const dark = a.mode === "dark" || (a.mode === "auto" && osDark), fam = dark ? a.dark : a.light;
-  const now = (fam === "monokai" ? "monokai-" : "") + (dark ? "dark" : "light");
+  const now = fam === "cyberpunk" ? (dark ? "dark" : "light") : fam === "monokai" ? (dark ? "monokai-dark" : "monokai-light") : "catppuccin-" + fam;
   document.documentElement.dataset.theme = now;
   document.querySelectorAll('[data-act="theme"]').forEach((b) => { b.setAttribute("aria-checked", b.dataset.id === a.mode); b.tabIndex = b.dataset.id === a.mode ? 0 : -1; });
   document.querySelectorAll('[data-act="theme-fam"]').forEach((b) => {
@@ -29,8 +32,8 @@ function applyTheme() {
     b.querySelector(".th-state > span").textContent = on && dark === (k === "dark") ? "In use" : "Selected";
   });
   const hint = document.getElementById("themeHint");
-  if (hint) hint.textContent = a.mode === "auto" ? `Follows your system, which is ${osDark ? "dark" : "light"} right now: ${FAM[fam]} ${dark ? "Dark" : "Light"} is in use.`
-    : a.mode === "light" ? `Always light. ${FAM[a.light]} Light is in use.` : `Always dark. ${FAM[a.dark]} Dark is in use.`;
+  if (hint) hint.textContent = a.mode === "auto" ? `Follows your system, which is ${osDark ? "dark" : "light"} right now: ${famName(fam, dark)} is in use.`
+    : a.mode === "light" ? `Always light. ${famName(a.light, false)} is in use.` : `Always dark. ${famName(a.dark, true)} is in use.`;
   if (applyTheme.last !== now) { applyTheme.last = now; window.dispatchEvent(new Event("sb-theme")); }   // terminals take colors as values
 }
 applyTheme();
@@ -124,8 +127,8 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
 }
 
 /* ---------- Monokai (from designs/Switchboard v8.html), in the same token names ---------- */
-/* Monokai: shared shape and type. Inter + JetBrains Mono, sentence case, softer radii, no chamfers, no glows. */
-[data-theme="monokai-dark"], [data-theme="monokai-light"] {
+/* Monokai and Catppuccin: shared shape and type. Inter + JetBrains Mono, sentence case, softer radii, no chamfers, no glows. */
+[data-theme="monokai-dark"], [data-theme="monokai-light"], [data-theme^="catppuccin"] {
   --font-display: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -202,16 +205,149 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
   --syntax-keyword: #D44E72; --syntax-string: #8C8000; --syntax-number: #9268DB; --syntax-function: #5E8B00; --syntax-type: #008A9F; --syntax-param: #C56300;
 }
 
-/* Monokai is sentence case: no uppercase labels, no letter tracking. */
-[data-theme^="monokai"] * { text-transform: none !important; letter-spacing: 0 !important; }
-[data-theme^="monokai"] ::selection { background: var(--selection-bg); color: var(--text-primary); }
+/* ---------- Catppuccin (catppuccin.com/palette): Latte is light; Frappé, Macchiato and Mocha are dark. Monokai's shape and type. ---------- */
+[data-theme="catppuccin-latte"] {
+  color-scheme: light;
+  --bg-void: #DCE0E8; --bg-base: #EFF1F5; --surface-1: #FFFFFF; --surface-2: #FFFFFF; --surface-3: #CCD0DA; --surface-inset: #E6E9EF;
+  --bg-aurora: #EFF1F5;
+  --border-subtle: #CCD0DA; --border-default: #BCC0CC; --border-strong: #9CA0B0;
+  --text-primary: #4C4F69; --text-secondary: #5C5F77; --text-muted: #6C6F85; --text-disabled: #9CA0B0;
+  --text-on-accent: #EFF1F5; --text-on-primary: #EFF1F5; --text-on-danger: #EFF1F5;
+  --accent-lime: #1E66F5; --accent-lime-hover: #7287FD; --accent-lime-press: #7C7F93;
+  --accent-cyan: #179299; --accent-blue: #1E66F5; --accent-magenta: #EA76CB; --accent-red: #D20F39; --accent-violet: #8839EF; --accent-amber: #DF8E1D;
+  --tint-lime: #7287FD1F; --line-lime: #7287FD8C;
+  --tint-cyan: #1792991F; --line-cyan: #1792998C;
+  --tint-blue: #1E66F51F; --line-blue: #1E66F58C;
+  --tint-neutral: #7C7F931F; --line-neutral: #BCC0CC;
+  --tint-magenta: #EA76CB1F; --line-magenta: #EA76CB8C;
+  --tint-red: #D20F391F; --line-red: #D20F398C;
+  --tint-violet: #8839EF1F; --line-violet: #8839EF8C;
+  --tint-amber: #DF8E1D1F; --line-amber: #DF8E1D8C;
+  --status-success: #40A02B; --tint-success: #40A02B1F; --line-success: #40A02B8C;
+  --status-warning: #DF8E1D; --tint-warning: #DF8E1D1F; --line-warning: #DF8E1D8C;
+  --status-danger: #D20F39; --status-danger-hover: #E64553; --tint-danger: #D20F391F; --line-danger: #D20F398C;
+  --status-info: #1E66F5; --tint-info: #1E66F51F; --line-info: #1E66F58C;
+  --interactive-primary: #8839EF; --interactive-primary-hover: #7130D6; --interactive-primary-press: #5F27B8;
+  --selection-bg: #7C7F934D; --code-bg: #E6E9EF;
+  --surface-card: #FFFFFF; --surface-popover: #FFFFFF; --surface-input: #FFFFFF;
+  --text-body: #4C4F69; --text-label: #5C5F77; --overlay-scrim: rgba(76, 79, 105, 0.45);
+  --surface-tooltip: #4C4F69; --text-tooltip: #EFF1F5; --border-tooltip: #4C4F69;
+  --shadow-1: 0 1px 0 #4C4F690A, 0 1px 3px #4C4F6912;
+  --shadow-2: 0 2px 4px #4C4F6914, 0 8px 24px #4C4F691F;
+  --shadow-3: 0 4px 8px #4C4F691A, 0 24px 64px #4C4F6933;
+  --focus-ring-color: #8839EF; --focus-ring: 2px solid #8839EF;
+  --syntax-keyword: #8839EF; --syntax-string: #40A02B; --syntax-number: #FE640B; --syntax-function: #1E66F5; --syntax-type: #DF8E1D; --syntax-param: #E64553;
+}
+
+[data-theme="catppuccin-frappe"] {
+  color-scheme: dark;
+  --bg-void: #232634; --bg-base: #292C3C; --surface-1: #303446; --surface-2: #414559; --surface-3: #51576D; --surface-inset: #232634;
+  --bg-aurora: #292C3C;
+  --border-subtle: #51576D; --border-default: #626880; --border-strong: #737994;
+  --text-primary: #C6D0F5; --text-secondary: #B5BFE2; --text-muted: #A5ADCE; --text-disabled: #737994;
+  --text-on-accent: #232634; --text-on-primary: #232634; --text-on-danger: #232634;
+  --accent-lime: #BABBF1; --accent-lime-hover: #C6D0F5; --accent-lime-press: #949CBB;
+  --accent-cyan: #81C8BE; --accent-blue: #8CAAEE; --accent-magenta: #F4B8E4; --accent-red: #E78284; --accent-violet: #CA9EE6; --accent-amber: #E5C890;
+  --tint-lime: #BABBF124; --line-lime: #BABBF18C;
+  --tint-cyan: #81C8BE24; --line-cyan: #81C8BE8C;
+  --tint-blue: #8CAAEE24; --line-blue: #8CAAEE8C;
+  --tint-neutral: #949CBB24; --line-neutral: #626880;
+  --tint-magenta: #F4B8E424; --line-magenta: #F4B8E48C;
+  --tint-red: #E7828424; --line-red: #E782848C;
+  --tint-violet: #CA9EE624; --line-violet: #CA9EE68C;
+  --tint-amber: #E5C89024; --line-amber: #E5C8908C;
+  --status-success: #A6D189; --tint-success: #A6D18924; --line-success: #A6D1898C;
+  --status-warning: #E5C890; --tint-warning: #E5C89024; --line-warning: #E5C8908C;
+  --status-danger: #E78284; --status-danger-hover: #EA999C; --tint-danger: #E7828424; --line-danger: #E782848C;
+  --status-info: #8CAAEE; --tint-info: #8CAAEE24; --line-info: #8CAAEE8C;
+  --interactive-primary: #CA9EE6; --interactive-primary-hover: #BABBF1; --interactive-primary-press: #949CBB;
+  --selection-bg: #949CBB40; --code-bg: #232634;
+  --surface-card: #303446; --surface-popover: #414559; --surface-input: #232634;
+  --text-body: #C6D0F5; --text-label: #B5BFE2; --overlay-scrim: rgba(35, 38, 52, 0.72);
+  --surface-tooltip: #232634; --text-tooltip: #C6D0F5; --border-tooltip: #626880;
+  --shadow-1: 0 1px 0 #00000033, 0 1px 3px #00000040;
+  --shadow-2: 0 2px 4px #0000004D, 0 8px 24px #00000066;
+  --shadow-3: 0 4px 8px #00000059, 0 24px 64px #00000080;
+  --focus-ring-color: #BABBF1; --focus-ring: 2px solid #BABBF1;
+  --syntax-keyword: #CA9EE6; --syntax-string: #A6D189; --syntax-number: #EF9F76; --syntax-function: #8CAAEE; --syntax-type: #E5C890; --syntax-param: #EA999C;
+}
+
+[data-theme="catppuccin-macchiato"] {
+  color-scheme: dark;
+  --bg-void: #181926; --bg-base: #1E2030; --surface-1: #24273A; --surface-2: #363A4F; --surface-3: #494D64; --surface-inset: #181926;
+  --bg-aurora: #1E2030;
+  --border-subtle: #494D64; --border-default: #5B6078; --border-strong: #6E738D;
+  --text-primary: #CAD3F5; --text-secondary: #B8C0E0; --text-muted: #A5ADCB; --text-disabled: #6E738D;
+  --text-on-accent: #181926; --text-on-primary: #181926; --text-on-danger: #181926;
+  --accent-lime: #B7BDF8; --accent-lime-hover: #CAD3F5; --accent-lime-press: #939AB7;
+  --accent-cyan: #8BD5CA; --accent-blue: #8AADF4; --accent-magenta: #F5BDE6; --accent-red: #ED8796; --accent-violet: #C6A0F6; --accent-amber: #EED49F;
+  --tint-lime: #B7BDF824; --line-lime: #B7BDF88C;
+  --tint-cyan: #8BD5CA24; --line-cyan: #8BD5CA8C;
+  --tint-blue: #8AADF424; --line-blue: #8AADF48C;
+  --tint-neutral: #939AB724; --line-neutral: #5B6078;
+  --tint-magenta: #F5BDE624; --line-magenta: #F5BDE68C;
+  --tint-red: #ED879624; --line-red: #ED87968C;
+  --tint-violet: #C6A0F624; --line-violet: #C6A0F68C;
+  --tint-amber: #EED49F24; --line-amber: #EED49F8C;
+  --status-success: #A6DA95; --tint-success: #A6DA9524; --line-success: #A6DA958C;
+  --status-warning: #EED49F; --tint-warning: #EED49F24; --line-warning: #EED49F8C;
+  --status-danger: #ED8796; --status-danger-hover: #EE99A0; --tint-danger: #ED879624; --line-danger: #ED87968C;
+  --status-info: #8AADF4; --tint-info: #8AADF424; --line-info: #8AADF48C;
+  --interactive-primary: #C6A0F6; --interactive-primary-hover: #B7BDF8; --interactive-primary-press: #939AB7;
+  --selection-bg: #939AB740; --code-bg: #181926;
+  --surface-card: #24273A; --surface-popover: #363A4F; --surface-input: #181926;
+  --text-body: #CAD3F5; --text-label: #B8C0E0; --overlay-scrim: rgba(24, 25, 38, 0.72);
+  --surface-tooltip: #181926; --text-tooltip: #CAD3F5; --border-tooltip: #5B6078;
+  --shadow-1: 0 1px 0 #00000033, 0 1px 3px #00000040;
+  --shadow-2: 0 2px 4px #0000004D, 0 8px 24px #00000066;
+  --shadow-3: 0 4px 8px #00000059, 0 24px 64px #00000080;
+  --focus-ring-color: #B7BDF8; --focus-ring: 2px solid #B7BDF8;
+  --syntax-keyword: #C6A0F6; --syntax-string: #A6DA95; --syntax-number: #F5A97F; --syntax-function: #8AADF4; --syntax-type: #EED49F; --syntax-param: #EE99A0;
+}
+
+[data-theme="catppuccin-mocha"] {
+  color-scheme: dark;
+  --bg-void: #11111B; --bg-base: #181825; --surface-1: #1E1E2E; --surface-2: #313244; --surface-3: #45475A; --surface-inset: #11111B;
+  --bg-aurora: #181825;
+  --border-subtle: #45475A; --border-default: #585B70; --border-strong: #6C7086;
+  --text-primary: #CDD6F4; --text-secondary: #BAC2DE; --text-muted: #A6ADC8; --text-disabled: #6C7086;
+  --text-on-accent: #11111B; --text-on-primary: #11111B; --text-on-danger: #11111B;
+  --accent-lime: #B4BEFE; --accent-lime-hover: #CDD6F4; --accent-lime-press: #9399B2;
+  --accent-cyan: #94E2D5; --accent-blue: #89B4FA; --accent-magenta: #F5C2E7; --accent-red: #F38BA8; --accent-violet: #CBA6F7; --accent-amber: #F9E2AF;
+  --tint-lime: #B4BEFE24; --line-lime: #B4BEFE8C;
+  --tint-cyan: #94E2D524; --line-cyan: #94E2D58C;
+  --tint-blue: #89B4FA24; --line-blue: #89B4FA8C;
+  --tint-neutral: #9399B224; --line-neutral: #585B70;
+  --tint-magenta: #F5C2E724; --line-magenta: #F5C2E78C;
+  --tint-red: #F38BA824; --line-red: #F38BA88C;
+  --tint-violet: #CBA6F724; --line-violet: #CBA6F78C;
+  --tint-amber: #F9E2AF24; --line-amber: #F9E2AF8C;
+  --status-success: #A6E3A1; --tint-success: #A6E3A124; --line-success: #A6E3A18C;
+  --status-warning: #F9E2AF; --tint-warning: #F9E2AF24; --line-warning: #F9E2AF8C;
+  --status-danger: #F38BA8; --status-danger-hover: #EBA0AC; --tint-danger: #F38BA824; --line-danger: #F38BA88C;
+  --status-info: #89B4FA; --tint-info: #89B4FA24; --line-info: #89B4FA8C;
+  --interactive-primary: #CBA6F7; --interactive-primary-hover: #B4BEFE; --interactive-primary-press: #9399B2;
+  --selection-bg: #9399B240; --code-bg: #11111B;
+  --surface-card: #1E1E2E; --surface-popover: #313244; --surface-input: #11111B;
+  --text-body: #CDD6F4; --text-label: #BAC2DE; --overlay-scrim: rgba(17, 17, 27, 0.72);
+  --surface-tooltip: #11111B; --text-tooltip: #CDD6F4; --border-tooltip: #585B70;
+  --shadow-1: 0 1px 0 #00000033, 0 1px 3px #00000040;
+  --shadow-2: 0 2px 4px #0000004D, 0 8px 24px #00000066;
+  --shadow-3: 0 4px 8px #00000059, 0 24px 64px #00000080;
+  --focus-ring-color: #B4BEFE; --focus-ring: 2px solid #B4BEFE;
+  --syntax-keyword: #CBA6F7; --syntax-string: #A6E3A1; --syntax-number: #FAB387; --syntax-function: #89B4FA; --syntax-type: #F9E2AF; --syntax-param: #EBA0AC;
+}
+
+/* Monokai and Catppuccin are sentence case: no uppercase labels, no letter tracking. */
+:is([data-theme^="monokai"], [data-theme^="catppuccin"]) * { text-transform: none !important; letter-spacing: 0 !important; }
+:is([data-theme^="monokai"], [data-theme^="catppuccin"]) ::selection { background: var(--selection-bg); color: var(--text-primary); }
 /* Buttons and toggles carry the violet interactive color; hover sharpens to it. */
-[data-theme^="monokai"] .mb-btn--secondary:hover:not(:disabled) { border-color: var(--interactive-primary); background: var(--tint-violet); }
-[data-theme^="monokai"] :is(.mb-switch__track, .mb-switch__knob) { border-radius: 999px; }
+:is([data-theme^="monokai"], [data-theme^="catppuccin"]) .mb-btn--secondary:hover:not(:disabled) { border-color: var(--interactive-primary); background: var(--tint-violet); }
+:is([data-theme^="monokai"], [data-theme^="catppuccin"]) :is(.mb-switch__track, .mb-switch__knob) { border-radius: 999px; }
 /* The chamfered buttons set border-radius 0; without the chamfer they get the corners of every other button. */
-[data-theme^="monokai"] :is(.mb-btn--primary, .mb-btn--danger, .aopt.yes) { border-radius: var(--radius-1); }
+:is([data-theme^="monokai"], [data-theme^="catppuccin"]) :is(.mb-btn--primary, .mb-btn--danger, .aopt.yes) { border-radius: var(--radius-1); }
 /* State marks are round dots. */
-[data-theme^="monokai"] .sq, [data-theme^="monokai"] .chgdot, [data-theme^="monokai"] .op-btn .unread { border-radius: 50%; }
+:is([data-theme^="monokai"], [data-theme^="catppuccin"]) .sq, :is([data-theme^="monokai"], [data-theme^="catppuccin"]) .chgdot, :is([data-theme^="monokai"], [data-theme^="catppuccin"]) .op-btn .unread { border-radius: 50%; }
 
 /* ---------- base ---------- */
 * { box-sizing: border-box; }
@@ -1365,6 +1501,20 @@ pre.cmd > .dollar { color: var(--accent-lime); }
             </div>
             <div class="th-name"><b>Monokai Light</b><span>Warm grey, white cards</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
           </button>
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="light:latte" data-fk="theme-fam:light:latte">
+            <div class="th-prev" data-theme="catppuccin-latte" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Catppuccin Latte</b><span>Pale lavender-grey, mauve actions</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
         </div>
       </div>
       <div class="scard">
@@ -1397,6 +1547,48 @@ pre.cmd > .dollar { color: var(--accent-lime); }
               </div>
             </div>
             <div class="th-name"><b>Monokai Dark</b><span>Warm charcoal, Monokai syntax</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="dark:frappe" data-fk="theme-fam:dark:frappe">
+            <div class="th-prev" data-theme="catppuccin-frappe" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Catppuccin Frappé</b><span>Muted slate blue, pastel accents</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="dark:macchiato" data-fk="theme-fam:dark:macchiato">
+            <div class="th-prev" data-theme="catppuccin-macchiato" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Catppuccin Macchiato</b><span>Deep slate, pastel accents</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
+          </button>
+          <button type="button" role="radio" class="th-tile" data-act="theme-fam" data-id="dark:mocha" data-fk="theme-fam:dark:mocha">
+            <div class="th-prev" data-theme="catppuccin-mocha" aria-hidden="true">
+              <div class="bar"><i class="sq" style="background:var(--accent-lime)"></i><i style="width:34px; background:var(--text-secondary)"></i><i style="margin-left:auto; width:20px; background:var(--text-muted)"></i></div>
+              <div class="body">
+                <div class="card" style="flex:1.2; border-color:var(--line-amber)"><div class="row"><i class="sq" style="background:var(--accent-amber)"></i><i style="width:55%; height:5px; background:var(--text-primary)"></i></div>
+                  <div class="code"><i style="width:18%; background:var(--syntax-keyword, var(--accent-magenta))"></i><i style="width:40%; background:var(--text-primary)"></i></div>
+                  <div class="row btns"><i class="pri"></i><i class="sec"></i></div></div>
+                <div class="card"><div class="row"><i class="sq" style="background:var(--accent-cyan)"></i><i style="width:60%; height:5px; background:var(--text-primary)"></i></div>
+                  <i style="width:80%; background:var(--text-muted)"></i>
+                  <div class="row btns"><i class="sq" style="background:var(--status-success)"></i><i class="sq" style="background:var(--accent-violet)"></i><i class="sq" style="background:var(--status-danger)"></i></div></div>
+              </div>
+            </div>
+            <div class="th-name"><b>Catppuccin Mocha</b><span>Darkest flavor, pastel accents</span><span class="th-state" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span></span></span></div>
           </button>
         </div>
       </div>
