@@ -24,10 +24,16 @@ export const PORT = Number(process.env.PORT ?? 4477);
 
 // Resolved once (macOS /tmp is /private/tmp), so attach_file can compare real paths against it.
 mkdirSync(process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard"), { recursive: true });
-export const HOME = realpathSync(process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard"));
+export const HOME = realpathSync.native(process.env.SWITCHBOARD_HOME ?? join(homedir(), ".switchboard"));
 const dbPath = join(HOME, "db.sqlite");
 const fresh = !existsSync(dbPath);
 export const db = new Database(dbPath);
+// WAL: a commit appends to the log instead of syncing the whole journal, ~3 ms → ~0.1 ms on Windows. NORMAL can lose
+// the last commits on a power cut but never corrupts the file. busy_timeout: a reader in another process (a backup,
+// the sqlite3 shell) makes a write wait instead of failing with SQLITE_BUSY.
+db.run("PRAGMA journal_mode = WAL");
+db.run("PRAGMA synchronous = NORMAL");
+db.run("PRAGMA busy_timeout = 5000");
 migrateDb(db);
 
 export type Todo = {
@@ -52,7 +58,7 @@ export const projectRow = (id: number | null) => (id == null ? null : db.query("
 // work: the file sits in work/, where agents keep output meant for themselves; the Files tab folds those.
 export const filesOf = (todoId: number) =>
   (db.query("SELECT id, path, session_no, by_user FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null; by_user: number | null }[])
-    .map((f) => ({ ...f, work: f.path.startsWith(join(artifactDir(todoId), "work") + "/") }));
+    .map((f) => ({ ...f, work: f.path.startsWith(join(artifactDir(todoId), "work") + sep) }));
 export type Comment = { id: number; todo_id: number; root: string; rel: string; path: string; quote: string; line: number | null; body: string; reply: string | null; state: "open" | "replied" | "resolved"; created_at: string; replied_at: string | null };
 export const commentsOf = (todoId: number, where = "1") =>
   db.query(`SELECT * FROM comments WHERE todo_id = ? AND ${where} ORDER BY path, line, id`).all(todoId) as Comment[];
@@ -117,14 +123,15 @@ function moveArtifactFolders() {
 }
 
 // ---------- live updates (one SSE stream) ----------
-// A TODO event carries the TODO's summary and the transcript rows that changed, so the page patches them in place.
-// `full` asks the page to refetch the TODO's whole transcript: anything but setTodo, addEvent and setEvent sets it,
-// so a write the patches do not cover (messages, sessions, files, comments) is never missed.
+// A TODO event carries the TODO's summary and the transcript rows, messages and comments that changed, so the page
+// patches them in place. `full` asks the page to refetch the TODO's whole transcript: a write the patches do not cover
+// (sessions, files) sets it, so it is never missed.
 
 const clients = new Set<ReadableStreamDefaultController>();
 const enc = new TextEncoder();
+type TodoNote = { todo: number; full: boolean; events: Set<number>; messages: Set<number>; comments: boolean };
 // One change often writes a status, a message and an event; they go out together, 50 ms after the first.
-const outbox = new Map<string, object | { todo: number; full: boolean; events: Set<number> }>();
+const outbox = new Map<string, object | TodoNote>();
 let flushing: Promise<void> = Promise.resolve();
 const send = (s: string) => { for (const c of clients) try { c.enqueue(enc.encode(`data: ${s}\n\n`)); } catch { clients.delete(c); } };
 function queue(key: string, ev: object) {
@@ -142,12 +149,15 @@ async function flush() {
   const n = ++seq;
   const out = await Promise.all(batch.map(async (ev: any) => {
     if (typeof ev.todo !== "number") return JSON.stringify(ev);
-    const events = ev.full || !ev.events.size ? undefined
-      : (db.query(`SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE id IN (${[...ev.events].join(",")})`).all() as any[])
+    const note = ev as TodoNote;
+    const events = note.full || !note.events.size ? undefined
+      : (db.query(`SELECT id, kind, actor, detail, at, session_no, meta FROM events WHERE id IN (${[...note.events].join(",")})`).all() as any[])
         .map((e) => ({ ...e, meta: e.meta ? JSON.parse(e.meta) : null }));
-    const [todo] = await summaries("t.id = ?", [ev.todo]);
+    const messages = note.full || !note.messages.size ? undefined : [...note.messages].map(messageOut).filter((m) => m);
+    const comments = note.full || !note.comments ? undefined : commentsOf(note.todo);
+    const [todo] = await summaries("t.id = ?", [note.todo]);
     // A TODO deleted meanwhile has no summary: the page refetches the list.
-    return JSON.stringify(todo ? { type: "todo", id: ev.todo, seq: n, todo, events, full: ev.full || undefined } : { type: "todos" });
+    return JSON.stringify(todo ? { type: "todo", id: note.todo, seq: n, todo, events, messages, comments, full: note.full || undefined } : { type: "todos" });
   }));
   for (const s of out) send(s);
 }
@@ -155,15 +165,27 @@ export function emit(ev: any) {
   if (ev.type === "todo") return noteTodo(ev.id, "summary");
   queue(JSON.stringify(ev), ev);
 }
-// `full`: the transcript may have changed anywhere; a number: that event row changed; "summary": only the todos row.
-// Every note but a git refresh's own (`git: false`) marks the worktree's git state for a new look.
-export function noteTodo(id: number, part: "full" | "summary" | number, git = true) {
-  const key = `todo:${id}`;
-  let p = outbox.get(key) as { todo: number; full: boolean; events: Set<number> } | undefined;
-  if (!p) queue(key, p = { todo: id, full: false, events: new Set() });
+// `full`: the transcript may have changed anywhere; a number: that event row changed; "comments": the TODO's comments;
+// "summary": only the todos row. `git` (all but a git refresh's own note, a draft and a comment) marks the worktree's
+// git state for a new look.
+export function noteTodo(id: number, part: "full" | "summary" | "comments" | number, git = true) {
+  const p = todoNote(id, git);
   if (part === "full") p.full = true;
+  else if (part === "comments") p.comments = true;
   else if (typeof part === "number") p.events.add(part);
+}
+// Messages of a TODO added or changed (state, session); the operator's own messages refetch the operator chat.
+export function noteMessages(todoId: number | null, ids: number[]) {
+  if (todoId === null) return emit({ type: "operator" });
+  const p = todoNote(todoId);
+  for (const id of ids) p.messages.add(id);
+}
+function todoNote(id: number, git = true) {
+  const key = `todo:${id}`;
+  let p = outbox.get(key) as TodoNote | undefined;
+  if (!p) queue(key, p = { todo: id, full: false, events: new Set(), messages: new Set(), comments: false });
   if (git) gitTouched(id);
+  return p;
 }
 export const changed = (todoId: number | null) => todoId === null ? emit({ type: "operator" }) : noteTodo(todoId, "full");
 
@@ -187,7 +209,7 @@ export function addMessage(todoId: number | null, author: string, body: string, 
     [todoId, author, body, state, fileId, at, state === "delivered" ? at : null, state === "delivered" ? liveSessionNo(todoId) : null, via],
   ).lastInsertRowid);
   if (todoId !== null) db.run("UPDATE todos SET updated_at = ? WHERE id = ?", [at, todoId]);
-  changed(todoId);
+  noteMessages(todoId, [id]);
   return id;
 }
 export function addEvent(todoId: number | null, kind: string, actor: string, detail: string | null = null, meta: object | null = null) {
@@ -316,15 +338,17 @@ async function fetchPrs(projectId: number) {
   const prev = prStore.get(projectId) ?? { at: null, byBranch: new Map(), byNumber: new Map(), error: null };
   const o = await ghRepoQuery(projectId, repo, prQuery(branches.length, numbers.length),
     [...branches.flatMap((b, i) => ["-f", `b${i}=${b}`]), ...numbers.flatMap((n, i) => ["-F", `n${i}=${n}`])]);
-  if ("error" in o) { prStore.set(projectId, { ...prev, error: o.error }); emit({ type: "todos" }); return; }
-  const newest = (i: number) => o.repo[`b${i}`]?.nodes?.[0]; // pullRequests(...) returns a list
-  prStore.set(projectId, {
+  const next: PrStore = "error" in o ? { ...prev, error: o.error } : {
     at: now(), error: null,
-    byBranch: new Map(branches.flatMap((b, i) => (newest(i) ? [[b, prFromNode(newest(i))]] : []))),
+    byBranch: new Map(branches.flatMap((b, i) => (newest(o.repo, i) ? [[b, prFromNode(newest(o.repo, i))]] : []))),
     byNumber: new Map(numbers.flatMap((n, i) => (o.repo[`n${i}`] ? [[n, prFromNode(o.repo[`n${i}`])]] : []))),
-  });
-  emit({ type: "todos" });
+  };
+  prStore.set(projectId, next);
+  // The list refetches only when a PR or the error changed; the 2-minute refresh mostly finds nothing new.
+  if (prSig(next) !== prSig(prev)) emit({ type: "todos" });
 }
+const newest = (repo: any, i: number) => repo[`b${i}`]?.nodes?.[0]; // pullRequests(...) returns a list
+const prSig = (s: PrStore) => JSON.stringify([!!s.at, [...s.byBranch], [...s.byNumber], s.error]);   // !!at: "no PR" shows after the first check
 
 // One `gh api graphql` call on the repository, for the PR refresh and the worktree scan. Each gh account sees only its
 // own repositories, so the call runs as each logged-in account in turn; the one that worked for the project goes first.
@@ -579,7 +603,7 @@ async function stopPort(kind: string, key: string) {
   if (kind === "container") {
     const r = await sh(["docker", "stop", key], { timeout: 30_000 });
     if (!r.ok) throw httpError(500, `docker stop failed: ${r.err}`);
-  } else killTree(Number(key), "SIGTERM");
+  } else await killTree(Number(key), "SIGTERM");
   lastScan = lastScan.filter((r) => r !== row);
   return json({ ok: true });
 }
@@ -587,6 +611,7 @@ async function stopPort(kind: string, key: string) {
 function messageOut(id: number) {
   const m = db.query(`SELECT m.id, m.author, m.body, m.state, m.committed_at AS at, m.file_id, m.session_no, m.via, f.path AS file_path
     FROM messages m LEFT JOIN files f ON f.id = m.file_id WHERE m.id = ?`).get(id) as any;
+  if (!m) return null;   // its TODO was deleted before a patch read it
   const { file_path, ...rest } = m;
   return { ...rest, file_name: file_path ? basename(file_path) : null, attachments: attachmentsOf(id).map(({ id, name, path }) => ({ id, name, size: Bun.file(path).size })) };
 }
@@ -625,9 +650,29 @@ function registerDiskFiles(t: Todo) {
       } catch {}
     }
   };
-  walk(realpathSync(dir), true);
+  walk(realpathSync.native(dir), true);
   for (const p of found) db.run("INSERT OR IGNORE INTO files (todo_id, path) VALUES (?, ?)", [t.id, p]);
   for (const f of filesOf(t.id)) if (!existsSync(f.path)) dropFile(t.id, f.id);
+}
+
+// A file's stored path is its real path as the disk spells it (realpathSync.native): on Windows `C:/x` and `c:\X` name
+// the same file, and the Files list showed it twice. Rows stored in another spelling are rewritten once at start; a
+// row that turns out to be a copy of another moves its comments and messages to that row and goes.
+function canonicalFilePaths() {
+  if (getMeta("file_paths") === "native") return;
+  for (const f of db.query("SELECT id, todo_id, path FROM files ORDER BY id").all() as { id: number; todo_id: number; path: string }[]) {
+    let p: string;
+    try { p = realpathSync.native(f.path); } catch { continue; }   // gone from disk: registerDiskFiles drops it
+    if (p === f.path) continue;
+    const keep = db.query("SELECT id FROM files WHERE path = ?").get(p) as { id: number } | null;
+    db.transaction(() => {
+      db.run("UPDATE comments SET rel = ?, path = ? WHERE root = 'todo' AND rel = ?", [String(keep?.id ?? f.id), p, String(f.id)]);
+      if (!keep) return void db.run("UPDATE files SET path = ? WHERE id = ?", [p, f.id]);
+      db.run("UPDATE messages SET file_id = ? WHERE file_id = ?", [keep.id, f.id]);
+      db.run("DELETE FROM files WHERE id = ?", [f.id]);
+    })();
+  }
+  setMeta("file_paths", "native");
 }
 
 function dropFile(todoId: number, fileId: number) {
@@ -789,7 +834,7 @@ function rootDir(t: Todo, root: string) {
   if (!base || !existsSync(base)) throw httpError(404, root === "worktree" ? "this TODO has no worktree on disk" : root === "project" ? "this TODO has no topic" : "unknown root");
   return base;
 }
-function fsTarget(t: Todo, root: string, rel: string, write = false) {
+async function fsTarget(t: Todo, root: string, rel: string, write = false) {
   const base = rootDir(t, root);
   const p = projectRow(t.project_id)!;   // rootDir found a folder, so the TODO has a topic
   if (typeof rel !== "string" || !rel || isAbsolute(rel)) throw httpError(400, "path must be relative to the root");
@@ -798,7 +843,7 @@ function fsTarget(t: Todo, root: string, rel: string, write = false) {
   // A link whose target is missing would make a write create that target, wherever it points.
   if (!existsSync(lexical)) { let link = false; try { link = lstatSync(lexical).isSymbolicLink(); } catch {} if (link) throw httpError(403, `${rel} is a link to a missing file`); }
   const real = existsSync(lexical) ? realpathSync(lexical) : join(realpathSync(dirname(lexical)), basename(lexical));
-  const wt = worktreeRoot(p.local_path);
+  const wt = await worktreeRoot(p.local_path);
   const allowed = [realpathSync(p.local_path), ...(wt ? [realpathSync(wt)] : [])];
   if (!allowed.some((d) => isInside(real, d))) throw httpError(403, `${rel} points outside the project`);
   if (write && (rel.split("/").includes(".git") || real.split("/").includes(".git"))) throw httpError(403, "writes inside .git/ are refused");
@@ -955,15 +1000,17 @@ function killTerm(x: Term) {
   x.proc = null;
   endGrant(x);
   // SIGHUP, as when a terminal window closes; the processes started in it end too, also nohup or disowned ones.
-  if (p && p.exitCode === null && !p.signalCode) killTree(p.pid, "SIGHUP");   // an ended shell's pid may be reused
-  try { p?.terminal?.close(); } catch {}
+  // The PTY closes once the tree is read: the shell may exit on it, and its children would leave the tree.
+  const close = () => { try { p?.terminal?.close(); } catch {} };
+  if (p && p.exitCode === null && !p.signalCode) void killTree(p.pid, "SIGHUP").finally(close);   // an ended shell's pid may be reused
+  else close();
 }
 // Item 156: a shell runs a foreground program when the terminal's foreground process group is not the shell's own.
 // Background jobs (`cmd &`) do not count; closing the tab ends them with the shell. Unknown (Windows, ps fails): busy.
-function termBusy(x: Term) {
+async function termBusy(x: Term) {
   if (x.exited || !x.proc) return false;
   if (x.kind === "claude" || process.platform === "win32") return true;
-  const [tpgid, pgid] = Bun.spawnSync(["ps", "-o", "tpgid=,pgid=", "-p", String(x.proc.pid)]).stdout.toString().trim().split(/\s+/);
+  const [tpgid, pgid] = (await sh(["ps", "-o", "tpgid=,pgid=", "-p", String(x.proc.pid)])).out.split(/\s+/);
   return !tpgid || tpgid !== pgid;
 }
 export function closeTerms(todoId: number | null) {
@@ -1200,7 +1247,7 @@ async function api(req: Request, path: string): Promise<Response> {
     let n = 1, p = join(dir, "notes.md");
     while (existsSync(p)) p = join(dir, `notes-${++n}.md`);
     writeFileSync(p, "", { flag: "wx" });
-    const r = db.run("INSERT INTO files (todo_id, path, by_user) VALUES (?, ?, 1)", [t.id, realpathSync(p)]);
+    const r = db.run("INSERT INTO files (todo_id, path, by_user) VALUES (?, ?, 1)", [t.id, realpathSync.native(p)]);
     addEvent(t.id, "file created", "user", basename(p));
     changed(t.id);
     return json({ id: Number(r.lastInsertRowid), name: basename(p) });
@@ -1260,23 +1307,24 @@ async function api(req: Request, path: string): Promise<Response> {
         const f = db.query("SELECT path FROM files WHERE id = ? AND todo_id = ?").get(Number(body.file_id), t.id) as { path: string } | null;
         if (!f) return fail("no such file", 404);
         file = f.path; rel = String(body.file_id);
-      } else { file = fsTarget(t, String(body.root), String(body.path)).real; rel = String(body.path); }
+      } else { file = (await fsTarget(t, String(body.root), String(body.path))).real; rel = String(body.path); }
       const line = Number.isInteger(body.line) && body.line > 0 ? body.line : null;
       const r = db.run("INSERT INTO comments (todo_id, root, rel, path, quote, line, body, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)",
         [t.id, String(body.root), rel, file, quote, line, text, now()]);
-      changed(t.id);
-      return json({ id: Number(r.lastInsertRowid) });
+      noteTodo(t.id, "comments", false);
+      // The TODO's comments come back, so the page shows the change without refetching the transcript.
+      return json({ id: Number(r.lastInsertRowid), comments: commentsOf(t.id) });
     }
     const c = m[2] ? db.query("SELECT * FROM comments WHERE id = ? AND todo_id = ?").get(Number(m[2]), t.id) as Comment | null : null;
     if (!c) return fail("no such comment", 404);
-    if (method === "DELETE") { db.run("DELETE FROM comments WHERE id = ?", [c.id]); changed(t.id); return json({ ok: true }); }
+    if (method === "DELETE") { db.run("DELETE FROM comments WHERE id = ?", [c.id]); noteTodo(t.id, "comments", false); return json({ ok: true, comments: commentsOf(t.id) }); }
     if (method === "PATCH") {
       // An edited comment is open again: the agent's next list_comments returns the new text with its earlier reply.
       if (typeof body.body === "string" && body.body.trim()) db.run("UPDATE comments SET body = ?, state = 'open' WHERE id = ?", [body.body.trim(), c.id]);
       else if (body.state === "resolved" || body.state === "open") db.run("UPDATE comments SET state = ? WHERE id = ?", [body.state, c.id]);
       else return fail("body or state (resolved, open) is required");
-      changed(t.id);
-      return json({ ok: true });
+      noteTodo(t.id, "comments", false);
+      return json({ ok: true, comments: commentsOf(t.id) });
     }
   }
 
@@ -1286,7 +1334,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (what === "tree" && method === "GET") {
       const base = rootDir(t, String(root));
       // A topic folder that is not a git repository: every file, no marks and no base, so no Diff either.
-      if (!isGitFolder(base)) return json({ paths: plainFiles(base), marks: {}, links: [], base: null, dir: base, git: false });
+      if (!(await isGitFolder(base))) return json({ paths: plainFiles(base), marks: {}, links: [], base: null, dir: base, git: false });
       const b = await diffBase(base);
       const [files, others, diff] = await Promise.all([
         sh(["git", "-C", base, "--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]),
@@ -1308,18 +1356,18 @@ async function api(req: Request, path: string): Promise<Response> {
       return json(url.searchParams.get("tag") === tag ? { unchanged: true } : { ...tree, tag });
     }
     if (what === "fs" && method === "GET") {
-      const { real } = fsTarget(t, String(root), String(rel));
+      const { real } = await fsTarget(t, String(root), String(rel));
       if (!existsSync(real)) return fail(`${rel} no longer exists on disk`, 404);
       return json({ path: rel, abs: real, ...fileFacts(real) });
     }
     if (what === "fs/raw" && method === "GET") {
-      const { real } = fsTarget(t, String(root), String(rel));
+      const { real } = await fsTarget(t, String(root), String(rel));
       if (!existsSync(real)) return fail("no such file", 404);
       return new Response(Bun.file(real), { headers: { "content-security-policy": "sandbox" } });
     }
-    if (what === "fs/reveal" && method === "POST") return reveal(fsTarget(t, String(root), String(rel)).real);
+    if (what === "fs/reveal" && method === "POST") return reveal((await fsTarget(t, String(root), String(rel))).real);
     if (what === "fs" && method === "PUT") {
-      const { real } = fsTarget(t, String(root), String(rel), true);
+      const { real } = await fsTarget(t, String(root), String(rel), true);
       if (typeof body.content !== "string") return fail("content is required");
       // Item 108: worktree files lock while the agent runs; the project folder has no lock, the mtime check guards it.
       if (root === "worktree" && t.status === "running") return json({ error: "running" }, 409);
@@ -1330,7 +1378,7 @@ async function api(req: Request, path: string): Promise<Response> {
       return json({ mtime: statSync(real).mtimeMs });
     }
     if (what === "diff" && method === "GET") {
-      const { base, real } = fsTarget(t, String(root), String(rel));
+      const { base, real } = await fsTarget(t, String(root), String(rel));
       const b = await diffBase(base);
       const top = await sh(["git", "-C", base, "rev-parse", "--show-toplevel"]);
       const inRepo = relative(top.ok ? realpathSync(top.out) : base, join(realpathSync(base), String(rel)));
@@ -1347,7 +1395,7 @@ async function api(req: Request, path: string): Promise<Response> {
 
   if ((m = path.match(/^\/api\/todos\/(\d+)\/terminals(?:\/(\d+)\/(restart|close|busy))?$/))) {
     const id = Number(m[1]);
-    if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: termsOf(id).map((x) => ({ ...termOut(x), busy: termBusy(x) })), unsupported: TERM_UNSUPPORTED }); }
+    if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: await Promise.all(termsOf(id).map(async (x) => ({ ...termOut(x), busy: await termBusy(x) }))), unsupported: TERM_UNSUPPORTED }); }
     if (!m[2] && method === "POST") {
       const t = liveTodo(id);
       if (TERM_UNSUPPORTED) return fail(TERM_UNSUPPORTED, 409);
@@ -1373,7 +1421,7 @@ async function api(req: Request, path: string): Promise<Response> {
       emit({ type: "terminals", id });
       return json({});
     }
-    if (m[3] === "busy" && method === "GET") return json({ busy: termBusy(x) });
+    if (m[3] === "busy" && method === "GET") return json({ busy: await termBusy(x) });
     if (m[3] === "restart" && method === "POST") {
       killTerm(x);
       termSend(x, enc8.encode("\x1bc"));
@@ -1413,7 +1461,7 @@ async function api(req: Request, path: string): Promise<Response> {
   if ((m = path.match(/^\/api\/todos\/(\d+)\/draft$/)) && method === "PUT") {
     const id = todoOr404(Number(m[1])).id;
     setDraft(`todo:${id}`, String(body.body ?? ""));
-    changed(id);
+    noteTodo(id, "summary", false);   // has_draft; the page keeps the text itself
     return json({});
   }
 
@@ -1640,8 +1688,7 @@ async function api(req: Request, path: string): Promise<Response> {
     return json(db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE id = ?").get(id));
   }
   if (path === "/api/operator/draft" && method === "PUT") {
-    setDraft("operator", String(body.body ?? ""));
-    changed(null);
+    setDraft("operator", String(body.body ?? ""));   // no event: the page keeps the text itself
     return json({});
   }
   if (path === "/api/operator/new-session" && method === "POST") {
@@ -1707,6 +1754,7 @@ console.log(`switchboard on http://${HOST}:${PORT}/#token=${TOKEN} (data in ${HO
 
 // After the bind, like the reset below: a second copy that exits on EADDRINUSE must not move a live app's folders.
 moveArtifactFolders();
+canonicalFilePaths();
 
 // A run cannot survive a restart. Queued messages stay queued until the user presses Deliver.
 // Only after Bun.serve has bound the port: a second copy that fails with EADDRINUSE must not touch the live app's TODOs.

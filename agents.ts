@@ -15,7 +15,13 @@ export type AgentInfo = {
   hint: string | null;    // how to get it when it is not found
 };
 
-const adapter = (pkg: string) => join(dirname(Bun.resolveSync(`${pkg}/package.json`, import.meta.dir)), "dist/index.js");
+// Resolved once per package: the agent list asks on every /api/meta.
+const adapters = new Map<string, string>();
+const adapter = (pkg: string) => {
+  let p = adapters.get(pkg);
+  if (!p) adapters.set(pkg, p = join(dirname(Bun.resolveSync(`${pkg}/package.json`, import.meta.dir)), "dist/index.js"));
+  return p;
+};
 
 // The bundled adapter runs on the Bun that runs this server (verified in the spike): no Node needed. Codex's adapter,
 // @agentclientprotocol/codex-acp, ran on Bun too (P5 probe), so it would be `adapter("@agentclientprotocol/codex-acp")`.
@@ -58,7 +64,11 @@ export function agentList(): AgentInfo[] {
   ];
 }
 
-export const agentName = (id: string | null) => agentList().find((a) => a.id === (id || DEFAULT_AGENT))?.name ?? id ?? "Claude";
+// Without agentList: that looks up every agent's command on PATH, and a name needs none of it.
+export const agentName = (id: string | null) => {
+  const key = id || DEFAULT_AGENT;
+  return BUILTINS.find((b) => b.id === key)?.name ?? customRow(key)?.name ?? id ?? "Claude";
+};
 export const isBuiltin = (id: string) => BUILTINS.some((b) => b.id === id);
 export const isKnown = (id: string) => isBuiltin(id) || !!customRow(id);
 

@@ -12,7 +12,7 @@ import {
 } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
-  HOME, addEvent, addMessage, artifactDir, attachmentsOf, changed, db, emit, filesOf, getMeta, liveSessionNo, now, projectRow, refreshPrs,
+  HOME, addEvent, addMessage, artifactDir, attachmentsOf, changed, db, emit, filesOf, getMeta, liveSessionNo, noteMessages, now, projectRow, refreshPrs,
   saveAttachments, sessionsOf, setEvent, setMeta, setTodo, todoRow, type Todo, type Upload,
 } from "./server";
 
@@ -81,8 +81,9 @@ const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, 
 - A topic is what the user files TODOs under: one folder on disk (often a git repository, not always), with its own prompt and profile. Say "topic" to the user; name its folder only when the path matters.
 - Your replies are shown in full and rendered as markdown. Brainstorming with the user here is fine.`;
 
-// `git rev-parse` in the topic's folder: a plain folder is a topic too.
-export const isGitFolder = (dir: string) => Bun.spawnSync(["git", "-C", dir, "rev-parse", "--git-dir"]).exitCode === 0;
+// `git rev-parse` in the topic's folder: a plain folder is a topic too. Async: a sync spawn would block the server.
+export const isGitFolder = async (dir: string) =>
+  (await Bun.spawn(["git", "-C", dir, "rev-parse", "--git-dir"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exited) === 0;
 
 const OPERATOR_BUILTINS = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"];
 // An idle agent process is closed after this; the next turn starts a new one with session/resume.
@@ -344,7 +345,7 @@ function takeMessages(todoId: number | null, state: "pending" | "queued") {
   const msgs = db.query("SELECT id, body FROM messages WHERE todo_id IS ? AND state = ? ORDER BY id").all(todoId, state) as { id: number; body: string }[];
   const at = now(), no = liveSessionNo(todoId);
   for (const m of msgs) db.run("UPDATE messages SET state = 'delivered', delivered_at = ?, session_no = ? WHERE id = ?", [at, no, m.id]);
-  if (msgs.length) changed(todoId);
+  if (msgs.length) noteMessages(todoId, msgs.map((m) => m.id));
   return { ids: msgs.map((m) => m.id), bodies: msgs.map((m) => withAttachments(m.body, attachmentsOf(m.id).map((a) => a.path))) };
 }
 
@@ -355,9 +356,10 @@ function takeMessages(todoId: number | null, state: "pending" | "queued") {
 const steering = new Set<number>();
 // The last steer of the running turn: its messages and its `steered` event, for a Stop before the agent read them.
 const steered = new Map<number, { ids: number[]; eventId: number }>();
-function requeue(ids: number[]) {
+function requeue(todoId: number, ids: number[]) {
   const back = db.prepare("UPDATE messages SET state = 'queued', delivered_at = NULL, session_no = NULL WHERE id = ?");
   for (const id of ids) back.run(id);
+  noteMessages(todoId, ids);
 }
 async function steerQueued(todoId: number, agent: Agent) {
   if (steering.has(todoId) || pending.has(todoId) || interrupting.has(todoId) || !running.has(todoId)) return;
@@ -376,7 +378,7 @@ async function steerQueued(todoId: number, agent: Agent) {
     steered.set(todoId, { ids, eventId: addEvent(todoId, "steered", "user", bodies.join("\n\n")) });
     return;
   }
-  requeue(ids);
+  requeue(todoId, ids);
   addEvent(todoId, "steer declined", "app", error || "no turn running");
   deliver(todoId, "queued messages");
 }
@@ -652,13 +654,24 @@ export function deliver(todoId: number, reason = "deliver") {
 
 // `git config worktree.root`, else <local_path>/../worktrees. Created if missing, so the agent always gets a real folder.
 // null for a topic folder that is not a git repository: it gets no worktrees, so no folder is made next to it.
-export function worktreeRoot(localPath: string) {
-  if (!isGitFolder(localPath)) return null;
-  const r = Bun.spawnSync(["git", "-C", localPath, "config", "worktree.root"]);
-  const set = r.exitCode === 0 ? r.stdout.toString().trim() : "";
-  const root = resolve(localPath, set ? set.replace(/^~(?=\/|$)/, homedir()) : "../worktrees");
-  mkdirSync(root, { recursive: true });
+// Kept a minute per folder: the Files tab checks every path it opens against it.
+const worktreeRoots = new Map<string, { at: number; root: Promise<string | null> }>();
+export async function worktreeRoot(localPath: string) {
+  let e = worktreeRoots.get(localPath);
+  if (!e || Date.now() - e.at > 60_000) {
+    worktreeRoots.set(localPath, e = { at: Date.now(), root: findWorktreeRoot(localPath) });
+    e.root.catch(() => worktreeRoots.delete(localPath));
+  }
+  const root = await e.root;
+  if (root) mkdirSync(root, { recursive: true });
   return root;
+}
+async function findWorktreeRoot(localPath: string) {
+  if (!(await isGitFolder(localPath))) return null;
+  const r = Bun.spawn(["git", "-C", localPath, "config", "worktree.root"], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+  const [out, code] = await Promise.all([new Response(r.stdout).text(), r.exited]);
+  const set = code === 0 ? out.trim() : "";
+  return resolve(localPath, set ? set.replace(/^~(?=\/|$)/, homedir()) : "../worktrees");
 }
 
 // One run = one turn. `open` starts session `no` (item 68: Start for 1, New session for the rest; `header` is the
@@ -681,7 +694,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
     let agent: Agent, prompt = "";
     try {
       mkdirSync(dir, { recursive: true });
-      const worktrees = p ? worktreeRoot(p.local_path) : null;   // creates the root: inside try, like the artifact folder
+      const worktrees = p ? await worktreeRoot(p.local_path) : null;   // creates the root: inside try, like the artifact folder
       prompt = [topicIntro(p, worktrees), p?.agent_prompt.trim()].filter(Boolean).join("\n\n");
       agent = await agentFor(todoId, open ? null : t.session_id, {
         agent: agentId,
@@ -835,7 +848,7 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   const last = steered.get(todoId);
   steered.delete(todoId);
   if (stopped && last && !text && !db.query("SELECT 1 FROM events WHERE todo_id = ? AND id > ? AND kind IN ('say', 'thought', 'tool')").get(todoId, last.eventId)) {
-    requeue(last.ids);
+    requeue(todoId, last.ids);
     addEvent(todoId, "steer undone", "app", "stopped before the agent read the message");
   }
   if (error && !stopped) {
