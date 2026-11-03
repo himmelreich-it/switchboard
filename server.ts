@@ -1,10 +1,10 @@
-import type { ServerWebSocket, Subprocess } from "bun";
+import type { Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, revealCommand, vscodeCommand, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
   descendants,
 } from "./lib";
@@ -846,20 +846,21 @@ function fileFacts(real: string) {
 
 // ---------- terminals (items 111-120) ----------
 
+// The PTYs live in switchboard-core (core/, Rust): it starts the processes, keeps their scrollback and serves the
+// page's terminal WebSockets on its own loopback port. This file keeps what a terminal is (its TODO, kind, folder,
+// number, grant) and tells the core what to start and stop, as JSON lines over the core's stdin and stdout.
 // Kept in memory only: a terminal ends with its tab, its TODO's removal or the app (item 115).
 type Term = {
   id: number; todoId: number; kind: "shell" | "claude"; root: "worktree" | "project"; cwd: string; no: number; message: string;
-  title: string | null; proc: Subprocess | null; exited: boolean; code: number | null; signal: string | null;
+  title: string | null; running: boolean; exited: boolean; code: number | null; signal: string | null;
   secret: string | null;   // a Claude terminal's grant for the app tools (P6), revoked when its process ends
-  buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<{ tid: number }>>; cols: number; rows: number; fresh: boolean;
+  cols: number; rows: number;
 };
 const terms = new Map<number, Term>();
 const termNos = new Map<string, number>();   // "todo:kind" -> last number; numbers only count up (Shell 1, Shell 2, ...)
 let termSeq = 0;
-const TERM_BUF = 256 * 1024;   // scrollback replayed when a page attaches
-// Bun's PTY runs on Windows (ConPTY) since 1.4; 1.4.2 is the version it was checked with.
-const TERM_MIN = process.platform === "win32" ? "1.4.2" : "1.3.5";
-export const TERM_UNSUPPORTED = !versionAtLeast(Bun.version, TERM_MIN) ? `Terminals need Bun ${TERM_MIN} or newer${process.platform === "win32" ? " on Windows" : ""}. This server runs Bun ${Bun.version}.` : null;
+const CORE = process.env.SWITCHBOARD_CORE || join(import.meta.dir, "core", "target", "release", process.platform === "win32" ? "switchboard-core.exe" : "switchboard-core");
+export const TERM_UNSUPPORTED = existsSync(CORE) ? null : "Terminals need switchboard-core, which is not built yet: run bun run core (it needs Rust's cargo), then restart Switchboard.";
 // The shell of a new terminal: a login shell on macOS and Linux; PowerShell (else cmd.exe) on Windows, which has none.
 const SHELL = process.env.SWITCHBOARD_SHELL || (process.platform === "win32"
   ? Bun.which("pwsh") || Bun.which("powershell") || process.env.COMSPEC || "cmd.exe"
@@ -867,7 +868,72 @@ const SHELL = process.env.SWITCHBOARD_SHELL || (process.platform === "win32"
 const LOGIN_SHELL = process.platform !== "win32";
 const termOut = (x: Term) => ({ id: x.id, kind: x.kind, root: x.root, cwd: x.cwd, no: x.no, title: x.title, exited: x.exited, code: x.code, signal: x.signal });
 const termsOf = (todoId: number) => [...terms.values()].filter((x) => x.todoId === todoId);
-const enc8 = new TextEncoder(), dec8 = new TextDecoder();
+
+// ---- the core process: started after the bind, restarted by the next request if it ends ----
+type Core = { proc: Subprocess<"pipe", "pipe", "inherit">; port: Promise<number>; replies: Map<number, (r: any) => void> };
+let core: Core | null = null;
+let coreReq = 0;
+const dec8 = new TextDecoder();
+function startCore(): Core {
+  const proc = Bun.spawn([CORE], { stdin: "pipe", stdout: "pipe", stderr: "inherit", windowsHide: true });
+  let ready!: (port: number) => void, failed!: (e: Error) => void;
+  const c: Core = { proc, port: new Promise((r, f) => { ready = r; failed = f; }), replies: new Map() };
+  c.port.catch(() => {});
+  proc.stdin.write(JSON.stringify({ op: "init", token: TOKEN, port: PORT }) + "\n");
+  proc.stdin.flush();
+  (async () => {
+    let rest = "";
+    const reader = proc.stdout.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      rest += dec8.decode(value, { stream: true });
+      let i;
+      while ((i = rest.indexOf("\n")) >= 0) {
+        const line = rest.slice(0, i);
+        rest = rest.slice(i + 1);
+        try { coreEvent(c, JSON.parse(line), ready); } catch (e) { console.error(`switchboard-core: ${line}: ${e}`); }
+      }
+    }
+  })();
+  proc.exited.then((code) => {
+    failed(new Error(`switchboard-core ended (${code})`));
+    for (const r of c.replies.values()) r({ ev: "error", message: "switchboard-core ended" });
+    if (core !== c) return;
+    core = null;
+    if (stopping) return;
+    console.error(`switchboard-core ended with ${code}; its terminals ended with it`);
+    for (const x of terms.values()) if (x.running) termEnded(x, null, null);
+  });
+  return c;
+}
+function coreEvent(c: Core, ev: any, ready: (port: number) => void) {
+  if (ev.ev === "ready") return ready(ev.port);
+  if (typeof ev.req === "number") { c.replies.get(ev.req)?.(ev); c.replies.delete(ev.req); return; }
+  const x = terms.get(ev.id);
+  if (!x) return;
+  if (ev.ev === "title") { x.title = ev.title; emit({ type: "terminals", id: x.todoId }); }
+  else if (ev.ev === "exit") termEnded(x, ev.code, ev.signal);
+  else if (ev.ev === "input") gitTouched(x.todoId);   // typing may run git there: the worktree gets a new look
+}
+function coreSend(op: object) {
+  core ??= startCore();
+  core.proc.stdin.write(JSON.stringify(op) + "\n");
+  core.proc.stdin.flush();
+  return core;
+}
+function coreAsk(op: object): Promise<any> {
+  const req = ++coreReq, c = coreSend({ ...op, req });
+  return new Promise((r) => c.replies.set(req, r));
+}
+// Where the page opens a terminal's WebSocket.
+const coreWs = async () => `ws://127.0.0.1:${await (core ??= startCore()).port}`;
+
+function termEnded(x: Term, code: number | null, signal: string | null) {
+  Object.assign(x, { running: false, exited: true, code, signal });
+  endGrant(x);
+  emit({ type: "terminals", id: x.todoId });
+}
 
 // Item 114: the TODO as a Claude terminal reads it, rewritten at each launch.
 async function writeContext(t: Todo) {
@@ -886,7 +952,6 @@ async function writeContext(t: Todo) {
   writeFileSync(join(dir, "terminal", "context.md"), text);
 }
 
-function termSend(x: Term, data: Uint8Array | string) { for (const ws of x.sockets) ws.send(data); }
 async function spawnTerm(x: Term) {
   const t = todoRow(x.todoId)!;
   const dir = artifactDir(t.id);
@@ -896,7 +961,7 @@ async function spawnTerm(x: Term) {
     const claude = onPath("claude", []);
     if (!claude) throw httpError(400, "claude is not on PATH");
     await writeContext(t);
-    if (terms.get(x.id) !== x || x.proc) return;   // closed, or restarted twice, while the context file was written
+    if (terms.get(x.id) !== x || x.running) return;   // closed, or restarted twice, while the context file was written
     // P6: the app tools, granted to this process and named in files rather than argv. The header is a ${VAR} reference
     // that Claude Code expands from its environment, so the secret is in neither the file nor the command line.
     const g = grant({ kind: "worker", todoId: t.id, dir, onPost: () => {}, via: `Claude ${x.no}` }, () => "${SWITCHBOARD_MCP_SECRET}");
@@ -909,98 +974,48 @@ async function spawnTerm(x: Term) {
     cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.filter((n) => !n.endsWith("__suggest_follow_ups") && !n.endsWith("__set_effort")).join(","),
       ...(x.message ? ["--", x.message] : [])];
   } else cmd = LOGIN_SHELL ? [SHELL, "-l"] : [SHELL];
-  const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
+  const env: Record<string, string> = { TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !(k in env)) env[k] = v;
   if (secret) env.SWITCHBOARD_MCP_SECRET = secret;
   delete env.SWITCHBOARD_PARENT;   // a `bun server.ts` started in the terminal must not take this server's stdin rule
-  Object.assign(x, { exited: false, code: null, signal: null, buf: [], bufLen: 0, title: null });
-  let proc: Subprocess;
-  try { proc = Bun.spawn(cmd, {
-    cwd: x.cwd, env,
-    terminal: {
-      cols: x.cols, rows: x.rows,
-      data: (_term, data) => {
-        x.buf.push(data); x.bufLen += data.length;
-        while (x.bufLen > TERM_BUF && x.buf.length > 1) x.bufLen -= x.buf.shift()!.length;
-        const title = parseOscTitle(dec8.decode(data));
-        if (title !== null && title !== x.title) { x.title = title; emit({ type: "terminals", id: x.todoId }); }
-        termSend(x, data);
-      },
-    },
-  }); } catch (e: any) {
+  delete env.SWITCHBOARD_CORE;
+  Object.assign(x, { exited: false, code: null, signal: null, title: null });
+  const r = await coreAsk({ op: "spawn", id: x.id, todo: x.todoId, cmd, cwd: x.cwd, env, cols: x.cols, rows: x.rows });
+  if (r.ev !== "spawned") {
     // e.g. the worktree was deleted after a merge: the tab shows the failure instead of a terminal with no process
     x.exited = true;
     endGrant(x);
     emit({ type: "terminals", id: x.todoId });
-    throw httpError(400, `could not start ${cmd[0]}: ${e.message}`);
+    throw httpError(400, r.message);
   }
-  x.proc = proc;
+  x.running = true;
   emit({ type: "terminals", id: x.todoId });
-  // The exit code comes from the process; the PTY's own exit callback only reports that the stream closed.
-  proc.exited.then((code) => {
-    if (x.proc !== proc) return;
-    x.exited = true;
-    endGrant(x);
-    x.signal = proc.signalCode ?? null;
-    x.code = x.signal ? null : code;
-    termSend(x, JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
-    emit({ type: "terminals", id: x.todoId });
-  });
 }
 function endGrant(x: Term) {
   if (x.secret) revoke(x.secret);
   x.secret = null;
 }
+// SIGHUP to the process tree, as when a terminal window closes; the core follows with SIGKILL after 5 s.
 function killTerm(x: Term) {
-  const p = x.proc;
-  x.proc = null;
+  if (x.running) coreSend({ op: "kill", id: x.id });
+  x.running = false;
   endGrant(x);
-  // SIGHUP, as when a terminal window closes; the processes started in it end too, also nohup or disowned ones.
-  if (p && p.exitCode === null && !p.signalCode) killTree(p.pid, "SIGHUP");   // an ended shell's pid may be reused
-  try { p?.terminal?.close(); } catch {}
 }
-// Item 156: a shell runs a foreground program when the terminal's foreground process group is not the shell's own.
-// Background jobs (`cmd &`) do not count; closing the tab ends them with the shell. Unknown (Windows, ps fails): busy.
-function termBusy(x: Term) {
-  if (x.exited || !x.proc) return false;
+// Item 156: whether a program runs in the terminal's foreground. A Claude terminal, and any on Windows: busy.
+async function termBusy(x: Term) {
+  if (x.exited || !x.running) return false;
   if (x.kind === "claude" || process.platform === "win32") return true;
-  const [tpgid, pgid] = Bun.spawnSync(["ps", "-o", "tpgid=,pgid=", "-p", String(x.proc.pid)]).stdout.toString().trim().split(/\s+/);
-  return !tpgid || tpgid !== pgid;
+  return !!(await coreAsk({ op: "busy", id: x.id })).busy;
+}
+function dropTerm(x: Term) {
+  killTerm(x);
+  if (core) coreSend({ op: "close", id: x.id });   // also closes the pages' sockets
+  terms.delete(x.id);
 }
 export function closeTerms(todoId: number | null) {
-  for (const x of [...terms.values()]) if (todoId === null || x.todoId === todoId) {
-    killTerm(x);
-    for (const ws of x.sockets) ws.close();
-    terms.delete(x.id);
-  }
+  for (const x of [...terms.values()]) if (todoId === null || x.todoId === todoId) dropTerm(x);
   if (todoId !== null) emit({ type: "terminals", id: todoId });
 }
-const termWs = {
-  open(ws: ServerWebSocket<{ tid: number }>) {
-    const x = terms.get(ws.data.tid);
-    if (!x) return ws.close(4404, "no such terminal");
-    x.sockets.add(ws);
-    // Reset, then the recent output, then live output; the first resize makes full-screen programs redraw.
-    ws.send(enc8.encode("\x1bc"));
-    for (const b of x.buf) ws.send(b);
-    if (x.exited) ws.send(JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
-    x.fresh = true;
-  },
-  message(ws: ServerWebSocket<{ tid: number }>, msg: string | Buffer) {
-    const x = terms.get(ws.data.tid);
-    if (!x?.proc || x.exited) return;
-    // Typing in a TODO's terminal may run git there: its worktree gets a new look (at most one a second).
-    if (typeof msg !== "string") { gitTouched(x.todoId); return void x.proc.terminal?.write(msg); }
-    const c = JSON.parse(msg);
-    if (c.type !== "resize") return;
-    const cols = Math.max(2, Math.min(500, c.cols | 0)), rows = Math.max(2, Math.min(300, c.rows | 0));
-    // A page that attaches with the same size would not send SIGWINCH, so vim or Claude Code would not redraw.
-    if (x.fresh && cols === x.cols && rows === x.rows) x.proc.terminal?.resize(cols, rows - 1);
-    x.fresh = false;
-    x.cols = cols; x.rows = rows;
-    x.proc.terminal?.resize(cols, rows);
-  },
-  close(ws: ServerWebSocket<{ tid: number }>) { terms.get(ws.data.tid)?.sockets.delete(ws); },
-};
 
 const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
 
@@ -1347,7 +1362,11 @@ async function api(req: Request, path: string): Promise<Response> {
 
   if ((m = path.match(/^\/api\/todos\/(\d+)\/terminals(?:\/(\d+)\/(restart|close|busy))?$/))) {
     const id = Number(m[1]);
-    if (!m[2] && method === "GET") { todoOr404(id); return json({ terminals: termsOf(id).map((x) => ({ ...termOut(x), busy: termBusy(x) })), unsupported: TERM_UNSUPPORTED }); }
+    if (!m[2] && method === "GET") {
+      todoOr404(id);
+      const list = await Promise.all(termsOf(id).map(async (x) => ({ ...termOut(x), busy: await termBusy(x) })));
+      return json({ terminals: list, unsupported: TERM_UNSUPPORTED, ws: TERM_UNSUPPORTED ? null : await coreWs() });
+    }
     if (!m[2] && method === "POST") {
       const t = liveTodo(id);
       if (TERM_UNSUPPORTED) return fail(TERM_UNSUPPORTED, 409);
@@ -1358,8 +1377,7 @@ async function api(req: Request, path: string): Promise<Response> {
       const x: Term = {
         // A TODO without a topic (not routed yet, or thinking only) opens its terminals in the artifact folder (801).
         id: ++termSeq, todoId: id, kind, root, cwd: root === "worktree" ? t.worktree_path! : projectRow(t.project_id)?.local_path ?? artifactDir(id), no,
-        message: String(body.message ?? "").trim(), title: null, proc: null, exited: false, code: null, signal: null, secret: null,
-        buf: [], bufLen: 0, sockets: new Set(), fresh: false,
+        message: String(body.message ?? "").trim(), title: null, running: false, exited: false, code: null, signal: null, secret: null,
         cols: Math.max(2, Math.min(500, Number(body.cols) || 100)), rows: Math.max(2, Math.min(300, Number(body.rows) || 30)),
       };
       terms.set(x.id, x);
@@ -1369,15 +1387,14 @@ async function api(req: Request, path: string): Promise<Response> {
     const x = terms.get(Number(m[2]));
     if (!x || x.todoId !== id) return fail("no such terminal", 404);
     if (m[3] === "close" && method === "POST") {
-      killTerm(x); for (const ws of x.sockets) ws.close(); terms.delete(x.id);
+      dropTerm(x);
       emit({ type: "terminals", id });
       return json({});
     }
-    if (m[3] === "busy" && method === "GET") return json({ busy: termBusy(x) });
+    if (m[3] === "busy" && method === "GET") return json({ busy: await termBusy(x) });
     if (m[3] === "restart" && method === "POST") {
       killTerm(x);
-      termSend(x, enc8.encode("\x1bc"));
-      await spawnTerm(x);
+      await spawnTerm(x);   // the core resets the pages' screens before the new output
       return json(termOut(x));
     }
   }
@@ -1667,7 +1684,6 @@ const httpServer = Bun.serve({
   hostname: HOST,
   port: PORT,
   idleTimeout: 0, // the default 10s would cut the SSE stream
-  websocket: termWs,
   async fetch(req, server) {
     const url = new URL(req.url);
     // Blocks DNS-rebinding pages: the Host header must name this loopback server.
@@ -1685,14 +1701,6 @@ const httpServer = Bun.serve({
     // The agents' route to the app's MCP tools: each agent session carries its own secret instead of the launch token.
     if (url.pathname === "/mcp/app") return handleMcp(req);
     if (!tokenOk(TOKEN, req.headers.get("x-switchboard-token"), url.searchParams.get("token"))) return fail("open the link the server printed at start", 401);
-    // Browsers apply no CORS to WebSockets, so any website could open one; the Origin check stops websites, the token programs.
-    const ws = url.pathname.match(/^\/api\/todos\/(\d+)\/terminals\/(\d+)\/ws$/);
-    if (ws) {
-      if (![`http://${HOST}:${PORT}`, `http://localhost:${PORT}`].includes(req.headers.get("origin") ?? "")) return fail("bad origin", 403);
-      const x = terms.get(Number(ws[2]));
-      if (!x || x.todoId !== Number(ws[1])) return fail("no such terminal", 404);
-      return server.upgrade(req, { data: { tid: x.id } }) ? undefined : fail("websocket upgrade failed", 400);
-    }
     try {
       return await api(req, url.pathname);
     } catch (e: any) {
@@ -1704,6 +1712,9 @@ const httpServer = Bun.serve({
 writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
 chmodSync(TOKEN_FILE, 0o600); // mode above applies only when the file is new
 console.log(`switchboard on http://${HOST}:${PORT}/#token=${TOKEN} (data in ${HOME})`);
+
+// The terminal host, so the first terminal opens without waiting for it.
+if (!TERM_UNSUPPORTED) core ??= startCore();
 
 // After the bind, like the reset below: a second copy that exits on EADDRINUSE must not move a live app's folders.
 moveArtifactFolders();

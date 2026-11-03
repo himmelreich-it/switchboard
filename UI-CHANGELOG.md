@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-03 · Terminals need the switchboard core
+- Where: Focus › Terminal tab, the empty panel where the Shell and Claude buttons normally are.
+- Now: when the terminal host is not built, the panel reads "Terminals need switchboard-core, which is not built yet: run bun run core (it needs Rust's cargo), then restart Switchboard." and there are no Shell or Claude buttons. It replaces the old notice about the Bun version.
+- Why: terminals moved out of the Bun server into a separate Rust program, so a source checkout without it built has no terminals.
+- Design question: is a plain notice in the panel enough, or should it offer a "Copy command" button?
+
 ### 2026-11-02 · Find in Read mode
 - Where: Files tab › file view, bottom edge above the footer note.
 - Now: ⌘F (or Ctrl+F) in Read mode, in the markdown Preview and in Changes opens a find bar, styled like the editor's search panel: a field "Find", a count "2 of 3" or "No results", up and down arrows "Previous match" and "Next match", and a close cross. Matches are marked half-strength amber, the current one solid amber with dark text, in every theme; the editor's own search uses the same colors now (its old tints were near invisible in Monokai Dark). Enter and Shift+Enter step, Esc closes. In Edit mode and in read-only code ⌘F still opens the editor's own search panel. The Read button's tooltip now reads "Read · ⌘E toggles, ⌘F finds".

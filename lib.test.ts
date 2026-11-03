@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, revealCommand, vscodeCommand, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -263,12 +263,7 @@ test("parseMarks", () => {
   expect(parseMarks("", "")).toEqual({});
 });
 
-test("terminal helpers", () => {
-  expect(parseOscTitle("abc\x1b]0;zsh — feat-x\x07more\x1b]2;Claude Code\x1b\\")).toBe("Claude Code");
-  expect(parseOscTitle("plain output")).toBe(null);
-  expect(versionAtLeast("1.3.14", "1.3.5")).toBe(true);
-  expect(versionAtLeast("1.3.4", "1.3.5")).toBe(false);
-  expect(versionAtLeast("1.4.0", "1.3.5")).toBe(true);
+test("terminal context file", () => {
   const ctx = contextFile({
     title: "T", project: "p", status: "idle", first: "do it", worktree: "/w", branch: "b", git: "2 commits · pushed", pr: "#5 open",
     sessions: [{ no: 1, session_id: "s1", started_at: "a", ended_at: "b" }, { no: 2, session_id: "s2", started_at: "c", ended_at: null }],

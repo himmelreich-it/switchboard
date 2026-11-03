@@ -12,6 +12,7 @@ bun run app          # same app in its own window (Electron); closing it stops r
 bun test             # pure helpers in lib.ts
 bun scripts/bench.ts # server start, list and transcript load times on a throwaway home (args: todos events)
 bun run vendor       # rebuild vendor/ (CodeMirror, xterm.js, marked, DOMPurify, fonts) after changing one of them
+bun run core         # build switchboard-core (core/, Rust), the terminal host; needs cargo
 bun run install-local  # build Switchboard.app (no installer) and copy it to /Applications, for Spotlight and the Dock
 bun run app:linux            # Linux: `app` without Chromium's sandbox (see below)
 bun run install-local:linux  # Linux: build for this machine's arch, install to ~/.local/share/switchboard with a launcher
@@ -20,7 +21,9 @@ bun run install-local:win    # Windows: build for this machine's arch (x64 or AR
 
 The API needs the launch token the server picks at each start. `bun server.ts` prints a link with it, and the window
 app reads it from `~/.switchboard/token`. After a server restart, open the new link. Everything the page loads is in
-`vendor/`, so the app works offline. Terminals need Bun 1.3.5 or newer and are not available on Windows yet.
+`vendor/`, so the app works offline. Terminals run in switchboard-core, a small Rust program in `core/`: build it once
+with `bun run core` (it needs Rust's `cargo`) and again after changing `core/`. The packaging and `install-local`
+commands build it themselves. Terminals on Windows are not tested yet.
 
 `install-local` quits a running Switchboard first, which stops its running agents and terminals. The installed app
 runs a copy of the code: run `install-local` again to update it. It still needs `bun` installed; it reads PATH and

@@ -577,15 +577,6 @@ export function parseMarks(nameStatusZ: string, untrackedZ: string): Record<stri
 
 // ---------- terminals (items 111-118) ----------
 
-// The title a program sets with OSC 0 or OSC 2 (ESC ] 0 ; title BEL, or ESC \\ as the end). Shells and Claude Code
-// set one. The last one in the chunk wins; null when there is none.
-// ponytail: a title split across two output chunks is missed; the next prompt sets it again.
-export function parseOscTitle(chunk: string): string | null {
-  let title: string | null = null;
-  for (const m of chunk.matchAll(/\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g)) title = m[1]!;
-  return title;
-}
-
 // The command that shows a file in the system file manager (item 106): selected in Finder or Explorer. Linux has no
 // common way to select a file, so its folder opens. Explorer wants backslashes and the quoted path glued to /select,
 // and the caller spawns it with windowsVerbatimArguments: Bun's own quoting ("/select,C:\x y\z") makes Explorer open
@@ -616,13 +607,6 @@ export function descendants(ps: string, root: number): number[] {
   const out: number[] = [];
   for (let i = -1; i < out.length; i++) for (const k of kids.get(i < 0 ? root : out[i]!) ?? []) if (k !== root && !out.includes(k)) out.push(k);
   return out;
-}
-
-// True when `version` ("1.3.14") is at least `min` ("1.3.5").
-export function versionAtLeast(version: string, min: string): boolean {
-  const a = version.split(".").map(Number), b = min.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
-  return true;
 }
 
 // What the worker is told about where it runs, between the contract and the topic prompt. The user files TODOs under
