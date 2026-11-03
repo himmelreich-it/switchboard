@@ -7,6 +7,9 @@ use serde_json::{Map, Value};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 static DB: OnceLock<Mutex<Connection>> = OnceLock::new();
+/// Taken by every call and held by a transaction from BEGIN to COMMIT, so another thread's statement cannot land inside
+/// it. Reentrant: the transaction's own calls take it again on the same thread.
+static TX: parking_lot::ReentrantMutex<()> = parking_lot::const_reentrant_mutex(());
 
 pub fn open(path: &str) -> anyhow::Result<()> {
     let c = Connection::open(path)?;
@@ -61,6 +64,7 @@ fn query(c: &Connection, sql: &str, params: &[Value]) -> rusqlite::Result<Vec<Va
 
 /// Every row (bun:sqlite `.all()`). Panics on an SQL error, like a thrown error in the TS code: a bug, not a state.
 pub fn all(sql: &str, params: &[Value]) -> Vec<Value> {
+    let _tx = TX.lock();
     query(&conn(), sql, params).unwrap_or_else(|e| panic!("SQL {sql}: {e}"))
 }
 
@@ -76,6 +80,7 @@ pub struct RunResult {
 
 /// A write (`db.run`).
 pub fn run(sql: &str, params: &[Value]) -> RunResult {
+    let _tx = TX.lock();
     let c = conn();
     let ps: Vec<P> = params.iter().map(P).collect();
     let refs: Vec<&dyn ToSql> = ps.iter().map(|p| p as &dyn ToSql).collect();
@@ -85,12 +90,14 @@ pub fn run(sql: &str, params: &[Value]) -> RunResult {
 
 /// Several statements, no parameters (`db.exec`).
 pub fn exec(sql: &str) {
+    let _tx = TX.lock();
     conn().execute_batch(sql).unwrap_or_else(|e| panic!("SQL {sql}: {e}"));
 }
 
 /// `db.transaction(fn)()`: BEGIN, the closure, COMMIT (ROLLBACK when it returns Err or panics). The closure calls
 /// all/get/run as usual; the connection is not held between them.
 pub fn transaction<T>(f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+    let _tx = TX.lock();
     exec("BEGIN");
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
     match r {

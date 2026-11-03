@@ -19,3 +19,7 @@ pub fn cancel_routing(_todo_id: i64) { todo!("port") }
 pub fn fire_due(_startup: bool) { todo!("port") }
 pub async fn stop_all() { todo!("port") }
 pub fn close_agents() { todo!("port") }
+pub fn interrupt(_key: Key, _by: &'static str) { todo!("port") }
+pub fn close_agent(_key: Key) { todo!("port") }
+pub fn is_scanning(_project_id: i64) -> bool { todo!("port") }
+pub fn scan_error(_project_id: i64) -> Option<String> { todo!("port") }
