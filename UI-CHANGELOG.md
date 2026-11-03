@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-03 · Switchboard Beta app
+- Where: the desktop app itself: its icon in the taskbar, Dock and Start menu, and a dialog at launch.
+- Now: a second install, "Switchboard Beta", can sit next to the regular app. It uses the beta icon (the app icon with an amber "BETA" tag in the lower right corner) and shows the same TODOs. If the other app is already running, it does not open; an error dialog titled "Switchboard Beta" says "Switchboard is running on the same data. Quit it first, then start Switchboard Beta." (and the other way round). On Windows the app icon in the taskbar now fills its square like other apps instead of showing with a wide margin.
+- Why: the user wanted to try a branch as a real app, with their real TODOs, without replacing the installed one.
+- Design question: should the beta also say so inside the window, for example a "Beta" tag next to the app name in the title bar?
+
 ### 2026-11-02 · Find in Read mode
 - Where: Files tab › file view, bottom edge above the footer note.
 - Now: ⌘F (or Ctrl+F) in Read mode, in the markdown Preview and in Changes opens a find bar, styled like the editor's search panel: a field "Find", a count "2 of 3" or "No results", up and down arrows "Previous match" and "Next match", and a close cross. Matches are marked half-strength amber, the current one solid amber with dark text, in every theme; the editor's own search uses the same colors now (its old tints were near invisible in Monokai Dark). Enter and Shift+Enter step, Esc closes. In Edit mode and in read-only code ⌘F still opens the editor's own search panel. The Read button's tooltip now reads "Read · ⌘E toggles, ⌘F finds".
