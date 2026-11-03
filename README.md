@@ -37,6 +37,13 @@ There is no login shell on Windows: the app inherits your user environment, wher
 PATH. On Windows and Linux the app's title bar holds the window controls, like VS Code; there is no menu bar, but
 Alt+, still opens Settings.
 
+To try a branch before it lands, install it as a beta from its worktree: `bun run install-local:win:beta`,
+`install-local:linux:beta` or `install-local:beta` (macOS). That installs "Switchboard Beta" next to the regular app,
+with its own folder, shortcut and icon, and runs `bun install` first in a fresh worktree. Both use the same data in
+`~/.switchboard/` and the same port, so the TODOs and their history are the same. Only one runs at a time: a second
+server on the same data would end the first one's runs, so the other app refuses to start until you quit the running
+one. Appearance settings are kept per app.
+
 Needs a Claude Code login. Agents run with your normal Claude Code settings, in auto permission mode. Topics are
 set up in Settings › Topics (the gear, or ⌘,). A topic is one folder, a git repository or not: agents start
 there, and only a git repository gets worktrees, branches and pull requests. In the code and the database a topic is

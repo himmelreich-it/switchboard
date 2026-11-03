@@ -15,7 +15,10 @@
     "package:win": "electron-builder --win --dir",
     "install-local:linux": "bash scripts/install-linux.sh",
     "install-local:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows.ps1",
-    "install-local": "osascript -e 'quit app \"Switchboard\"' || true; bun run package:mac && rm -rf /Applications/Switchboard.app && cp -R dist/mac*/Switchboard.app /Applications/ && rm -rf dist && echo 'Installed /Applications/Switchboard.app'"
+    "install-local:linux:beta": "bash scripts/install-linux.sh --beta",
+    "install-local:win:beta": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -Beta",
+    "install-local": "osascript -e 'quit app \"Switchboard\"' || true; bun run package:mac && rm -rf /Applications/Switchboard.app && cp -R dist/mac*/Switchboard.app /Applications/ && rm -rf dist && echo 'Installed /Applications/Switchboard.app'",
+    "install-local:beta": "osascript -e 'quit app \"Switchboard Beta\"' || true; [ -d node_modules ] || bun install; electron-builder --mac --dir -c.productName='Switchboard Beta' -c.appId=dev.himmelreich.switchboard.beta -c.mac.icon='images/beta-icons/macos/Switchboard Beta.icns' -c.extraMetadata.name=switchboard-beta -c.extraMetadata.productName='Switchboard Beta' -c.extraMetadata.channel=beta && rm -rf '/Applications/Switchboard Beta.app' && cp -R dist/mac*/'Switchboard Beta.app' /Applications/ && rm -rf dist && echo 'Installed /Applications/Switchboard Beta.app'"
   },
   "build": {
     "appId": "dev.himmelreich.switchboard",
