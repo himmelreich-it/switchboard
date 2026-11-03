@@ -635,9 +635,7 @@ pub fn message_out(id: i64) -> Value {
     Value::Object(rest)
 }
 
-// The same constants as the HTTP part's fileFacts (server.ts IMAGE_EXT and MAX_TEXT).
-static IMAGE_EXT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$").unwrap());
-const MAX_TEXT: u64 = 2 * 1024 * 1024;
+use crate::http::{IMAGE_EXT, MAX_TEXT};
 
 fn mtime_ms(m: &std::fs::Metadata) -> Value {
     m.modified()
