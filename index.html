@@ -2381,7 +2381,7 @@ function archiveFile() {
 async function openTreeFile(rel) {
   const t = cur(), root = S.fileRoot[t.id], mark = S.trees[`${t.id}:${root}`]?.marks?.[rel];
   if (mark === "D") return openDeleted(rel);
-  openFile(null, root, rel);
+  openFile(null, root, rel, mark && S.file?.mode === "diff" ? "diff" : null);   // Diff stays on when the next file has changes too
 }
 // A deleted file exists only at the base: it opens in Diff, all lines removed.
 async function openDeleted(rel) {
