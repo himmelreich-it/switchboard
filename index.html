@@ -1129,6 +1129,8 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .preview-in { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 40px; }
 .fileview .dv { flex: 1; min-height: 0; border: 0; border-radius: 0; }
 .fileview .dv > div { padding: 4px 0; }
+.dv > .cm-mergeView { width: auto; padding: 0; }
+.dv .cm-mergeView .cm-editor { height: auto; }
 .file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 .file-msg img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
@@ -1848,6 +1850,8 @@ S.workOpen = {};      // TODO id -> true while its "Work files" group is open, u
 S.tabOf = {}; S.lastFile = {};   // TODO id -> its tab and its last opened file, restored when the card is opened again; until reload
 S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree per "id:root"; open folders per "id:root"
 S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
+S.diffView = "split";   // Diff tab: "split" (side by side) | "unified", kept in localStorage
+try { if (localStorage.getItem("switchboard-diff-view") === "unified") S.diffView = "unified"; } catch (e) {}
 S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // terminals per TODO (item 111)
 S.termFocus = false;   // the Terminal tab was just opened: the selected terminal takes the keys once it has loaded
 try { S.termSel = JSON.parse(localStorage.getItem("switchboard-term-sel") || "{}"); } catch (e) {}   // TODO id -> selected terminal id; terminals outlive a reload
@@ -3624,7 +3628,9 @@ function renderFile(t) {
     `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles, ⌘F finds") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
     : modes.length ? `<span class="ml">${modes[0][1]}</span>` : `<span class="ml">${f.image ? "Image" : f.large ? "Large file" : "Binary"}</span>`;
   const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${[["write", "Write"], ["split", "Split"], ["preview", "Preview"]].map(([v, l]) =>
-    `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${l}</button>`).join("")}</div>` : "";
+    `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${l}</button>`).join("")}</div>`
+    : show.diff ? `<div class="seg" role="radiogroup" aria-label="Diff view">${[["unified", "Unified"], ["split", "Side by side"]].map(([v, l]) =>
+    `<button type="button" role="radio" aria-checked="${S.diffView === v}" data-act="diff-view" data-id="${v}" data-fk="diff-view:${v}">${l}</button>`).join("")}</div>` : "";
   const words = show.md ? ` · ${plural(counts.words, "word")}` : "";
   const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
@@ -3644,7 +3650,8 @@ function renderFile(t) {
     $("mdSplit").className = "split" + (S.mdView === "write" ? " write" : S.mdView === "preview" ? " preview-only" : "");
     if (S.mdView !== "write" && !typing) setMd($("filePreview"), f.text);   // hidden in Write; Split and Preview get it at the pause
   }
-  if (show.diff) {
+  if (show.diff && dd && !dd.error && S.diffView === "split") mountMerge(f, dd.base, f.deleted ? "" : f.text);
+  else if (show.diff) {
     destroyEditor();
     if (!dd) setHtml($("fileDiff"), '<div style="padding:8px 16px" class="muted">Loading…</div>');
     else if (dd.error) setHtml($("fileDiff"), `<div style="padding:8px 16px">Can't open: ${esc(dd.error)}</div>`);
@@ -3686,6 +3693,15 @@ function mountEditor(f, host, rw, locked) {
   } });
   S.cm = { key, handle, f };
   focusEditor();
+}
+// Side-by-side diff: rebuilt when the file, its base or its text changes.
+function mountMerge(f, a, b) {
+  const host = $("fileDiff"), key = `${fileKey(f)}:merge`;
+  if (S.cm?.key === key && S.cm.f === f && S.cm.a === a && S.cm.b === b) return;
+  if (!window.SBEditor) { setHtml(host, '<div style="padding:8px 16px" class="muted">Loading…</div>'); loadEditor().then(() => S.file === f && render(), (e) => toast("danger", "Editor not loaded", e.message)); return; }
+  destroyEditor();
+  host.innerHTML = "";
+  S.cm = { key, handle: SBEditor.merge(host, { a, b, name: f.name }), f, a, b };
 }
 // Edit asked for focus (⌘E, the Edit button, New note); done once the editor exists, which can be after its lazy load.
 function focusEditor() {
@@ -4304,6 +4320,7 @@ const ACTIONS = {
   "cform-cancel": () => { S.cform = null; render(); },
   "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm("claude", f.root, msg); },
   "md-view": (id) => { S.mdView = id; render(); },
+  "diff-view": (id) => { S.diffView = id; try { localStorage.setItem("switchboard-diff-view", id); } catch (e) {} render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
   "save-file": () => saveFile(),
@@ -4437,7 +4454,7 @@ function highlightRendered(placed) {
 }
 // ⌘F where no editor shows (rendered markdown, the diff): a find bar, case-insensitive, matches across text nodes ("a **b**"), highlighted with
 // the CSS Custom Highlight API like the comments. S.find = {q, i}. Each renderFile runs it again, so live updates keep the matches.
-const editorShown = () => !!S.cm?.handle && (!$("fileCode").hidden || (!$("fileMd").hidden && S.mdView !== "preview"));
+const editorShown = () => !!S.cm?.handle && (!$("fileCode").hidden || (!$("fileMd").hidden && S.mdView !== "preview") || (!$("fileDiff").hidden && S.cm.key.endsWith(":merge")));
 const findHost = () => cmtRendered() ?? (!$("fileDiff").hidden ? $("fileDiff") : null);
 let findRanges = [];
 function runFind(jump) {

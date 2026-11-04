@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-04 · Side-by-side diff
+- Where: file view › Diff mode, header right side, next to the +N −M count.
+- Now: a segmented control "Unified | Side by side" switches the diff layout. Side by side shows the merge-base version on the left and the current file on the right, each with its own line numbers and syntax colors, lines aligned across both panes. Removed lines have a red tint on the left, added lines a green tint on the right, and changed words inside a line a darker tint of the same color. A thin red or green bar in the gutter marks each changed line. Side by side is the default; the choice is remembered for all files and TODOs. ⌘F opens the editor's search bar on the right pane.
+- Why: the user wanted VS Code-style side-by-side diffs.
+- Design question: should Side by side collapse long runs of unchanged lines, as GitHub does, or keep the whole file like VS Code?
+
 ### 2026-11-03 · Theme button cycles Light, Dark, Auto
 - Where: title bar, the theme icon button left of Settings.
 - Now: the button shows the current mode instead of the one it switches to: a sun for Light, a moon for Dark, a half-filled circle for Auto. Each click steps Light › Dark › Auto › Light. The tooltip names the mode, the theme in use and the next step, for example "Auto · Catppuccin Mocha · click for Light".
