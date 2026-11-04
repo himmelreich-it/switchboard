@@ -1093,6 +1093,8 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .cmt .r { padding: 6px; background: var(--surface-inset); border-radius: 2px; overflow-wrap: anywhere; }
 .cmt .r .ml { display: block; margin-bottom: 2px; color: var(--accent-cyan); }
 .cmt .r .md { font-size: 12px; }
+.cmt .u { padding: 0 6px; }
+.cmt .u .ml { display: block; margin-bottom: 2px; color: var(--text-secondary); }
 .cmt .acts { display: flex; gap: 4px; flex-wrap: wrap; }
 .cmt textarea { width: 100%; min-height: 64px; resize: vertical; box-sizing: border-box; font: inherit; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-default); border-radius: 2px; padding: 6px; }
 .cmt-add { position: fixed; z-index: 30; height: 26px; padding: 0 8px; display: flex; align-items: center; gap: 6px; cursor: pointer; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-1); box-shadow: var(--shadow-2); color: var(--text-primary); font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
@@ -4342,6 +4344,7 @@ const ACTIONS = {
 // source for the line and the editor marks, in the rendered markdown for its highlight. Not found: the comment is outdated.
 S.cmtDraft = null;     // {key, quote, line, text}: the new comment's box
 S.cmtEdit = null; S.cmtEditText = null;   // the comment being edited, and its text so far
+S.cmtReply = null; S.cmtReplyText = null; // the comment whose thread the user answers, and the answer so far
 S.cmtOn = null;        // id of the comment shown active (outlined card, underlined text)
 S.cmtResolved = false; // resolved comments shown
 S.cmtHidden = {};      // fileKey -> the Comments column hidden from the file header (v10)
@@ -4513,14 +4516,22 @@ function renderNotes(f, show, typing) {
   const nResolved = list.filter((c) => c.state === "resolved").length, nOpen = list.filter((c) => c.state === "open").length;
   const STATE = { open: ["Open", "amber"], replied: ["Replied", "cyan"], resolved: ["Resolved", "neutral"] };
   const quote = (q) => `<div class="q">${esc(q)}</div>`;
+  // The thread after the first text: the agent's replies as markdown, the user's answers as typed.
+  const turn = (t) => t.by === "agent" ? `<div class="r"><span class="ml">Agent</span><div class="md">${md(t.body)}</div></div>`
+    : `<div class="u"><span class="ml">You</span><div class="b">${esc(t.body)}</div></div>`;
+  // Only the last text is edited, and only while it is the user's: an agent's reply is answered with Reply.
+  const editable = (c) => c.thread.at(-1)?.by !== "agent";
   const card = (c) => {
     const p = where.get(c.id), line = p && !p.outdated ? p.line : c.line;
-    if (S.cmtEdit === c.id) return `<div class="cmt on">${quote(c.quote)}<textarea id="cmtEditIn" data-fk="cmt-edit-in:${c.id}" aria-label="Edit comment"></textarea>
+    // Edit changes the user's last text, the thread before it stays shown.
+    if (S.cmtEdit === c.id) return `<div class="cmt on">${quote(c.quote)}${c.thread.length ? `<div class="b">${esc(c.body)}</div>${c.thread.slice(0, -1).map(turn).join("")}` : ""}<textarea id="cmtEditIn" data-fk="cmt-edit-in:${c.id}" aria-label="Edit comment"></textarea>
       <div class="acts">${btn("Cancel", "cmt-edit-cancel", { v: "ghost" })}${btn("Save", "cmt-edit-save", { v: "primary", id: c.id })}</div></div>`;
-    return `<div class="cmt${c.id === S.cmtOn ? " on" : ""}${p?.outdated ? " outdated" : ""} ${c.state}" data-act="cmt-on" data-id="${c.id}">${quote(c.quote)}
+    return `<div class="cmt${c.id === S.cmtOn ? " on" : ""}${p?.outdated ? " outdated" : ""} ${c.state}"${S.cmtReply === c.id ? "" : ` data-act="cmt-on" data-id="${c.id}"`}>${quote(c.quote)}
       <div class="st">${badge(STATE[c.state][0], STATE[c.state][1])}${p?.outdated ? badge("Outdated") : ""}${line ? `<span>line ${line}</span>` : ""}</div>
-      <div class="b">${esc(c.body)}</div>${c.reply ? `<div class="r"><span class="ml">Agent</span><div class="md">${md(c.reply)}</div></div>` : ""}
-      <div class="acts">${btn("Edit", "cmt-edit", { v: "ghost", id: c.id })}${c.state === "resolved" ? btn("Reopen", "cmt-state", { v: "ghost", id: `${c.id}:open` }) : btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}${btn("Delete", "cmt-del", { v: "ghost", id: c.id })}</div></div>`;
+      <div class="b">${esc(c.body)}</div>${c.thread.map(turn).join("")}
+      ${S.cmtReply === c.id ? `<textarea id="cmtReplyIn" data-fk="cmt-reply-in:${c.id}" placeholder="Reply · ⌘Enter sends" aria-label="Reply"></textarea>
+      <div class="acts">${btn("Cancel", "cmt-reply-cancel", { v: "ghost" })}${btn("Reply", "cmt-reply-save", { v: "primary", id: c.id })}</div>` : `
+      <div class="acts">${!editable(c) && c.state !== "resolved" ? btn("Reply", "cmt-reply", { v: "ghost", id: c.id }) : ""}${editable(c) ? btn("Edit", "cmt-edit", { v: "ghost", id: c.id }) : ""}${c.state === "resolved" ? btn("Reopen", "cmt-state", { v: "ghost", id: `${c.id}:open` }) : btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}${btn("Delete", "cmt-del", { v: "ghost", id: c.id })}</div>`}</div>`;
   };
   setHtml(box, `<div class="nh"><span class="ml">Comments · ${list.length - nResolved}</span>${nOpen ? btn(`Ask agent · ${nOpen}`, "cmt-ask") : ""}</div>
     ${nResolved ? `<button type="button" class="shr" data-act="cmt-resolved" data-fk="cmt-resolved">${S.cmtResolved ? "Hide" : "Show"} resolved (${nResolved})</button>` : ""}
@@ -4528,9 +4539,10 @@ function renderNotes(f, show, typing) {
       <div class="acts">${btn("Cancel", "cmt-cancel", { v: "ghost" })}${btn("Comment", "cmt-save", { v: "primary" })}</div></div>` : ""}
     ${list.filter((c) => S.cmtResolved || c.state !== "resolved").map(card).join("")}`);
   // A re-render (the agent replied meanwhile) rebuilds the boxes: what was typed comes back from S.
-  const nw = $("cmtNewIn"), ed = $("cmtEditIn");
+  const nw = $("cmtNewIn"), ed = $("cmtEditIn"), rp = $("cmtReplyIn");
   if (nw && !nw._filled) { nw._filled = true; nw.value = draft.text ?? ""; }
-  if (ed && !ed._filled) { ed._filled = true; ed.value = S.cmtEditText ?? list.find((c) => c.id === S.cmtEdit)?.body ?? ""; }
+  if (ed && !ed._filled) { ed._filled = true; const c = list.find((c) => c.id === S.cmtEdit); ed.value = S.cmtEditText ?? (c?.thread.at(-1)?.body ?? c?.body) ?? ""; }
+  if (rp && !rp._filled) { rp._filled = true; rp.value = S.cmtReplyText ?? ""; }
 }
 // The selected text in the open file, with its line: from the editor's selection, or from the rendered markdown.
 function selectedQuote() {
@@ -4602,15 +4614,17 @@ async function saveComment() {
 }
 // A change to a comment shows at the click. The answer brings the TODO's comments; an error puts the old ones back,
 // unless a live update replaced them meanwhile.
-function cmtCall(id, method, body, title, failed) {
+function cmtCall(id, method, body, title, failed, sub = "") {
   const todoId = S.file.todoId, d = S.detail?.todo.id === todoId ? S.detail : null, before = d?.comments, cid = Number(id);
   if (d) {
     d.comments = method === "DELETE" ? before.filter((c) => c.id !== cid)
-      : before.map((c) => c.id !== cid ? c : body.body ? { ...c, body: body.body, state: "open" } : { ...c, state: body.state });
+      : before.map((c) => c.id !== cid ? c : sub ? { ...c, thread: [...c.thread, { by: "user", body: body.body, at: new Date().toISOString() }], state: "open" }
+        : body.body ? (c.thread.length ? { ...c, thread: [...c.thread.slice(0, -1), { ...c.thread.at(-1), body: body.body }], state: "open" } : { ...c, body: body.body, state: "open" })
+        : { ...c, state: body.state });
     render();
   }
   const mine = d?.comments;
-  call(method, `/api/todos/${todoId}/comments/${id}`, body).then(
+  call(method, `/api/todos/${todoId}/comments/${id}${sub}`, body).then(
     (r) => { if (S.detail?.todo.id === todoId && r.comments) { S.detail.comments = r.comments; render(); } },
     (e) => { if (d && d.comments === mine) d.comments = before; failed?.(); render(); toast("danger", title, e.message); });
 }
@@ -4626,8 +4640,16 @@ Object.assign(ACTIONS, {
     S.cmtEdit = null;
     cmtCall(id, "PATCH", { body: v }, "Comment not saved", () => { S.cmtEdit = Number(id); S.cmtEditText = v; });   // not saved: the box opens again with the text
   },
+  "cmt-reply": (id) => { S.cmtReply = Number(id); S.cmtReplyText = null; S.cmtOn = Number(id); render(); $("cmtReplyIn")?.focus(); },
+  "cmt-reply-cancel": () => { S.cmtReply = null; render(); },
+  "cmt-reply-save": (id) => {
+    const v = $("cmtReplyIn")?.value.trim();
+    if (!v) return;
+    S.cmtReply = null;
+    cmtCall(id, "POST", { body: v }, "Reply not sent", () => { S.cmtReply = Number(id); S.cmtReplyText = v; }, "/replies");   // not sent: the box opens again with the text
+  },
   "cmt-state": (v) => { const [id, state] = v.split(":"); cmtCall(id, "PATCH", { state }, "Comment not changed"); },
-  "cmt-del": (id) => openDialog({ title: "Delete comment", body: "The comment and the agent's reply are deleted.", buttons: [["Cancel", "ghost"], ["Delete", "danger", () => cmtCall(id, "DELETE", undefined, "Comment not deleted")]] }),
+  "cmt-del": (id) => openDialog({ title: "Delete comment", body: "The comment and its replies are deleted.", buttons: [["Cancel", "ghost"], ["Delete", "danger", () => cmtCall(id, "DELETE", undefined, "Comment not deleted")]] }),
   "cmt-resolved": () => { S.cmtResolved = !S.cmtResolved; render(); },
   // Like the path button: text into the TODO's message box, the user sends it.
   "cmt-ask": () => {
@@ -4641,11 +4663,13 @@ Object.assign(ACTIONS, {
 document.addEventListener("input", (e) => {
   if (e.target.id === "cmtNewIn" && S.cmtDraft) S.cmtDraft.text = e.target.value;
   else if (e.target.id === "cmtEditIn") S.cmtEditText = e.target.value;
+  else if (e.target.id === "cmtReplyIn") S.cmtReplyText = e.target.value;
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && modKey(e) && e.target.id === "cmtNewIn") { e.preventDefault(); saveComment(); }
   else if (e.key === "Enter" && modKey(e) && e.target.id === "cmtEditIn") { e.preventDefault(); ACTIONS["cmt-edit-save"](String(S.cmtEdit)); }
-  else if (e.key === "Escape" && (e.target.id === "cmtNewIn" || e.target.id === "cmtEditIn")) { e.preventDefault(); e.target.id === "cmtNewIn" ? ACTIONS["cmt-cancel"]() : ACTIONS["cmt-edit-cancel"](); }
+  else if (e.key === "Enter" && modKey(e) && e.target.id === "cmtReplyIn") { e.preventDefault(); ACTIONS["cmt-reply-save"](String(S.cmtReply)); }
+  else if (e.key === "Escape" && (e.target.id === "cmtNewIn" || e.target.id === "cmtEditIn" || e.target.id === "cmtReplyIn")) { e.preventDefault(); ({ cmtNewIn: ACTIONS["cmt-cancel"], cmtEditIn: ACTIONS["cmt-edit-cancel"], cmtReplyIn: ACTIONS["cmt-reply-cancel"] })[e.target.id](); }
 }, true);   // before the app's keys, which skip a key taken here
 document.addEventListener("click", (e) => {
   if (e.target.classList?.contains("mb-dialog-overlay")) return closeDialog();   // click on the backdrop

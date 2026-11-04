@@ -748,6 +748,15 @@ export function skipReason(t: { status: Status; attention: number | boolean; per
 
 // ---------- schema ----------
 
+// A turn in a comment's thread, after the user's first text.
+export type Turn = { by: "user" | "agent"; body: string; at: string };
+// Adds a turn to a comment: the user's turn opens it again for the agent, the agent's marks it replied.
+export function addTurn(db: Database, id: number, by: Turn["by"], body: string) {
+  const at = new Date().toISOString();
+  db.run(`UPDATE comments SET thread = json_insert(coalesce(thread, '[]'), '$[#]', json_object('by', ?, 'body', ?, 'at', ?)), state = ?${by === "agent" ? ", replied_at = ?" : ""} WHERE id = ?`,
+    by === "agent" ? [by, body, at, "replied", at, id] : [by, body, at, "open", id]);
+}
+
 // The whole schema plus its migrations. Migrations add, except one: repo routing (801) made todos.project_id
 // nullable, and a build from before it fails on a TODO without a repo.
 export function migrateDb(db: Database) {
@@ -810,6 +819,9 @@ CREATE INDEX IF NOT EXISTS events_todo_kind ON events (todo_id, kind);
   addColumn("sessions", "agent", "TEXT");        // the agent each session ran on (null: claude)
   addColumn("messages", "via", "TEXT");          // the Claude terminal an agent message came from ("Claude 2"), P6; null: the TODO's agent
   addColumn("todos", "suggestions", "TEXT");     // the agent's suggested follow-ups (JSON string[]), cleared at each run start
+  // A comment's turns after its first text (JSON {by: user | agent, body, at}[]); a single earlier reply becomes the first turn.
+  if (addColumn("comments", "thread", "TEXT"))
+    db.exec("UPDATE comments SET thread = json_array(json_object('by', 'agent', 'body', reply, 'at', replied_at)) WHERE reply IS NOT NULL");
   addColumn("todos", "run_started_at", "TEXT");  // when the current or last run started, for the running timers (v6)
   addColumn("todos", "routing", "TEXT");         // the routing step while it runs or asks the user (JSON Routing), 801
   addColumn("todos", "places", "TEXT");          // worktree, branch and PR per topic the TODO left (JSON {project id: Place}), Change topic

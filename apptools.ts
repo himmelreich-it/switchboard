@@ -8,7 +8,7 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
 import { isClaude } from "./agents";
-import { AUTO_EFFORTS, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
+import { AUTO_EFFORTS, addTurn, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
 import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
@@ -171,21 +171,21 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
   });
   // Item 146: the user's comments on selected text in the Files tab.
   s.registerTool("list_comments", {
-    description: "List the user's open comments on files of this TODO: each has the file's path, the line where the selected text started (when known), the selected text (quote), the comment, and your earlier reply if the user edited the comment after it. Answer each with reply_comment.",
+    description: "List the user's open comments on files of this TODO: each has the file's path, the line where the selected text started (when known), the selected text (quote), the comment, and the thread after it when there is one: your earlier replies and the user's answers, oldest first. The last user text is what to answer now. Answer each with reply_comment.",
     inputSchema: {},
   }, async () => {
     const open = commentsOf(todoId, "state = 'open'");
     addEvent(todoId, "list_comments", "agent", `${open.length} open`);
-    return json(open.map((c) => ({ id: c.id, path: c.path, line: c.line, quote: c.quote, comment: c.body, ...(c.reply ? { your_earlier_reply: c.reply } : {}) })));
+    return json(open.map((c) => ({ id: c.id, path: c.path, line: c.line, quote: c.quote, comment: c.body, ...(c.thread.length ? { thread: c.thread.map((t) => ({ by: t.by === "agent" ? "you" : "user", text: t.body })) } : {}) })));
   });
   s.registerTool("reply_comment", {
-    description: "Reply to one of the user's comments from list_comments. You changed the file for it: start the reply with \"Applied\" and say what you changed in a few words. A question: answer it, no edit. Unclear: ask your question as the reply. The user resolves the comment or edits it to follow up.",
+    description: "Reply to one of the user's comments from list_comments. You changed the file for it: start the reply with \"Applied\" and say what you changed in a few words. A question: answer it, no edit. Unclear: ask your question as the reply. The user resolves the comment, or answers you in its thread to follow up.",
     inputSchema: { id: z.number().int(), reply: z.string() },
   }, async ({ id, reply }) => {
     if (!reply.trim()) return err("reply is empty");
     const c = db.query("SELECT id, path FROM comments WHERE id = ? AND todo_id = ?").get(id, todoId) as { id: number; path: string } | null;
     if (!c) return err(`this TODO has no comment ${id}`);
-    db.run("UPDATE comments SET reply = ?, state = 'replied', replied_at = ? WHERE id = ?", [reply.trim(), new Date().toISOString(), id]);
+    addTurn(db, id, "agent", reply.trim());
     noteTodo(todoId, "comments", false);
     addEvent(todoId, "reply_comment", "agent", `${basename(c.path)} · ${reply.trim().slice(0, 80)}`);
     return ok();

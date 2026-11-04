@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -574,4 +574,24 @@ test("swapPlace: each topic keeps its worktree and PR", () => {
   const s2 = swapPlace({}, null, 1, a, yes);
   expect(s2.places).toEqual({ none: a });
   expect(swapPlace(s2.places, 1, null, none, () => false).back).toEqual({ worktree_path: null, pr_number: 12 });
+});
+
+test("comment threads: an earlier reply becomes the first turn, turns set the state", () => {
+  const { Database } = require("bun:sqlite");
+  const db = new Database(":memory:");
+  migrateDb(db);
+  db.exec("ALTER TABLE comments DROP COLUMN thread");
+  db.run("INSERT INTO comments (id, todo_id, root, rel, path, quote, line, body, reply, state, created_at, replied_at) VALUES (1, 1, 'todo', '1', '/f', 'q', 1, 'why?', 'because', 'replied', 'a', 'b')");
+  db.run("INSERT INTO comments (id, todo_id, root, rel, path, quote, line, body, state, created_at) VALUES (2, 1, 'todo', '1', '/f', 'q', 1, 'fix', 'open', 'a')");
+  migrateDb(db);
+  const row = (id: number) => db.query("SELECT thread, state FROM comments WHERE id = ?").get(id) as { thread: string | null; state: string };
+  expect(JSON.parse(row(1).thread!)).toEqual([{ by: "agent", body: "because", at: "b" }]);
+  expect(row(2).thread).toBeNull();
+  addTurn(db, 1, "user", "and then?");
+  expect(row(1).state).toBe("open");
+  addTurn(db, 1, "agent", "done");
+  addTurn(db, 2, "agent", "Applied");
+  expect(row(1).state).toBe("replied");
+  expect(JSON.parse(row(1).thread!).map((t: { by: string; body: string }) => `${t.by}:${t.body}`)).toEqual(["agent:because", "user:and then?", "agent:done"]);
+  expect(JSON.parse(row(2).thread!).map((t: { body: string }) => t.body)).toEqual(["Applied"]);
 });
