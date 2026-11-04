@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-04 · Side-by-side diff
+- Where: file view › Diff mode, header right side, next to the +N −M count.
+- Now: a segmented control "Unified | Side by side" switches the diff layout. Side by side shows the merge-base version on the left and the current file on the right, each with its own line numbers and syntax colors, lines aligned across both panes. Removed lines have a red tint on the left, added lines a green tint on the right, and changed words inside a line a darker tint of the same color. A thin red or green bar in the gutter marks each changed line. Side by side is the default; the choice is remembered for all files and TODOs. ⌘F opens the editor's search bar on the right pane.
+- Why: the user wanted VS Code-style side-by-side diffs.
+- Design question: should Side by side collapse long runs of unchanged lines, as GitHub does, or keep the whole file like VS Code?
+
 ### 2026-11-04 · Reply in a comment's thread
 - Where: Files tab › Comments column › comment card.
 - Now: a comment holds a back-and-forth with the agent. Under the first comment the card lists each turn in order: the agent's replies in the inset box labeled "Agent", the user's answers below a muted "You" label. When the agent replied last, the card's buttons start with "Reply" and there is no Edit; Reply opens a box "Reply · ⌘Enter sends" with Cancel and Reply in place of the buttons. Sending puts the answer at the end of the thread and sets the comment back to Open, so it counts in "Ask agent · N" again. When the user wrote last, the card shows Edit instead of Reply, and Edit changes only that last text: the box sits under the thread so far. Resolved comments show no Reply. The delete dialog now reads "The comment and its replies are deleted."

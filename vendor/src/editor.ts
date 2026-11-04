@@ -19,6 +19,7 @@ import { go } from "@codemirror/legacy-modes/mode/go";
 import { rust } from "@codemirror/legacy-modes/mode/rust";
 import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { sql } from "@codemirror/legacy-modes/mode/sql";
+import { MergeView } from "@codemirror/merge";
 import { lineDiff } from "./linediff";
 
 // ponytail: no HCL/Terraform mode exists for CodeMirror 6; .tf files show as plain text.
@@ -159,6 +160,35 @@ function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: 
   };
 }
 
+// Side-by-side diff: base left, current right, both read-only. The host scrolls (index.html gives the panes their natural height).
+// Changed text sits on the line tint, so the tint twice marks it darker.
+const mergeTheme = EditorView.theme({
+  "&.cm-merge-a .cm-changedLine, .cm-deletedChunk": { backgroundColor: "var(--tint-red)" },
+  "&.cm-merge-b .cm-changedLine, .cm-inlineChangedLine": { backgroundColor: "var(--tint-success)" },
+  "&.cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText": { background: "var(--tint-red)" },
+  "&.cm-merge-b .cm-changedText": { background: "var(--tint-success)" },
+  "&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter": { background: "var(--accent-red)" },
+  "&.cm-merge-b .cm-changedLineGutter": { background: "var(--status-success)" },
+});
+function merge(parent: HTMLElement, o: { a: string; b: string; name: string }): Handle {
+  const ext = [
+    lineNumbers(), highlightSpecialChars(), drawSelection(), highlightSelectionMatches(),
+    keymap.of([...defaultKeymap, ...searchKeymap]),
+    language(o.name), syntaxHighlighting(style), theme, mergeTheme,
+    EditorState.readOnly.of(true),
+  ];
+  const mv = new MergeView({ parent, a: { doc: o.a, extensions: ext }, b: { doc: o.b, extensions: ext }, gutter: true });
+  const view = mv.b;
+  return {
+    view,
+    setDoc() {}, setReadOnly() {}, format() {}, setMarks() {},   // read-only; the app rebuilds it when the text changes
+    focus() { view.focus(); },
+    search() { openSearchPanel(view); },
+    reveal(pos) { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) }); },
+    destroy() { mv.destroy(); },
+  };
+}
+
 // The markdown toolbar of the design (item 107): each button inserts markdown syntax around the selection or at the
 // start of the selected lines.
 function formatMd(view: EditorView, kind: string) {
@@ -193,4 +223,4 @@ function formatMd(view: EditorView, kind: string) {
   else if (kind === "table") block("| Column | Column |\n| --- | --- |\n| | |");
 }
 
-Object.assign(globalThis, { SBEditor: { create, lineDiff } });
+Object.assign(globalThis, { SBEditor: { create, merge, lineDiff } });
