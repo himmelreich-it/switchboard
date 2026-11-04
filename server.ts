@@ -6,7 +6,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import {
   DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
-  descendants,
+  descendants, addTurn, type Turn,
 } from "./lib";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
@@ -60,9 +60,12 @@ export const projectRow = (id: number | null) => (id == null ? null : db.query("
 export const filesOf = (todoId: number) =>
   (db.query("SELECT id, path, session_no, by_user FROM files WHERE todo_id = ? ORDER BY id").all(todoId) as { id: number; path: string; session_no: number | null; by_user: number | null }[])
     .map((f) => ({ ...f, work: f.path.startsWith(join(artifactDir(todoId), "work") + sep) }));
-export type Comment = { id: number; todo_id: number; root: string; rel: string; path: string; quote: string; line: number | null; body: string; reply: string | null; state: "open" | "replied" | "resolved"; created_at: string; replied_at: string | null };
+// A comment is the user's first text (body) and the turns after it, the agent's replies and the user's answers (thread).
+export type Comment = { id: number; todo_id: number; root: string; rel: string; path: string; quote: string; line: number | null; body: string; thread: Turn[]; state: "open" | "replied" | "resolved"; created_at: string; replied_at: string | null };
 export const commentsOf = (todoId: number, where = "1") =>
-  db.query(`SELECT * FROM comments WHERE todo_id = ? AND ${where} ORDER BY path, line, id`).all(todoId) as Comment[];
+  (db.query(`SELECT * FROM comments WHERE todo_id = ? AND ${where} ORDER BY path, line, id`).all(todoId) as (Omit<Comment, "thread"> & { thread: string | null; reply?: unknown })[])
+    .map(({ reply, ...c }) => ({ ...c, thread: c.thread ? JSON.parse(c.thread) as Turn[] : [] }));
+
 // Since 801 the folder no longer depends on the topic, so it exists before routing and never moves.
 export const artifactDir = (todoId: number) => join(HOME, "data", String(todoId));
 export const attachmentsOf = (messageId: number) =>
@@ -1298,7 +1301,7 @@ async function api(req: Request, path: string): Promise<Response> {
   }
 
   // Item 146: comments on selected text of a file the TODO shows. The agent reads them with list_comments.
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/comments(?:\/(\d+))?$/))) {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/comments(?:\/(\d+)(\/replies)?)?$/))) {
     const t = todoOr404(Number(m[1]));
     if (!m[2] && method === "POST") {
       const quote = String(body.quote ?? ""), text = String(body.body ?? "").trim();
@@ -1318,9 +1321,18 @@ async function api(req: Request, path: string): Promise<Response> {
     }
     const c = m[2] ? db.query("SELECT * FROM comments WHERE id = ? AND todo_id = ?").get(Number(m[2]), t.id) as Comment | null : null;
     if (!c) return fail("no such comment", 404);
+    // The user answers the agent's reply: the comment is open again, and list_comments returns the whole thread.
+    if (m[3]) {
+      const text = String(body.body ?? "").trim();
+      if (method !== "POST") return fail("method not allowed", 405);
+      if (!text) return fail("body is required");
+      addTurn(db, c.id, "user", text);
+      noteTodo(t.id, "comments", false);
+      return json({ ok: true, comments: commentsOf(t.id) });
+    }
     if (method === "DELETE") { db.run("DELETE FROM comments WHERE id = ?", [c.id]); noteTodo(t.id, "comments", false); return json({ ok: true, comments: commentsOf(t.id) }); }
     if (method === "PATCH") {
-      // An edited comment is open again: the agent's next list_comments returns the new text with its earlier reply.
+      // An edited comment is open again: the agent's next list_comments returns the new text with the thread so far.
       if (typeof body.body === "string" && body.body.trim()) db.run("UPDATE comments SET body = ?, state = 'open' WHERE id = ?", [body.body.trim(), c.id]);
       else if (body.state === "resolved" || body.state === "open") db.run("UPDATE comments SET state = ? WHERE id = ?", [body.state, c.id]);
       else return fail("body or state (resolved, open) is required");
