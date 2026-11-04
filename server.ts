@@ -1319,7 +1319,7 @@ async function api(req: Request, path: string): Promise<Response> {
       // The TODO's comments come back, so the page shows the change without refetching the transcript.
       return json({ id: Number(r.lastInsertRowid), comments: commentsOf(t.id) });
     }
-    const c = m[2] ? db.query("SELECT * FROM comments WHERE id = ? AND todo_id = ?").get(Number(m[2]), t.id) as Comment | null : null;
+    const c = m[2] ? commentsOf(t.id, `id = ${Number(m[2])}`)[0] : null;
     if (!c) return fail("no such comment", 404);
     // The user answers the agent's reply: the comment is open again, and list_comments returns the whole thread.
     if (m[3]) {
@@ -1332,8 +1332,14 @@ async function api(req: Request, path: string): Promise<Response> {
     }
     if (method === "DELETE") { db.run("DELETE FROM comments WHERE id = ?", [c.id]); noteTodo(t.id, "comments", false); return json({ ok: true, comments: commentsOf(t.id) }); }
     if (method === "PATCH") {
-      // An edited comment is open again: the agent's next list_comments returns the new text with the thread so far.
-      if (typeof body.body === "string" && body.body.trim()) db.run("UPDATE comments SET body = ?, state = 'open' WHERE id = ?", [body.body.trim(), c.id]);
+      // Only the last text of the thread is edited, and only while it is the user's: an agent's reply is answered with a reply.
+      // The edited comment is open again: the agent's next list_comments returns the thread with the new text.
+      if (typeof body.body === "string" && body.body.trim()) {
+        const last = c.thread.at(-1);
+        if (last?.by === "agent") return fail("the agent replied last: reply instead of editing", 409);
+        if (last) db.run("UPDATE comments SET thread = json_set(thread, '$[#-1].body', ?), state = 'open' WHERE id = ?", [body.body.trim(), c.id]);
+        else db.run("UPDATE comments SET body = ?, state = 'open' WHERE id = ?", [body.body.trim(), c.id]);
+      }
       else if (body.state === "resolved" || body.state === "open") db.run("UPDATE comments SET state = ? WHERE id = ?", [body.state, c.id]);
       else return fail("body or state (resolved, open) is required");
       noteTodo(t.id, "comments", false);

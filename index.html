@@ -4519,16 +4519,19 @@ function renderNotes(f, show, typing) {
   // The thread after the first text: the agent's replies as markdown, the user's answers as typed.
   const turn = (t) => t.by === "agent" ? `<div class="r"><span class="ml">Agent</span><div class="md">${md(t.body)}</div></div>`
     : `<div class="u"><span class="ml">You</span><div class="b">${esc(t.body)}</div></div>`;
+  // Only the last text is edited, and only while it is the user's: an agent's reply is answered with Reply.
+  const editable = (c) => c.thread.at(-1)?.by !== "agent";
   const card = (c) => {
     const p = where.get(c.id), line = p && !p.outdated ? p.line : c.line;
-    if (S.cmtEdit === c.id) return `<div class="cmt on">${quote(c.quote)}<textarea id="cmtEditIn" data-fk="cmt-edit-in:${c.id}" aria-label="Edit comment"></textarea>
+    // Edit changes the user's last text, the thread before it stays shown.
+    if (S.cmtEdit === c.id) return `<div class="cmt on">${quote(c.quote)}${c.thread.length ? `<div class="b">${esc(c.body)}</div>${c.thread.slice(0, -1).map(turn).join("")}` : ""}<textarea id="cmtEditIn" data-fk="cmt-edit-in:${c.id}" aria-label="Edit comment"></textarea>
       <div class="acts">${btn("Cancel", "cmt-edit-cancel", { v: "ghost" })}${btn("Save", "cmt-edit-save", { v: "primary", id: c.id })}</div></div>`;
     return `<div class="cmt${c.id === S.cmtOn ? " on" : ""}${p?.outdated ? " outdated" : ""} ${c.state}"${S.cmtReply === c.id ? "" : ` data-act="cmt-on" data-id="${c.id}"`}>${quote(c.quote)}
       <div class="st">${badge(STATE[c.state][0], STATE[c.state][1])}${p?.outdated ? badge("Outdated") : ""}${line ? `<span>line ${line}</span>` : ""}</div>
       <div class="b">${esc(c.body)}</div>${c.thread.map(turn).join("")}
       ${S.cmtReply === c.id ? `<textarea id="cmtReplyIn" data-fk="cmt-reply-in:${c.id}" placeholder="Reply · ⌘Enter sends" aria-label="Reply"></textarea>
       <div class="acts">${btn("Cancel", "cmt-reply-cancel", { v: "ghost" })}${btn("Reply", "cmt-reply-save", { v: "primary", id: c.id })}</div>` : `
-      <div class="acts">${c.thread.length && c.state !== "resolved" ? btn("Reply", "cmt-reply", { v: "ghost", id: c.id }) : ""}${btn("Edit", "cmt-edit", { v: "ghost", id: c.id })}${c.state === "resolved" ? btn("Reopen", "cmt-state", { v: "ghost", id: `${c.id}:open` }) : btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}${btn("Delete", "cmt-del", { v: "ghost", id: c.id })}</div>`}</div>`;
+      <div class="acts">${!editable(c) && c.state !== "resolved" ? btn("Reply", "cmt-reply", { v: "ghost", id: c.id }) : ""}${editable(c) ? btn("Edit", "cmt-edit", { v: "ghost", id: c.id }) : ""}${c.state === "resolved" ? btn("Reopen", "cmt-state", { v: "ghost", id: `${c.id}:open` }) : btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}${btn("Delete", "cmt-del", { v: "ghost", id: c.id })}</div>`}</div>`;
   };
   setHtml(box, `<div class="nh"><span class="ml">Comments · ${list.length - nResolved}</span>${nOpen ? btn(`Ask agent · ${nOpen}`, "cmt-ask") : ""}</div>
     ${nResolved ? `<button type="button" class="shr" data-act="cmt-resolved" data-fk="cmt-resolved">${S.cmtResolved ? "Hide" : "Show"} resolved (${nResolved})</button>` : ""}
@@ -4538,7 +4541,7 @@ function renderNotes(f, show, typing) {
   // A re-render (the agent replied meanwhile) rebuilds the boxes: what was typed comes back from S.
   const nw = $("cmtNewIn"), ed = $("cmtEditIn"), rp = $("cmtReplyIn");
   if (nw && !nw._filled) { nw._filled = true; nw.value = draft.text ?? ""; }
-  if (ed && !ed._filled) { ed._filled = true; ed.value = S.cmtEditText ?? list.find((c) => c.id === S.cmtEdit)?.body ?? ""; }
+  if (ed && !ed._filled) { ed._filled = true; const c = list.find((c) => c.id === S.cmtEdit); ed.value = S.cmtEditText ?? (c?.thread.at(-1)?.body ?? c?.body) ?? ""; }
   if (rp && !rp._filled) { rp._filled = true; rp.value = S.cmtReplyText ?? ""; }
 }
 // The selected text in the open file, with its line: from the editor's selection, or from the rendered markdown.
@@ -4616,7 +4619,8 @@ function cmtCall(id, method, body, title, failed, sub = "") {
   if (d) {
     d.comments = method === "DELETE" ? before.filter((c) => c.id !== cid)
       : before.map((c) => c.id !== cid ? c : sub ? { ...c, thread: [...c.thread, { by: "user", body: body.body, at: new Date().toISOString() }], state: "open" }
-        : body.body ? { ...c, body: body.body, state: "open" } : { ...c, state: body.state });
+        : body.body ? (c.thread.length ? { ...c, thread: [...c.thread.slice(0, -1), { ...c.thread.at(-1), body: body.body }], state: "open" } : { ...c, body: body.body, state: "open" })
+        : { ...c, state: body.state });
     render();
   }
   const mine = d?.comments;
