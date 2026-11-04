@@ -12,6 +12,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 - Why: the user wanted VS Code-style side-by-side diffs.
 - Design question: should Side by side collapse long runs of unchanged lines, as GitHub does, or keep the whole file like VS Code?
 
+### 2026-11-04 · Reply in a comment's thread
+- Where: Files tab › Comments column › comment card.
+- Now: a comment holds a back-and-forth with the agent. Under the first comment the card lists each turn in order: the agent's replies in the inset box labeled "Agent", the user's answers below a muted "You" label. When the agent replied last, the card's buttons start with "Reply" and there is no Edit; Reply opens a box "Reply · ⌘Enter sends" with Cancel and Reply in place of the buttons. Sending puts the answer at the end of the thread and sets the comment back to Open, so it counts in "Ask agent · N" again. When the user wrote last, the card shows Edit instead of Reply, and Edit changes only that last text: the box sits under the thread so far. Resolved comments show no Reply. The delete dialog now reads "The comment and its replies are deleted."
+- Why: the user often discusses a passage with the agent over several rounds, and editing the first comment lost the earlier exchange.
+- Design question: should a long thread fold its older turns ("3 earlier replies") so the column stays scannable?
+
 ### 2026-11-03 · Theme button cycles Light, Dark, Auto
 - Where: title bar, the theme icon button left of Settings.
 - Now: the button shows the current mode instead of the one it switches to: a sun for Light, a moon for Dark, a half-filled circle for Auto. Each click steps Light › Dark › Auto › Light. The tooltip names the mode, the theme in use and the next step, for example "Auto · Catppuccin Mocha · click for Light".
