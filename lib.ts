@@ -387,6 +387,150 @@ export function tokenOk(token: string, header: string | null, query: string | nu
   return diff === 0;
 }
 
+// ---------- the browser on the network (server.json) ----------
+
+// Who may reach the network listener: the private ranges and Tailscale's 100.64/10, plus IPv6 unique local (fc00::/7,
+// which holds Tailscale's fd7a:115c:a1e0::/48). Anything else is refused before a page is served.
+export const DEFAULT_ALLOW = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7"];
+export const DEFAULT_LAN_PORT = 4478;
+
+function v4num(s: string): bigint | null {
+  const p = s.split(".");
+  if (p.length !== 4 || !p.every((x) => /^\d{1,3}$/.test(x) && Number(x) <= 255)) return null;
+  return p.reduce((n, x) => (n << 8n) | BigInt(x), 0n);
+}
+function v6num(s: string): bigint | null {
+  s = s.replace(/%.*$/, "");   // a zone id (fe80::1%eth0)
+  const tail = s.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (tail) {
+    const four = v4num(tail[2]!);
+    if (four === null) return null;
+    s = tail[1] + (four >> 16n).toString(16) + ":" + (four & 0xffffn).toString(16);
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const groups = (h: string) => (h === "" ? [] : h.split(":"));
+  const left = groups(halves[0]!), right = halves.length === 2 ? groups(halves[1]!) : [];
+  const fill = 8 - left.length - right.length;
+  if (halves.length === 2 ? fill < 1 : fill !== 0) return null;
+  const all = [...left, ...Array(halves.length === 2 ? fill : 0).fill("0"), ...right];
+  if (!all.every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return null;
+  return all.reduce((n, g) => (n << 16n) | BigInt(parseInt(g, 16)), 0n);
+}
+// An address as a number and its family. IPv4-mapped IPv6 (::ffff:192.168.1.5, how a dual-stack socket reports an IPv4
+// client) counts as IPv4, so one rule covers both. null when it is not an address.
+export function ipNum(s: string): { v6: boolean; n: bigint } | null {
+  const four = v4num(s);
+  if (four !== null) return { v6: false, n: four };
+  const six = s.includes(":") ? v6num(s) : null;
+  if (six === null) return null;
+  if (six >> 32n === 0xffffn) return { v6: false, n: six & 0xffffffffn };
+  return { v6: true, n: six };
+}
+// "192.168.1.0/24", "fd7a::/48", or one address ("192.168.1.50" is /32). null when malformed.
+export function parseCidr(s: string): { v6: boolean; n: bigint; bits: number } | null {
+  const [a, b, ...rest] = s.trim().split("/");
+  const ip = ipNum(a ?? "");
+  if (!ip || rest.length || (b !== undefined && !/^\d{1,3}$/.test(b))) return null;
+  const max = ip.v6 ? 128 : 32, bits = b === undefined ? max : Number(b);
+  return bits > max ? null : { ...ip, bits };
+}
+export function inCidrs(addr: string, cidrs: string[]): boolean {
+  const ip = ipNum(addr);
+  if (!ip) return false;
+  return cidrs.some((c) => {
+    const r = parseCidr(c);
+    if (!r || r.v6 !== ip.v6) return false;
+    const shift = BigInt((r.v6 ? 128 : 32) - r.bits);
+    return ip.n >> shift === r.n >> shift;
+  });
+}
+
+// What a request to the network listener needs, by the address it comes from. Loopback (another program or user on
+// this machine) logs in like an allowed address: on this listener the launch token is not the only way in.
+export type Access = "trusted" | "allowed" | "refused";
+export function accessOf(addr: string, allow: string[], trusted: string[]): Access {
+  if (inCidrs(addr, trusted)) return "trusted";
+  return inCidrs(addr, allow) || inCidrs(addr, ["127.0.0.0/8", "::1/128"]) ? "allowed" : "refused";
+}
+
+// The Host header must name this machine (one of `names`: its host name, its addresses, the names in server.json and
+// the certificate), with the network port. That blocks DNS rebinding: a page from another site that resolves its own
+// name to this machine sends that name. A port left out means the scheme's default.
+export function hostOk(host: string | null, names: string[], port: number, tls: boolean): boolean {
+  const m = (host ?? "").toLowerCase().match(/^(?:\[([0-9a-f:.]+)\]|([a-z0-9.-]+))(?::(\d+))?$/);
+  if (!m) return false;
+  const name = m[1] ?? m[2];
+  if (Number(m[3] ?? (tls ? 443 : 80)) !== port) return false;
+  return names.some((n) => n.toLowerCase() === name);
+}
+// The host part of a Host header that hostOk accepted: the passkey's site (WebAuthn RP ID) when it is a name. A
+// passkey cannot belong to an IP address, so null for those.
+export function rpIdOf(host: string): string | null {
+  const name = host.toLowerCase().replace(/:\d+$/, "");
+  return name.startsWith("[") || ipNum(name) ? null : name;
+}
+
+export type LanConfig = {
+  listen: string; port: number; names: string[]; allow: string[]; trusted: string[];
+  password: string | null; tls: { cert: string; key: string } | null;
+};
+// server.json as written by hand or by `bun server.ts --lan`. Throws with the field at fault.
+export function lanConfigIn(raw: unknown, loopbackPort: number): LanConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("must be a JSON object");
+  const r = raw as Record<string, unknown>;
+  const known = ["listen", "port", "names", "allow", "trusted", "password", "tls"];
+  const extra = Object.keys(r).filter((k) => !known.includes(k));
+  if (extra.length) throw new Error(`unknown field ${extra.join(", ")}`);
+  const listen = r.listen ?? "0.0.0.0";
+  if (typeof listen !== "string" || !ipNum(listen)) throw new Error(`listen: "${listen}" is not an address (0.0.0.0 for all, or one of this machine's)`);
+  const port = r.port ?? DEFAULT_LAN_PORT;
+  if (!Number.isInteger(port) || (port as number) < 1 || (port as number) > 65535) throw new Error(`port: ${port} is not a port`);
+  if (port === loopbackPort) throw new Error(`port: ${port} is the port of this machine's own window; pick another (default ${DEFAULT_LAN_PORT})`);
+  const list = (k: string, def: string[], ok: (s: string) => boolean, what: string) => {
+    const v = r[k] ?? def;
+    if (!Array.isArray(v) || !v.every((s) => typeof s === "string")) throw new Error(`${k}: must be a list of strings`);
+    const bad = v.find((s) => !ok(s));
+    if (bad !== undefined) throw new Error(`${k}: "${bad}" is not ${what}`);
+    return v as string[];
+  };
+  const cidr = (s: string) => parseCidr(s) !== null;
+  const names = list("names", [], (s) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(s), "a host name");
+  const allow = list("allow", DEFAULT_ALLOW, cidr, "an address or range (192.168.1.0/24)");
+  const trusted = list("trusted", [], cidr, "an address or range");
+  if (r.password != null && (typeof r.password !== "string" || !r.password.startsWith("$argon2"))) throw new Error("password: set it with `bun server.ts --password`");
+  let tls: LanConfig["tls"] = null;
+  if (r.tls != null) {
+    const t = r.tls as Record<string, unknown>;
+    if (typeof t !== "object" || typeof t.cert !== "string" || typeof t.key !== "string" || !t.cert || !t.key) throw new Error('tls: needs "cert" and "key", the paths of the two PEM files');
+    tls = { cert: t.cert, key: t.key };
+  }
+  return { listen, port: port as number, names, allow, trusted, password: (r.password as string | null) ?? null, tls };
+}
+
+// Failed logins per address: `max` within `windowMs` lock that address out for `lockMs`.
+export class Throttle {
+  private seen = new Map<string, { fails: number[]; until: number }>();
+  constructor(private max = 5, private windowMs = 60_000, private lockMs = 60_000) {}
+  // Milliseconds until `key` may try again; 0 when it may now.
+  wait(key: string, now: number): number {
+    const s = this.seen.get(key);
+    return s && s.until > now ? s.until - now : 0;
+  }
+  // A failure counted before the check ran (so parallel tries cannot all pass `wait`), taken back when it succeeded.
+  forgive(key: string, at: number) {
+    const s = this.seen.get(key);
+    if (s) s.fails = s.fails.filter((t) => t !== at);
+  }
+  fail(key: string, now: number) {
+    const s = this.seen.get(key) ?? { fails: [], until: 0 };
+    s.fails = [...s.fails.filter((t) => now - t < this.windowMs), now];
+    if (s.fails.length >= this.max) { s.until = now + this.lockMs; s.fails = []; }
+    this.seen.set(key, s);
+    if (this.seen.size > 10_000) for (const [k, v] of this.seen) if (v.until <= now && !v.fails.some((t) => now - t < this.windowMs)) this.seen.delete(k);
+  }
+}
+
 // The interesting argument of a tool call: the Bash command, the file path, the search pattern...
 export const toolArg = (input: any): string =>
   String(input?.command ?? input?.file_path ?? input?.pattern ?? input?.skill ?? input?.path ?? input?.url ?? "").slice(0, 300);
@@ -849,6 +993,14 @@ CREATE INDEX IF NOT EXISTS events_todo_kind ON events (todo_id, kind);
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS todos_key ON todos (key) WHERE key IS NOT NULL");
   db.exec(`CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)`);
+  // The browser on the network (server.json): a login token per logged-in browser, kept as its SHA-256 only; the
+  // passkeys (WebAuthn credentials, one site each); and the one-time links of `bun server.ts --add-passkey`.
+  db.exec(`
+CREATE TABLE IF NOT EXISTS logins (hash TEXT PRIMARY KEY, how TEXT NOT NULL, address TEXT NOT NULL, agent TEXT NOT NULL, created_at TEXT NOT NULL, used_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS passkeys (
+  id TEXT PRIMARY KEY, rp_id TEXT NOT NULL, name TEXT NOT NULL, public_key BLOB NOT NULL, counter INTEGER NOT NULL,
+  transports TEXT, created_at TEXT NOT NULL, used_at TEXT);
+CREATE TABLE IF NOT EXISTS passkey_invites (hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL);`);
   // P4 kept the defaults flat and the mode in projects.mode, both Claude's: they move under "claude".
   for (const p of db.query("SELECT id, mode, defaults FROM projects WHERE mode IS NOT NULL OR defaults IS NOT NULL").all() as { id: number; mode: string | null; defaults: string | null }[]) {
     const d = p.defaults ? JSON.parse(p.defaults) : {};

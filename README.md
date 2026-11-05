@@ -8,6 +8,7 @@ TODOs and acts only when told. Spec: `designs/feature-spec-switchboard.md`.
 ```sh
 bun install
 bun server.ts        # prints http://127.0.0.1:4477/#token=… (PORT to change); open that link
+bun server.ts --lan  # also serve browsers on other machines, with a login (see "Open it from another machine")
 bun run app          # same app in its own window (Electron); closing it stops running agents and terminals like Ctrl-C
 bun test             # pure helpers in lib.ts
 bun scripts/bench.ts # server start, list and transcript load times on a throwaway home (args: todos events)
@@ -52,3 +53,132 @@ still a project. Shortcuts written with ⌘ use Alt on Linux and Windows.
 Data lives in `~/.switchboard/` (`SWITCHBOARD_HOME` to change): `db.sqlite`, `token` while the server runs, and
 `data/<todo-id>/` for the agents' files. On first start, topics are imported from
 `~/.auto-coder/db.sqlite`.
+
+## Open it from another machine
+
+Switchboard can serve the same app to browsers on your network: you run it on the machine that does the work (the
+"desk"), and open it from a laptop, a tablet or another desktop. Agents, git and terminals keep running on the desk;
+the other machines only show the page. Nothing changes until you create `~/.switchboard/server.json`. The window
+app and `http://127.0.0.1:4477` keep working as before, and the network gets its own port, 4478 by default.
+
+### Quick start: plain HTTP on your home network
+
+On the desk:
+
+```sh
+bun server.ts --lan     # writes ~/.switchboard/server.json, asks for a password, then starts as usual
+```
+
+It prints the addresses to open, for example `http://192.168.1.123:4478` and `http://desk.local:4478`. Open one
+on the other machine and log in with the password. Brave, Chrome and 1Password offer to save it. The window app
+reads the same `server.json`, so once the file exists the window app serves the network too.
+
+Let the port through the desk's firewall:
+
+- **Windows**: the first start shows "Windows Defender Firewall has blocked some features of bun". Allow it on
+  **private** networks. If you dismissed the dialog, run this in an admin PowerShell:
+  `New-NetFirewallRule -DisplayName "Switchboard" -Direction Inbound -Protocol TCP -LocalPort 4478 -Action Allow -Profile Private`.
+  Your Wi-Fi must be set to a private network (Settings › Network › Wi-Fi › the network › Private).
+- **macOS**: allow incoming connections for `bun` when asked (System Settings › Network › Firewall).
+- **Linux** with ufw: `sudo ufw allow from 192.168.0.0/16 to any port 4478 proto tcp`.
+
+> **Security warning:** over plain `http://`, the password and the login cross the network unencrypted. Anyone on the
+> same Wi-Fi or LAN can capture them, and with them gets agent control and a shell on the desk. Plain HTTP is fine on
+> your own home network. On an office, shared or café network, use HTTPS (below).
+
+### HTTPS and passkeys
+
+A passkey (1Password, or the browser's own) logs you in without typing anything, and HTTPS encrypts the connection.
+Browsers allow passkeys only on `https://` with a **name**, never on `http://` or an IP address. Pick one way to get
+a name with a certificate:
+
+| Way | Name | Certificate | Other machines need |
+|---|---|---|---|
+| Tailscale | `desk.<tailnet>.ts.net` | `tailscale cert` | Tailscale, nothing else |
+| mkcert | `desk.local` | `mkcert` | mkcert's root certificate installed once |
+| Your own domain | `sb.example.com` pointing at the desk | Let's Encrypt (DNS challenge) | nothing |
+
+**Tailscale.** In the Tailscale admin console, turn on MagicDNS and HTTPS certificates (DNS page). Then on the desk:
+
+```sh
+cd ~/.switchboard
+tailscale cert desk.<tailnet>.ts.net      # writes desk.<tailnet>.ts.net.crt and .key here
+```
+
+Add the files to `server.json` and restart Switchboard:
+
+```json
+"tls": { "cert": "~/.switchboard/desk.<tailnet>.ts.net.crt", "key": "~/.switchboard/desk.<tailnet>.ts.net.key" }
+```
+
+Open `https://desk.<tailnet>.ts.net:4478`. Tailscale certificates last 90 days: run `tailscale cert` again before
+then, and restart Switchboard.
+
+**mkcert.** On the desk, run `mkcert -install` and then `mkcert desk.local 192.168.1.123` (your address) in
+`~/.switchboard`, and put the two files it names in `tls` as above. Each other machine must trust mkcert's root
+certificate: copy `rootCA.pem` from the folder `mkcert -CAROOT` prints, and import it there (Windows: double-click,
+Install Certificate › Local Machine › Trusted Root Certification Authorities; macOS: Keychain Access › System ›
+Always Trust). `desk.local` works on macOS and Windows; Linux machines need Avahi (`nss-mdns`).
+
+Switchboard accepts every name in the certificate, plus the desk's host name and addresses. Other names go in
+`"names"`.
+
+**Adding a passkey.** Open Switchboard by its `https://` name and log in with the password. Then go to
+Settings › Network, enter a name, and press **Add passkey**; 1Password or the browser saves it. Each passkey works
+for the one address it was made on. For a desk without a screen, `bun server.ts --add-passkey` prints a link that
+adds a passkey without logging in first; it works once, within 10 minutes. Once you have a passkey you can drop the
+password: remove `"password"` from `server.json`.
+
+### Install it as an app
+
+Brave and Chrome: menu › **Install Switchboard** (or Cast, save and share › Install page as app). Over plain
+`http://` the browser may offer only **Create shortcut** › "Open as window". The app is named
+"Switchboard · desk", and so is the tab title, so you can tell machines apart.
+
+The VS Code and Open folder buttons are hidden in a browser on another machine, since they would open on the desk's
+screen.
+
+### server.json
+
+```json
+{
+  "listen": "0.0.0.0",
+  "port": 4478,
+  "allow": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7"],
+  "trusted": [],
+  "names": [],
+  "password": "<set with bun server.ts --password>",
+  "tls": { "cert": "<path>", "key": "<path>" }
+}
+```
+
+| Field | Meaning | Default |
+|---|---|---|
+| `listen` | The address to listen on: `0.0.0.0` for all, `::` for IPv6 too, or one address (your Tailscale IP, say). | `0.0.0.0` |
+| `port` | The network port. It must differ from the window app's 4477. | `4478` |
+| `allow` | Addresses and ranges that may log in. Everything else is refused before any page is served. Tailscale's `100.64.0.0/10` is also the range some internet providers use for their own network (carrier-grade NAT): without Tailscale, leave it out. | private ranges and Tailscale |
+| `trusted` | Addresses that need no login at all. | none |
+| `names` | Extra names the desk is reached by (a DNS name, say). | none |
+| `password` | The password's hash (argon2id). | none |
+| `tls` | The certificate and key (PEM files) for HTTPS. `~` is your home folder. | none: plain HTTP |
+
+Each request is sorted by its address: from `trusted` it needs no login; from `allow` (or from the desk itself) it
+needs the password or a passkey; anything else is refused. A login lasts 30 days from its last use. The password
+applies at once; restart Switchboard after the other changes. If `server.json` is broken, Switchboard still starts,
+without the network, and Settings › Network shows the error.
+
+> **Security warning:** a `trusted` address logs in with no secret at all. If the router hands that address to another
+> device, or a guest joins the network, that device gets the same access, including a shell on the desk. Give trusted
+> machines a fixed address in the router, or leave `trusted` empty and use a passkey.
+
+### Commands
+
+```sh
+bun server.ts --lan            # write server.json if missing, set a password if none, then start
+bun server.ts --password       # set or change the password (logs out browsers that used the old one), then exit
+bun server.ts --add-passkey    # print a one-time link (10 minutes) that adds a passkey, then exit
+bun server.ts --logout-all     # log every browser out, then exit
+```
+
+The last three work while Switchboard runs. Settings › Network lists the addresses, the passkeys and the logged-in browsers,
+each with a Remove or Log out button.

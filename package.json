@@ -34,6 +34,7 @@
       "agents.ts",
       "apptools.ts",
       "lib.ts",
+      "lan.ts",
       "index.html",
       "images/**",
       "vendor/*.js",
@@ -96,6 +97,10 @@
     "@agentclientprotocol/claude-agent-acp": "0.89.1",
     "@agentclientprotocol/sdk": "1.7.0",
     "@modelcontextprotocol/sdk": "1.32.1",
+    "@simplewebauthn/server": "14.0.3",
     "zod": "^4.6.5"
+  },
+  "overrides": {
+    "@peculiar/asn1-schema": "2.11.1"
   }
 }
