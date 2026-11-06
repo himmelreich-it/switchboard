@@ -4,7 +4,7 @@ import {
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
-  DEFAULT_ALLOW, DEFAULT_LAN_PORT, Throttle, accessOf, hostOk, inCidrs, ipNum, lanConfigIn, parseCidr, rpIdOf,
+  DEFAULT_ALLOW, DEFAULT_LAN_PORT, Throttle, typedLine, accessOf, hostOk, inCidrs, ipNum, lanConfigIn, parseCidr, rpIdOf,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -680,6 +680,16 @@ test("Throttle", () => {
   expect(t.wait("a", 32_000)).toBe(0);
   t.fail("a", 100_000); t.fail("a", 170_000); t.fail("a", 240_000);   // spread out: never three within a minute
   expect(t.wait("a", 240_000)).toBe(0);
+});
+
+test("typedLine", () => {
+  expect(typedLine("", "abc")).toEqual({ text: "abc", done: false });
+  expect(typedLine("abc", "d\r")).toEqual({ text: "abcd", done: true });
+  expect(typedLine("abc", "\u007f")).toEqual({ text: "ab", done: false });
+  expect(typedLine("abc", "\b\b")).toEqual({ text: "a", done: false });
+  expect(typedLine("", "\x1b[200~päss\x1b[201~\r")).toEqual({ text: "päss", done: true });   // a bracketed paste
+  expect(typedLine("ab", "\x1b[A\x1bOB\x1b[3~")).toEqual({ text: "ab", done: false });        // arrows, Delete
+  expect(typedLine("", "\x16\t")).toEqual({ text: "", done: false });                          // other control keys
 });
 
 test("Throttle.forgive takes back a try counted ahead", () => {

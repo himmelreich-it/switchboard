@@ -9,7 +9,7 @@ import { join } from "node:path";
 import {
   generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse,
 } from "@simplewebauthn/server";
-import { DEFAULT_ALLOW, DEFAULT_LAN_PORT, Throttle, accessOf, lanConfigIn, rpIdOf, type Access, type LanConfig } from "./lib";
+import { DEFAULT_ALLOW, DEFAULT_LAN_PORT, Throttle, accessOf, lanConfigIn, rpIdOf, typedLine, type Access, type LanConfig } from "./lib";
 
 export const LOGIN_DAYS = 30;          // a login lasts this long after its last use
 const INVITE_MINUTES = 10;            // a one-time link of --add-passkey
@@ -290,24 +290,22 @@ export async function lanApi(req: Request, path: string, here: Here, db: Databas
 
 // A line typed without echo (the password). Falls back to a plain line when stdin is not a terminal, so
 // `echo … | bun server.ts --password` works in scripts.
+// One reader for all prompts: leaving a `for await` closes it, and the next prompt would get nothing.
+const pipedLines = console[Symbol.asyncIterator]();
 async function askHidden(prompt: string): Promise<string> {
   process.stdout.write(prompt);
   const stdin = process.stdin;
-  if (!stdin.isTTY) {
-    for await (const line of console) return line;
-    return "";
-  }
+  if (!stdin.isTTY) return String((await pipedLines.next()).value ?? "").replace(/\r$/, "");
   stdin.setRawMode(true);
   stdin.resume();
   return await new Promise<string>((done) => {
     let s = "";
     const on = (buf: Buffer) => {
-      for (const ch of buf.toString("utf8")) {
-        if (ch === "\r" || ch === "\n") { stdin.off("data", on); stdin.setRawMode(false); stdin.pause(); process.stdout.write("\n"); return done(s); }
-        if (ch === "\u0003") { process.stdout.write("\n"); process.exit(130); }
-        if (ch === "\u007f" || ch === "\b") s = s.slice(0, -1);
-        else if (ch >= " ") s += ch;
-      }
+      const chunk = buf.toString("utf8");
+      if (chunk.includes("\u0003")) { process.stdout.write("\n"); process.exit(130); }
+      const r = typedLine(s, chunk);
+      s = r.text;
+      if (r.done) { stdin.off("data", on); stdin.setRawMode(false); stdin.pause(); process.stdout.write("\n"); done(s); }
     };
     stdin.on("data", on);
   });
@@ -318,7 +316,8 @@ async function setPassword(db: Database, home: string) {
   if ((await askHidden("Again: ")) !== a) throw new Error("the two passwords differ");
   writeLan(home, { password: await Bun.password.hash(a) });
   db.run("DELETE FROM logins WHERE how = 'password'");
-  console.log(`Password saved in ${configFile(home)}. Browsers that logged in with the old one log in again.`);
+  // The length shows at once when a paste brought more or less than you meant.
+  console.log(`Password of ${[...a].length} characters saved in ${configFile(home)}. Browsers that logged in with the old one log in again.`);
 }
 
 export const CLI_HELP = `Switchboard in a browser on the network (see the README):

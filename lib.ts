@@ -508,6 +508,17 @@ export function lanConfigIn(raw: unknown, loopbackPort: number): LanConfig {
   return { listen, port: port as number, names, allow, trusted, password: (r.password as string | null) ?? null, tls };
 }
 
+// A hidden prompt in a raw terminal: the text so far plus the next keys. Whole escape sequences go, or a paste would
+// add the "[200~" of its bracketing and an arrow key its "[A" to the password.
+export function typedLine(text: string, chunk: string): { text: string; done: boolean } {
+  for (const ch of chunk.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1bO?[ -~]?/g, "")) {
+    if (ch === "\r" || ch === "\n") return { text, done: true };
+    if (ch === "\u007f" || ch === "\b") text = [...text].slice(0, -1).join("");
+    else if (ch >= " ") text += ch;
+  }
+  return { text, done: false };
+}
+
 // Failed logins per address: `max` within `windowMs` lock that address out for `lockMs`.
 export class Throttle {
   private seen = new Map<string, { fails: number[]; until: number }>();
