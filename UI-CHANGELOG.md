@@ -6,6 +6,24 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-05 · Login page in a browser on another machine
+- Where: the whole page, when Switchboard is opened from another machine on the network and the browser is not logged in.
+- Now: a centered card like the "This page needs a new link" card, titled "Log in to Switchboard · <machine>". It holds a button "Log in with a passkey" (only over https:// with a name, and once a passkey exists), then a password field with a "Log in" button. A wrong password shows "wrong password" in red under the form; five failures in a minute show "too many failed logins from <address>; try again in N s". Over plain http:// a small line reads "Not encrypted (http://): use this only on your own network. Passkeys need https:// and a name." Without any password set, the card says "No password is set. On <machine>, run bun server.ts --password, then reload this page." From a trusted address the card does not show at all; the page logs in by itself. A one-time passkey link shows the card "Add a passkey to Switchboard · <machine>" with a short explanation, a name field ("Name, e.g. 1Password") and a "Save a passkey" button.
+- Why: the user wanted to use Switchboard from other machines in the browser, logging in with 1Password.
+- Design question: should the login card show the machine's address too, so two machines with similar names are told apart?
+
+### 2026-11-05 · Settings › Network
+- Where: Settings, a new section "Network" between Runs and Appearance.
+- Now: three cards. "On the network" lists the addresses other machines open, then one line: password set or not, HTTPS or "plain HTTP, not encrypted", the addresses that need no login, and the ranges it is open to. When it is off, the card says "Off: only this machine can open Switchboard" and how to turn it on; a broken setup file shows its error in amber. "Passkeys" lists each passkey with its name, its address, when it was added and last used, and a red Remove button; under it a name field and "Add passkey" when the page is open by an https:// name, otherwise a line explaining where to add one. "Logged-in browsers" lists each browser ("Chrome on Windows"), its address, "this browser" for the current one, how and when it logged in, last use, and a Log out button; under the list a red "Log out all browsers".
+- Why: passkeys and logged-in browsers need a place to be seen and removed.
+- Design question: should the address list offer a Copy button per row, or a QR code for opening it on a phone?
+
+### 2026-11-05 · Machine name in the tab title, no VS Code buttons from another machine
+- Where: the browser tab title; TODO header › topic popover (Open in VS Code); the places list (VS Code button); file view toolbar (Open folder).
+- Now: opened from another machine, the tab title ends with the server's name, for example "(2) switchboard · desk", and the installed web app is named "Switchboard · desk". The VS Code and Open folder buttons are hidden there, since they would open on the server's screen.
+- Why: with Switchboard open from several machines, the user must see which one a tab belongs to.
+- Design question: should a remote page also show the machine name in the title bar, next to the logo?
+
 ### 2026-11-04 · Side-by-side diff
 - Where: file view › Diff mode, header right side, next to the +N −M count.
 - Now: a segmented control "Unified | Side by side" switches the diff layout. Side by side shows the merge-base version on the left and the current file on the right, each with its own line numbers and syntax colors, lines aligned across both panes. Removed lines have a red tint on the left, added lines a green tint on the right, and changed words inside a line a darker tint of the same color. A thin red or green bar in the gutter marks each changed line. Side by side is the default; the choice is remembered for all files and TODOs. ⌘F opens the editor's search bar on the right pane.

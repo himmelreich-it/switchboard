@@ -47,9 +47,13 @@ if (/Electron/.test(navigator.userAgent) && MAC) document.documentElement.classL
 (function () {
   const m = location.hash.match(/token=([0-9a-f]+)/);
   if (m) { try { localStorage.setItem("switchboard-token", m[1]); } catch (e) {} history.replaceState(null, "", location.pathname); }
+  // The one-time link of `bun server.ts --add-passkey`: kept for the gate, then cleared like the token.
+  const i = location.hash.match(/invite=([0-9a-f]+)/);
+  if (i) { window.INVITE = i[1]; history.replaceState(null, "", location.pathname); }
 })();
 </script>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/vendor/fonts.css">
 <script src="/vendor/markdown.js"></script>
 <style>
@@ -483,6 +487,10 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .gate { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg-aurora); }
 .gate > div { max-width: 520px; display: flex; flex-direction: column; gap: 12px; padding: 24px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-top: 2px solid var(--accent-amber); border-radius: var(--radius-2); box-shadow: var(--shadow-2); }
 .gate p { margin: 0; color: var(--text-secondary); line-height: 1.55; }
+.gate form { display: flex; gap: 8px; }
+.gate form .mb-input { flex: 1; min-width: 0; }
+.gate .err { color: var(--accent-red); }
+.gate .err:empty { display: none; }
 pre.box { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-primary); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--radius-1); padding: 10px 12px; }
 
 /* ---------- title bar (item 121, design v6) ---------- */
@@ -1383,6 +1391,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
       <button type="button" id="agentsNav" class="set-sec" data-act="set-sec" data-id="agents"><span>Agents</span><span id="cAgents" class="n">0</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="worktrees"><span>Worktrees</span><span id="cWorktrees" class="n"></span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="runs"><span>Runs</span></button>
+      <button type="button" class="set-sec" data-act="set-sec" data-id="network"><span>Network</span></button>
       <button type="button" class="set-sec" data-act="set-sec" data-id="appearance"><span>Appearance</span></button>
     </nav>
     <div id="secProjects" class="set-main">
@@ -1449,6 +1458,11 @@ pre.cmd > .dollar { color: var(--accent-lime); }
         <span id="wtAt" class="small"></span><button type="button" id="wtScan" class="mb-btn mb-btn--secondary mb-btn--sm" data-act="wt-scan">Scan</button>
         <button type="button" id="wtDelete" class="mb-btn mb-btn--danger mb-btn--sm" data-act="wt-delete" disabled>Delete</button></div>
       <div id="wtList" style="display:flex; flex-direction:column; gap:20px"></div>
+    </div>
+    <!-- Browser on the network (server.json): where it listens, the passkeys and the logged-in browsers -->
+    <div id="secNetwork" class="set-main" hidden>
+      <div class="set-title"><h2>Network</h2><span>Open Switchboard in a browser on another machine. The setup is in server.json; see the README.</span></div>
+      <div id="netBody" style="display:flex; flex-direction:column; gap:20px"></div>
     </div>
     <!-- Item 136: how long an agent waits for its background tasks between turns -->
     <div id="secRuns" class="set-main" hidden>
@@ -1806,13 +1820,64 @@ async function call(method, path, body, keepalive = false) {
 }
 const act = (p, title = "Failed") => p.catch((e) => toast("danger", title, e.message));
 // Item 120: no token, or one from before the server restarted. Nothing else on the page can work, so it is replaced.
+// In a browser on another machine the network listener answers GET /api/login, and the gate is its login instead.
 function showGate() {
   if ($("gate")) return;
   try { es.close(); } catch (e) {}   // stops the reconnect loop; es is declared further down
-  document.body.insertAdjacentHTML("beforeend", `<div id="gate" class="gate" role="alert"><div>
-    <span class="panel-title">This page needs a new link</span>
-    <p>Switchboard picks a new launch token each time it starts. Open the link the server printed when it started (<code>bun server.ts</code> prints <code>http://127.0.0.1:${esc(location.port)}/#token=…</code>). The window app opens it on its own.</p>
-  </div></div>`);
+  document.body.insertAdjacentHTML("beforeend", `<div id="gate" class="gate" role="alert"><div id="gateBox"></div></div>`);
+  fetch("/api/login").then((r) => (r.ok ? r.json() : null), () => null).then((l) => (l ? loginGate(l) : linkGate()));
+}
+function linkGate() {
+  $("gateBox").innerHTML = `<span class="panel-title">This page needs a new link</span>
+    <p>Switchboard picks a new launch token each time it starts. Open the link the server printed when it started (<code>bun server.ts</code> prints <code>http://127.0.0.1:${esc(location.port)}/#token=…</code>). The window app opens it on its own.</p>`;
+}
+
+// ---------- logging in from another machine (server.json) ----------
+const loginDone = (token) => { try { localStorage.setItem("switchboard-token", token); } catch (e) {} location.replace("/"); };
+// Passkeys need a secure context (https://) and the JSON helpers of current browsers.
+const passkeysWork = () => window.isSecureContext && typeof window.PublicKeyCredential?.parseRequestOptionsFromJSON === "function";
+async function passkeyLogin() {
+  const { id, options } = await call("POST", "/api/login/passkey/options");
+  const cred = await navigator.credentials.get({ publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(options) });
+  return (await call("POST", "/api/login/passkey", { id, response: cred.toJSON() })).token;
+}
+// invite: the secret of the one-time link of --add-passkey; null on a logged-in page.
+async function passkeyAdd(name, invite) {
+  if (!passkeysWork()) throw new Error("this browser cannot make a passkey here: it needs https:// and a current Brave, Chrome, Edge, Safari or Firefox");
+  const { id, options } = await call("POST", "/api/passkeys/options", { invite });
+  const cred = await navigator.credentials.create({ publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(options) });
+  return call("POST", "/api/passkeys", { id, response: cred.toJSON(), name });
+}
+async function gateTry(f) {
+  $("gateErr").textContent = "";
+  try { await f(); } catch (e) { $("gateErr").textContent = e.name === "NotAllowedError" ? "The passkey dialog was closed, or no passkey for this address was found." : e.message; }
+}
+async function loginGate(l) {
+  const box = $("gateBox"), where = `Switchboard · ${esc(l.machine)}`;
+  if (window.INVITE) {
+    box.innerHTML = `<span class="panel-title">Add a passkey to ${where}</span>
+      <p>Your password manager (1Password, or the browser's own) saves a passkey for this address. You then log in with it instead of the password.</p>
+      <form id="pkForm"><input id="pkGateName" class="mb-input" placeholder="Name, e.g. 1Password" aria-label="Passkey name" autocomplete="off"><button class="mb-btn mb-btn--primary mb-btn--sm" type="submit">Save a passkey</button></form>
+      <p id="gateErr" class="err"></p>`;
+    $("pkForm").onsubmit = (e) => { e.preventDefault(); gateTry(async () => { const r = await passkeyAdd($("pkGateName").value, window.INVITE); window.INVITE = null; r.token ? loginDone(r.token) : location.replace("/"); }); };
+    return;
+  }
+  // A trusted address (server.json) logs in without a secret.
+  if (l.trusted) { try { return loginDone((await call("POST", "/api/login")).token); } catch (e) {} }
+  const pk = l.passkey && passkeysWork();
+  box.innerHTML = `<span class="panel-title">Log in to ${where}</span>
+    ${pk ? `<button id="pkLogin" type="button" class="mb-btn mb-btn--primary mb-btn--sm">Log in with a passkey</button>` : ""}
+    ${l.password ? `<form id="pwForm"><input type="text" name="username" autocomplete="username" value="switchboard" hidden>
+      <input id="pwIn" class="mb-input" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required>
+      <button class="mb-btn mb-btn--${pk ? "secondary" : "primary"} mb-btn--sm" type="submit">Log in</button></form>` : ""}
+    ${!l.password && !pk ? `<p>No password is set. On ${esc(l.machine)}, run <code>bun server.ts --password</code>, then reload this page.</p>` : ""}
+    ${l.secure ? "" : `<p class="small">Not encrypted (http://): use this only on your own network. Passkeys need https:// and a name.</p>`}
+    <p id="gateErr" class="err">${esc(l.error ?? "")}</p>`;
+  if (pk) $("pkLogin").onclick = () => gateTry(async () => loginDone(await passkeyLogin()));
+  if (l.password) {
+    $("pwForm").onsubmit = (e) => { e.preventDefault(); gateTry(async () => loginDone((await call("POST", "/api/login", { password: $("pwIn").value })).token)); };
+    if (!pk) $("pwIn").focus();
+  }
 }
 
 // ---------- state ----------
@@ -2632,7 +2697,7 @@ function renderHeader() {
     gh.innerHTML = `<span></span>${esc(S.ghRetrying ? "PR status · retrying…" : GH_LABEL[ghErr.kind])}`;
     gh.title = `PR lines show the last result${errT.pr_checked_at ? " from " + ago(errT.pr_checked_at) : ""}, greyed. Git lines are local and stay current. Retries every 2 min. Click to retry now.`;
   }
-  document.title = (n ? `(${n}) ` : "") + "switchboard";
+  document.title = (n ? `(${n}) ` : "") + "switchboard" + (S.meta?.machine ? ` · ${S.meta.machine}` : "");
 }
 
 // The PR as one chip: its state and the most important fact, in the fact's tone (design v6). null without a PR.
@@ -3133,11 +3198,11 @@ function renderFocusHead(t, d) {
       ${facts.length ? facts.map((f) => `<span style="color:${f.color === GC.muted ? "var(--text-secondary)" : f.color}">${esc(f.text)}</span>`).join("") : `<span style="color:var(--text-muted)">${!t.routed_at ? "The operator picks the topic when you start it" : !p ? "No topic: runs in the TODO's own folder" : !p.git ? "Topic folder, not a git repository" : t.status === "not_started" ? "No worktree yet" : "Topic folder, shared with other TODOs"}</span>`}
       <span class="folder">${esc(folder)}</span>
       ${p?.independent ? '<span class="tp-indep"><span>Independent</span><span>The agent pushes, opens and squash-merges its PR once it trusts its work. Settings › Topics turns it off.</span></span>' : ""}
-      ${folder ? `<span title="Opens this folder in VS Code" style="display:flex">${btn("Open in VS Code", "vscode", { id: t.id })}</span>` : ""}
+      ${folder && !S.meta?.machine ? `<span title="Opens this folder in VS Code" style="display:flex">${btn("Open in VS Code", "vscode", { id: t.id })}</span>` : ""}
       ${t.places?.length ? `<div class="tp-kept"><span class="h">Kept in other topics, back when you switch:</span>${t.places.map((x) => {
         const q = S.projects.find((y) => y.id === x.project_id), gh = q?.repo?.match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/);
         const pr = !x.pr_number ? "" : gh ? `<span class="mut">·</span><a href="https://github.com/${esc(gh[1])}/${esc(gh[2])}/pull/${x.pr_number}" target="_blank" rel="noopener" title="Open PR #${x.pr_number} on GitHub">PR #${x.pr_number} ↗</a>` : `<span class="mut">·</span><span>PR #${x.pr_number}</span>`;
-        return `<div class="kp"><div><span class="tn">${esc(q?.name ?? "no topic")}</span>${x.branch ? `<span class="mut">·</span><span>${esc(x.branch)}</span>` : ""}${pr}</div>${x.worktree_path ? `<div><span class="fd">${esc(x.worktree_path)}</span><button type="button" class="kp-vsc" data-act="vscode-place" data-id="${esc(x.worktree_path)}" title="Open this folder in VS Code">VS Code</button></div>` : ""}</div>`;
+        return `<div class="kp"><div><span class="tn">${esc(q?.name ?? "no topic")}</span>${x.branch ? `<span class="mut">·</span><span>${esc(x.branch)}</span>` : ""}${pr}</div>${x.worktree_path ? `<div><span class="fd">${esc(x.worktree_path)}</span>${S.meta?.machine ? "" : `<button type="button" class="kp-vsc" data-act="vscode-place" data-id="${esc(x.worktree_path)}" title="Open this folder in VS Code">VS Code</button>`}</div>` : ""}</div>`;
       }).join("")}</div>` : ""}
       ${t.removed_at ? "" : (() => {
         // v10: the select always shows; while a run or a terminal program goes on it is disabled, and the note says why.
@@ -3638,7 +3703,7 @@ function renderFile(t) {
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${f.byUser ? '<span class="notetag" title="Your note · editable while the agent runs">your note</span>' : ""}${locked ? `<span title="The agent may change this file. Edit opens when its run ends." style="display:flex">${badge("Read-only · agent running")}</span>` : ""}
     <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}${iconBtn("file-full", S.fileFull ? "Exit full screen · Esc" : "Full screen", S.fileFull ? MINIMIZE : MAXIMIZE)}
-      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : f.root === "todo" ? iconBtn("archive-file", locked ? "Archive opens when the agent's run ends" : "Archive file", ARCHIVE, locked) : ""}</span>`);
+      ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${S.meta?.machine ? "" : iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : f.root === "todo" ? iconBtn("archive-file", locked ? "Archive opens when the agent's run ends" : "Archive file", ARCHIVE, locked) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
   if (show.msg) {
     destroyEditor();
@@ -4009,11 +4074,54 @@ function renderSettings() {
   if (document.activeElement !== $("startedPerTurn")) $("startedPerTurn").value = S.meta?.started_todos_per_turn ?? 10;
   $("secAgents").hidden = S.setSec !== "agents";
   $("secWorktrees").hidden = S.setSec !== "worktrees";
+  $("secNetwork").hidden = S.setSec !== "network";
   $("cAgents").textContent = agentsAll().length;
   if (S.setSec === "projects") renderProjects();
   else if (S.setSec === "agents") renderAgents();
   else if (S.setSec === "worktrees") renderWorktrees();
+  else if (S.setSec === "network") renderNetwork();
   else applyTheme();
+}
+
+// Settings › Network: whether the network listener runs and where, the passkeys and the logged-in browsers. Loaded
+// each time the section opens.
+function loadNetwork() { return call("GET", "/api/network").then((r) => { S.net = r; render(); }, (e) => { S.net = { failed: e.message }; render(); }); }
+// "Brave on Windows" from a user agent; Brave says it is Chrome.
+function browserOf(ua) {
+  const b = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : ua.split(/[\s/]/)[0] || "Unknown";
+  const os = /Windows/.test(ua) ? "Windows" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS/.test(ua) ? "macOS" : /Android/.test(ua) ? "Android" : /Linux/.test(ua) ? "Linux" : "";
+  return os ? `${b} on ${os}` : b;
+}
+function renderNetwork() {
+  if (S.net === undefined) { S.net = null; loadNetwork(); }
+  const n = S.net;
+  if (!n) return setHtml($("netBody"), `<span class="small">Loading…</span>`);
+  if (n.failed) return setHtml($("netBody"), `<span class="note" style="color:var(--accent-amber)">${esc(n.failed)}</span>`);
+  const card = (title, hint, body) => `<div class="scard"><div class="tt"><span class="t">${title}</span><span>${hint}</span></div>${body}</div>`;
+  const c = n.config;
+  const status = n.on
+    ? `<div class="ag-list">${n.urls.map((u) => `<div class="ag-row"><div class="l"><span class="cmd">${esc(u)}</span></div></div>`).join("")}</div>
+       <span class="small">${c.password ? "Password set" : "No password yet: run <code>bun server.ts --password</code>"} · ${c.tls ? "HTTPS" : "plain HTTP, not encrypted"}${c.trusted.length ? ` · no login from ${esc(c.trusted.join(", "))}` : ""} · open to ${esc(c.allow.join(", "))}</span>`
+    : n.error
+      ? `<span class="note" style="color:var(--accent-amber)">${esc(n.error)}</span><span class="small">Fix <code>${esc(n.file)}</code>, then restart Switchboard.</span>`
+      : `<span class="small">Off: only this machine can open Switchboard. To open it from other machines, run <code>bun server.ts --lan</code> here once; the README has the details.</span>`;
+  const keys = n.passkeys.length
+    ? `<div class="ag-list">${n.passkeys.map((k) => `<div class="ag-row"><div class="l"><div class="line"><span class="nm">${esc(k.name)}</span><span class="ml">${esc(k.rp_id)}</span></div>
+        <span class="note">Added ${esc(ago(k.created_at))}${k.used_at ? ` · last used ${esc(ago(k.used_at))}` : " · not used yet"}</span></div>${btn("Remove", "net-rm-passkey", { id: k.id, v: "danger" })}</div>`).join("")}</div>`
+    : `<span class="small">No passkeys yet.</span>`;
+  const add = n.here.site && passkeysWork()
+    ? `<div style="display:flex; gap:8px"><input id="pkName" class="mb-input" placeholder="Name, e.g. 1Password" aria-label="Passkey name" style="flex:1"><button type="button" class="mb-btn mb-btn--primary mb-btn--sm" data-act="net-add-passkey">Add passkey</button></div>`
+    : `<span class="small">${n.here.lan
+      ? "Passkeys need https:// and a name (not an IP address). This page is open without one."
+      : "Add a passkey from the browser that should keep it, with Switchboard open by its https:// name; or run <code>bun server.ts --add-passkey</code> for a one-time link."}</span>`;
+  const logins = n.logins.length
+    ? `<div class="ag-list">${n.logins.map((l) => `<div class="ag-row"><div class="l"><div class="line"><span class="nm">${esc(browserOf(l.agent))}</span><span class="ml">${esc(l.address)}</span>${l.current ? `<span class="ml">this browser</span>` : ""}</div>
+        <span class="note">With ${esc(l.how)} ${esc(ago(l.created_at))} · last used ${esc(ago(l.used_at))}</span></div>${btn("Log out", "net-logout", { id: l.id })}</div>`).join("")}</div>
+       <div>${btn("Log out all browsers", "net-logout-all", { v: "danger" })}</div>`
+    : `<span class="small">No browser is logged in.</span>`;
+  setHtml($("netBody"), card("On the network", "Where other machines open it. Set in server.json; restart after a change.", status)
+    + card("Passkeys", "Log in with 1Password or the browser's passkeys instead of the password. Each works for one address.", keys + add)
+    + card("Logged-in browsers", "Each stays logged in for 30 days after its last use.", logins));
 }
 
 // Settings › Worktrees: the last scan, grouped by verdict. The server keeps it until the next scan.
@@ -4338,11 +4446,15 @@ const ACTIONS = {
     }
   },
   "wt-scan": () => scanWorktrees(),
+  "net-add-passkey": () => { const name = $("pkName")?.value ?? ""; act(passkeyAdd(name, null).then(() => { toast("info", "Passkey saved", name ? "· " + name : ""); loadNetwork(); }), "Passkey not saved"); },
+  "net-rm-passkey": (id) => act(call("DELETE", `/api/passkeys/${encodeURIComponent(id)}`).then(loadNetwork), "Can't remove the passkey"),
+  "net-logout": (id) => act(call("DELETE", `/api/logins/${id}`).then(loadNetwork), "Can't log out"),
+  "net-logout-all": () => act(call("DELETE", "/api/logins").then(loadNetwork), "Can't log out"),
   "wt-delete": () => deleteWorktrees(),
   "scan-all": () => act(call("POST", "/api/projects/scan-all"), "Can't scan"),
   "new-project": () => { S.projSel = "new"; fillProjForm(); render(); pName.focus(); },
   "open-settings": () => (S.view === "settings" ? closeSettings() : openSettings()),
-  "set-sec": (id) => { S.setSec = id; render(); },
+  "set-sec": (id) => { S.setSec = id; if (id === "network") S.net = undefined; render(); },
   "agent-login": (id) => agentLogin(id),
   "agent-delete": (id) => act(call("DELETE", `/api/agents/${id}`).then(() => need("meta", "projects")), "Agent not removed"),
   filter: setFilter,
@@ -4998,6 +5110,7 @@ es.onerror = () => setTimeout(() => call("GET", "/api/meta").catch(() => {}), 15
 
 render();
 need("meta", "projects", "todos", "operator");
+if (window.INVITE) showGate();
 </script>
 </body>
 </html>

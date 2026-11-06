@@ -4,6 +4,7 @@ import {
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
+  DEFAULT_ALLOW, DEFAULT_LAN_PORT, Throttle, typedLine, accessOf, hostOk, inCidrs, ipNum, lanConfigIn, parseCidr, rpIdOf,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -594,4 +595,109 @@ test("comment threads: an earlier reply becomes the first turn, turns set the st
   expect(row(1).state).toBe("replied");
   expect(JSON.parse(row(1).thread!).map((t: { by: string; body: string }) => `${t.by}:${t.body}`)).toEqual(["agent:because", "user:and then?", "agent:done"]);
   expect(JSON.parse(row(2).thread!).map((t: { body: string }) => t.body)).toEqual(["Applied"]);
+});
+
+test("ipNum and inCidrs", () => {
+  expect(ipNum("192.168.1.5")).toEqual({ v6: false, n: 0xc0a80105n });
+  expect(ipNum("::ffff:192.168.1.5")).toEqual({ v6: false, n: 0xc0a80105n });   // a dual-stack socket's IPv4 client
+  expect(ipNum("::1")).toEqual({ v6: true, n: 1n });
+  expect(ipNum("fe80::1%eth0")?.v6).toBe(true);
+  for (const bad of ["", "1.2.3", "1.2.3.256", "1.2.3.4.5", "01.2.3.4x", "1::2::3", "12345::", "1:2:3:4:5:6:7:8:9", "desk.local", "::g"]) expect(ipNum(bad)).toBeNull();
+  expect(ipNum("1:2:3:4:5:6:7:8")?.n).toBe(0x00010002000300040005000600070008n);
+  expect(parseCidr("192.168.1.0/24")).toEqual({ v6: false, n: 0xc0a80100n, bits: 24 });
+  expect(parseCidr("192.168.1.50")?.bits).toBe(32);
+  expect(parseCidr("10.0.0.0/33")).toBeNull();
+  expect(parseCidr("10.0.0.0/8/1")).toBeNull();
+  expect(parseCidr("fd7a:115c:a1e0::/48")?.bits).toBe(48);
+  expect(inCidrs("192.168.1.77", ["192.168.1.0/24"])).toBe(true);
+  expect(inCidrs("192.168.2.77", ["192.168.1.0/24"])).toBe(false);
+  expect(inCidrs("::ffff:192.168.1.77", ["192.168.1.0/24"])).toBe(true);
+  expect(inCidrs("100.101.102.103", DEFAULT_ALLOW)).toBe(true);    // Tailscale
+  expect(inCidrs("fd7a:115c:a1e0::1234", DEFAULT_ALLOW)).toBe(true);
+  expect(inCidrs("8.8.8.8", DEFAULT_ALLOW)).toBe(false);
+  expect(inCidrs("2001:db8::1", DEFAULT_ALLOW)).toBe(false);
+  expect(inCidrs("172.32.0.1", DEFAULT_ALLOW)).toBe(false);        // just past 172.16/12
+  expect(inCidrs("1.2.3.4", ["0.0.0.0/0"])).toBe(true);
+  expect(inCidrs("::1", ["0.0.0.0/0"])).toBe(false);                // families never match each other
+  expect(inCidrs("not an ip", ["0.0.0.0/0"])).toBe(false);
+});
+
+test("accessOf", () => {
+  const allow = ["192.168.1.0/24"], trusted = ["192.168.1.50"];
+  expect(accessOf("192.168.1.50", allow, trusted)).toBe("trusted");
+  expect(accessOf("::ffff:192.168.1.50", allow, trusted)).toBe("trusted");
+  expect(accessOf("192.168.1.51", allow, trusted)).toBe("allowed");
+  expect(accessOf("127.0.0.1", allow, trusted)).toBe("allowed");   // logs in like the LAN, never trusted by default
+  expect(accessOf("::1", allow, trusted)).toBe("allowed");
+  expect(accessOf("10.0.0.1", allow, trusted)).toBe("refused");
+  expect(accessOf("10.0.0.1", allow, ["10.0.0.1"])).toBe("trusted"); // trusted needs no entry in allow
+  expect(accessOf("", allow, trusted)).toBe("refused");
+});
+
+test("hostOk and rpIdOf", () => {
+  const names = ["desk", "desk.local", "192.168.1.123", "fd7a::7", "desk.tail1.ts.net"];
+  expect(hostOk("desk.local:4478", names, 4478, false)).toBe(true);
+  expect(hostOk("DESK.local:4478", names, 4478, false)).toBe(true);
+  expect(hostOk("192.168.1.123:4478", names, 4478, false)).toBe(true);
+  expect(hostOk("[fd7a::7]:4478", names, 4478, false)).toBe(true);
+  expect(hostOk("desk.tail1.ts.net", names, 443, true)).toBe(true);   // the default port is left out
+  expect(hostOk("desk.tail1.ts.net", names, 4478, true)).toBe(false);
+  expect(hostOk("desk.local:4477", names, 4478, false)).toBe(false);
+  expect(hostOk("evil.example:4478", names, 4478, false)).toBe(false); // DNS rebinding
+  expect(hostOk("desk.local.evil.example:4478", names, 4478, false)).toBe(false);
+  expect(hostOk("desk.local:4478/x", names, 4478, false)).toBe(false);
+  expect(hostOk(null, names, 4478, false)).toBe(false);
+  expect(rpIdOf("Desk.Local:4478")).toBe("desk.local");
+  expect(rpIdOf("desk.tail1.ts.net")).toBe("desk.tail1.ts.net");
+  expect(rpIdOf("192.168.1.123:4478")).toBeNull();
+  expect(rpIdOf("[fd7a::7]:4478")).toBeNull();
+});
+
+test("lanConfigIn", () => {
+  expect(lanConfigIn({}, 4477)).toEqual({ listen: "0.0.0.0", port: DEFAULT_LAN_PORT, names: [], allow: DEFAULT_ALLOW, trusted: [], password: null, tls: null });
+  const full = { listen: "100.101.102.103", port: 443, names: ["desk.tail1.ts.net"], allow: ["100.64.0.0/10"], trusted: ["100.101.1.2"], password: "$argon2id$v=19$m=65536,t=2,p=1$abc", tls: { cert: "~/c.pem", key: "~/k.pem" } };
+  expect(lanConfigIn(full, 4477)).toEqual(full);
+  const err = (raw: unknown) => { try { lanConfigIn(raw, 4477); return ""; } catch (e: any) { return e.message as string; } };
+  expect(err([])).toBe("must be a JSON object");
+  expect(err({ prot: 1 })).toBe("unknown field prot");
+  expect(err({ port: 4477 })).toContain("port: 4477 is the port of this machine's own window");
+  expect(err({ port: "4478" })).toContain("is not a port");
+  expect(err({ listen: "desk" })).toContain("listen:");
+  expect(err({ allow: ["192.168.1.0/24", "lan"] })).toBe('allow: "lan" is not an address or range (192.168.1.0/24)');
+  expect(err({ allow: "192.168.1.0/24" })).toBe("allow: must be a list of strings");
+  expect(err({ names: ["desk local"] })).toContain("names:");
+  expect(err({ password: "hunter2" })).toContain("--password");
+  expect(err({ tls: { cert: "c.pem" } })).toContain("tls:");
+});
+
+test("Throttle", () => {
+  const t = new Throttle(3, 60_000, 30_000);
+  t.fail("a", 0); t.fail("a", 1000);
+  expect(t.wait("a", 1000)).toBe(0);
+  t.fail("a", 2000);
+  expect(t.wait("a", 2000)).toBe(30_000);
+  expect(t.wait("b", 2000)).toBe(0);
+  expect(t.wait("a", 32_000)).toBe(0);
+  t.fail("a", 100_000); t.fail("a", 170_000); t.fail("a", 240_000);   // spread out: never three within a minute
+  expect(t.wait("a", 240_000)).toBe(0);
+});
+
+test("typedLine", () => {
+  expect(typedLine("", "abc")).toEqual({ text: "abc", done: false });
+  expect(typedLine("abc", "d\r")).toEqual({ text: "abcd", done: true });
+  expect(typedLine("abc", "\u007f")).toEqual({ text: "ab", done: false });
+  expect(typedLine("abc", "\b\b")).toEqual({ text: "a", done: false });
+  expect(typedLine("", "\x1b[200~päss\x1b[201~\r")).toEqual({ text: "päss", done: true });   // a bracketed paste
+  expect(typedLine("ab", "\x1b[A\x1bOB\x1b[3~")).toEqual({ text: "ab", done: false });        // arrows, Delete
+  expect(typedLine("", "\x16\t")).toEqual({ text: "", done: false });                          // other control keys
+});
+
+test("Throttle.forgive takes back a try counted ahead", () => {
+  const t = new Throttle(2, 60_000, 30_000);
+  t.fail("a", 0);
+  t.forgive("a", 0);          // that try succeeded
+  t.fail("a", 1000);
+  expect(t.wait("a", 1000)).toBe(0);
+  t.fail("a", 2000);
+  expect(t.wait("a", 2000)).toBe(30_000);
 });

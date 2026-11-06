@@ -1,13 +1,14 @@
-import type { ServerWebSocket, Subprocess } from "bun";
+import type { Server, ServerWebSocket, Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
-  descendants, addTurn, type Turn,
+  descendants, addTurn, type Turn, accessOf, hostOk, type Access, type LanConfig,
 } from "./lib";
+import { CLI_HELP, lanApi, lanCli, lanUrls, loginOk, machineNames, pruneLogins, readLan, tlsFiles, type Here } from "./lan";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
@@ -16,7 +17,8 @@ import {
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
-// No login on this server: it must only ever listen on 127.0.0.1.
+// No login on this server: it must only ever listen on 127.0.0.1. The network listener (server.json, lan.ts) is a
+// second server with logins, on its own port.
 export const HOST = "127.0.0.1";
 export const PORT = Number(process.env.PORT ?? 4477);
 const CHANNEL = process.env.SWITCHBOARD_CHANNEL ?? "stable"; // set by electron/main.js: "beta" in a beta build
@@ -36,6 +38,10 @@ db.run("PRAGMA journal_mode = WAL");
 db.run("PRAGMA synchronous = NORMAL");
 db.run("PRAGMA busy_timeout = 5000");
 migrateDb(db);
+// The flags of the network setup (--lan, --password, --add-passkey, --logout-all) work on this database and exit
+// before any port is bound, so they run next to a live server.
+if (process.argv.includes("--help")) { console.log(CLI_HELP); process.exit(0); }
+if ((await lanCli(process.argv.slice(2), db, HOME, PORT)) === "exit") process.exit(0);
 
 export type Todo = {
   id: number; project_id: number | null; title: string; status: Status; attention: number; session_id: string | null;
@@ -900,7 +906,7 @@ type Term = {
   id: number; todoId: number; kind: "shell" | "claude"; root: "worktree" | "project"; cwd: string; no: number; message: string;
   title: string | null; proc: Subprocess | null; exited: boolean; code: number | null; signal: string | null;
   secret: string | null;   // a Claude terminal's grant for the app tools (P6), revoked when its process ends
-  buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<{ tid: number }>>; cols: number; rows: number; fresh: boolean;
+  buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<WsData>>; cols: number; rows: number; fresh: boolean;
 };
 const terms = new Map<number, Term>();
 const termNos = new Map<string, number>();   // "todo:kind" -> last number; numbers only count up (Shell 1, Shell 2, ...)
@@ -1025,18 +1031,21 @@ export function closeTerms(todoId: number | null) {
   }
   if (todoId !== null) emit({ type: "terminals", id: todoId });
 }
+// token: the login token of a socket opened from another machine (null on loopback); drop closes it at a logout.
+type WsData = { tid: number; token: string | null; drop?: () => void };
 const termWs = {
-  open(ws: ServerWebSocket<{ tid: number }>) {
+  open(ws: ServerWebSocket<WsData>) {
     const x = terms.get(ws.data.tid);
     if (!x) return ws.close(4404, "no such terminal");
     x.sockets.add(ws);
+    if (ws.data.token) lanConns.set(ws.data.drop = () => ws.close(4401, "logged out"), ws.data.token);
     // Reset, then the recent output, then live output; the first resize makes full-screen programs redraw.
     ws.send(enc8.encode("\x1bc"));
     for (const b of x.buf) ws.send(b);
     if (x.exited) ws.send(JSON.stringify({ type: "exit", code: x.code, signal: x.signal }));
     x.fresh = true;
   },
-  message(ws: ServerWebSocket<{ tid: number }>, msg: string | Buffer) {
+  message(ws: ServerWebSocket<WsData>, msg: string | Buffer) {
     const x = terms.get(ws.data.tid);
     if (!x?.proc || x.exited) return;
     // Typing in a TODO's terminal may run git there: its worktree gets a new look (at most one a second).
@@ -1050,7 +1059,7 @@ const termWs = {
     x.cols = cols; x.rows = rows;
     x.proc.terminal?.resize(cols, rows);
   },
-  close(ws: ServerWebSocket<{ tid: number }>) { terms.get(ws.data.tid)?.sockets.delete(ws); },
+  close(ws: ServerWebSocket<WsData>) { terms.get(ws.data.tid)?.sockets.delete(ws); if (ws.data.drop) lanConns.delete(ws.data.drop); },
 };
 
 const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
@@ -1063,9 +1072,12 @@ async function api(req: Request, path: string): Promise<Response> {
   if (path === "/api/events") {
     let ctl: ReadableStreamDefaultController;
     const ping = setInterval(() => { try { ctl.enqueue(enc.encode(": ping\n\n")); } catch {} }, 20000);
+    // A stream opened with a login token ends when that login does (a logout from Settings or the command line).
+    const token = lanTokens.get(req);
+    const end = () => { clients.delete(ctl); clearInterval(ping); lanConns.delete(end); try { ctl.close(); } catch {} };
     const stream = new ReadableStream({
-      start(c) { ctl = c; clients.add(c); },
-      cancel() { clients.delete(ctl); clearInterval(ping); },
+      start(c) { ctl = c; clients.add(c); if (token) lanConns.set(end, token); },
+      cancel: end,
     });
     return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
   }
@@ -1077,7 +1089,8 @@ async function api(req: Request, path: string): Promise<Response> {
     w.n += (db.query("SELECT id, status FROM todos WHERE status = 'running' AND permission IS NULL AND attention_by = 'agent' AND removed_at IS NULL").all() as Todo[]).filter(backgroundWait).length;
     // P4: the config options last seen from any session, for Settings and a TODO without a session yet.
     // P5: the agents, and per agent its last seen config options.
-    return json({ contract: contractFor(DEFAULT_AGENT, "{artifact_dir}"), waiting_count: w.n, agents: agentList(), agent_config: agentConfigs(),
+    // machine: the page is open on another machine (the network listener), so its title names this one.
+    return json({ contract: contractFor(DEFAULT_AGENT, "{artifact_dir}"), waiting_count: w.n, machine: lanTokens.has(req) ? hostname() : null, agents: agentList(), agent_config: agentConfigs(),
       shell: basename(SHELL).replace(/\.exe$/i, ""), login_shell: LOGIN_SHELL,
       background_wait_hours: Number(getMeta("background_wait_hours")) || DEFAULT_BACKGROUND_HOURS,
       started_todos_per_turn: Number(getMeta("started_todos_per_turn")) || DEFAULT_STARTED_PER_TURN });
@@ -1729,48 +1742,135 @@ const TOKEN = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("
 const TOKEN_FILE = join(HOME, "token");
 const VENDOR = join(import.meta.dir, "vendor");
 
+// server.json (lan.ts): the network listener. A broken file keeps the app off the network but never stops it, since the
+// window app has no console to show why; Settings › Network shows the error.
+let LAN: LanConfig | null = null, lanError: string | null = null, lanNames: string[] = [], lanUrlList: string[] = [];
+try { LAN = readLan(HOME, PORT); } catch (e: any) { lanError = e.message; }
+// The requests that came in through the network listener, with their login token, so api() can tell.
+const lanTokens = new WeakMap<Request, string>();
+// Connections opened with a login token (event streams, terminal sockets) and how to close each. A token is checked
+// only when a connection starts, so a logout, or a login that ran out, closes them here: at once after a logout in
+// Settings, and every 30 s for the command line's (another process) and for expiry.
+const lanConns = new Map<() => void, string>();
+function dropLoggedOut() { for (const [drop, token] of lanConns) if (!loginOk(db, token)) { lanConns.delete(drop); drop(); } }
+setInterval(dropLoggedOut, 30_000);
+// The machine's addresses change (Tailscale connects after boot, a new DHCP lease): a Host that fails the check
+// re-reads them, at most every 10 s.
+let namesAt = 0;
+function namesAgain() {
+  if (!LAN || Date.now() - namesAt < 10_000) return false;
+  namesAt = Date.now();
+  const tls = tlsFiles(LAN);
+  lanNames = machineNames(LAN, tls ? tls.cert : null);
+  return true;
+}
+// The buttons that open a program on this machine's screen: from another machine's browser they would open where
+// nobody looks.
+const ON_SCREEN = /^\/api\/todos\/\d+\/(vscode|files\/\d+\/reveal|fs\/reveal)$/;
+const ICON = /^\/icons\/(48|128|256|512)\.png$/;
+
+async function serve(req: Request, server: Server<WsData>, lan: boolean): Promise<Response | undefined> {
+  const url = new URL(req.url);
+  const host = req.headers.get("host") ?? "";
+  const addr = server.requestIP(req)?.address ?? "";
+  let access: Access = "allowed";
+  if (lan) {
+    // Sorted by the address before anything is served: a refused address gets no page and no login form.
+    access = accessOf(addr, LAN!.allow, LAN!.trusted);
+    if (access === "refused") return fail(`not allowed from ${addr}; add it to "allow" in server.json`, 403);
+    // Blocks DNS rebinding: the name must be one of this machine's (lan.ts machineNames).
+    const ok = () => hostOk(host, lanNames, LAN!.port, !!LAN!.tls);
+    if (!ok() && !(namesAgain() && ok())) return fail("bad host", 403);
+  }
+  // Blocks DNS-rebinding pages: the Host header must name this loopback server.
+  else if (![`${HOST}:${PORT}`, `localhost:${PORT}`].includes(host)) return fail("bad host", 403);
+  // Cross-site forms can only send simple content types; requiring JSON forces a CORS preflight, which this server never answers.
+  if (req.method !== "GET" && !req.headers.get("content-type")?.startsWith("application/json")) return fail("JSON body required", 415);
+  // The page, the icons and the bundled libraries hold no data, so they stay open.
+  // The channel lets a window of the other build (stable or beta, same data) see this one runs and refuse to start.
+  if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")), { headers: { "x-switchboard-channel": CHANNEL } });
+  if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/flat/switchboard-flat-small.svg")));
+  // Brave and Chrome install the page as an app with this name and these icons; the name says which machine it runs on.
+  if (url.pathname === "/manifest.webmanifest") {
+    const name = lan ? `Switchboard · ${hostname()}` : "Switchboard";
+    return Response.json({
+      name, short_name: name, start_url: "/", scope: "/", display: "standalone", background_color: "#0A0813", theme_color: "#0A0813",
+      icons: [48, 128, 256, 512].map((n) => ({ src: `/icons/${n}.png`, sizes: `${n}x${n}`, type: "image/png" })),
+    }, { headers: { "content-type": "application/manifest+json" } });
+  }
+  const icon = url.pathname.match(ICON);
+  if (icon) return new Response(Bun.file(join(import.meta.dir, `images/icons/flat/switchboard-flat-${icon[1]}.png`)));
+  if (url.pathname.startsWith("/vendor/")) {
+    const file = resolve(VENDOR, "." + decodeURIComponent(url.pathname.slice(7)));
+    if (!isInside(file, VENDOR) || file.startsWith(join(VENDOR, "src")) || !existsSync(file)) return fail("not found", 404);
+    return new Response(Bun.file(file), { headers: { "cache-control": "no-cache" } });
+  }
+  // The agents' route to the app's MCP tools: each agent session carries its own secret instead of the launch token.
+  // Agents run on this machine, so only the loopback server has it.
+  if (url.pathname === "/mcp/app") return lan ? fail("not found", 404) : handleMcp(req);
+  // Loopback: the launch token. The network: a login token (lan.ts), never the launch token, which stays on this machine.
+  const token = req.headers.get("x-switchboard-token") ?? url.searchParams.get("token");
+  const authed = lan ? loginOk(db, token) : tokenOk(TOKEN, req.headers.get("x-switchboard-token"), url.searchParams.get("token"));
+  const here: Here = { lan, access, addr, host, secure: lan && !!LAN!.tls, token, authed };
+  try {
+    // Logging in needs no token; the other routes of lan.ts check `authed` themselves.
+    const r = await lanApi(req, url.pathname, here, db, HOME, PORT, { on: !!lanServer, error: lanError, urls: lanUrlList });
+    if (r && req.method === "DELETE" && url.pathname.startsWith("/api/logins")) dropLoggedOut();
+    if (r) return r;
+  } catch (e: any) {
+    return fail(e.message ?? String(e), e.status ?? 500);
+  }
+  if (!authed) return lan ? fail("log in first", 401) : fail("open the link the server printed at start", 401);
+  if (lan && ON_SCREEN.test(url.pathname)) return fail(`this opens on ${hostname()}'s screen, not in this browser`, 403);
+  // Browsers apply no CORS to WebSockets, so any website could open one; the Origin check stops websites, the token programs.
+  const ws = url.pathname.match(/^\/api\/todos\/(\d+)\/terminals\/(\d+)\/ws$/);
+  if (ws) {
+    const origins = lan ? [`${here.secure ? "https" : "http"}://${host}`] : [`http://${HOST}:${PORT}`, `http://localhost:${PORT}`];
+    if (!origins.includes(req.headers.get("origin") ?? "")) return fail("bad origin", 403);
+    const x = terms.get(Number(ws[2]));
+    if (!x || x.todoId !== Number(ws[1])) return fail("no such terminal", 404);
+    return server.upgrade(req, { data: { tid: x.id, token: lan ? token : null } }) ? undefined : fail("websocket upgrade failed", 400);
+  }
+  if (lan) lanTokens.set(req, token!);
+  try {
+    return await api(req, url.pathname);
+  } catch (e: any) {
+    return fail(e.message ?? String(e), e.status ?? 500);
+  }
+}
+
 const httpServer = Bun.serve({
   hostname: HOST,
   port: PORT,
   idleTimeout: 0, // the default 10s would cut the SSE stream
   websocket: termWs,
-  async fetch(req, server) {
-    const url = new URL(req.url);
-    // Blocks DNS-rebinding pages: the Host header must name this loopback server.
-    if (![`${HOST}:${PORT}`, `localhost:${PORT}`].includes(req.headers.get("host") ?? "")) return fail("bad host", 403);
-    // Cross-site forms can only send simple content types; requiring JSON forces a CORS preflight, which this server never answers.
-    if (req.method !== "GET" && !req.headers.get("content-type")?.startsWith("application/json")) return fail("JSON body required", 415);
-    // The page, the icon and the bundled libraries hold no data, so they stay open.
-    // The channel lets a window of the other build (stable or beta, same data) see this one runs and refuse to start.
-    if (url.pathname === "/") return new Response(Bun.file(join(import.meta.dir, "index.html")), { headers: { "x-switchboard-channel": CHANNEL } });
-    if (url.pathname === "/favicon.svg") return new Response(Bun.file(join(import.meta.dir, "images/icons/flat/switchboard-flat-small.svg")));
-    if (url.pathname.startsWith("/vendor/")) {
-      const file = resolve(VENDOR, "." + decodeURIComponent(url.pathname.slice(7)));
-      if (!isInside(file, VENDOR) || file.startsWith(join(VENDOR, "src")) || !existsSync(file)) return fail("not found", 404);
-      return new Response(Bun.file(file), { headers: { "cache-control": "no-cache" } });
-    }
-    // The agents' route to the app's MCP tools: each agent session carries its own secret instead of the launch token.
-    if (url.pathname === "/mcp/app") return handleMcp(req);
-    if (!tokenOk(TOKEN, req.headers.get("x-switchboard-token"), url.searchParams.get("token"))) return fail("open the link the server printed at start", 401);
-    // Browsers apply no CORS to WebSockets, so any website could open one; the Origin check stops websites, the token programs.
-    const ws = url.pathname.match(/^\/api\/todos\/(\d+)\/terminals\/(\d+)\/ws$/);
-    if (ws) {
-      if (![`http://${HOST}:${PORT}`, `http://localhost:${PORT}`].includes(req.headers.get("origin") ?? "")) return fail("bad origin", 403);
-      const x = terms.get(Number(ws[2]));
-      if (!x || x.todoId !== Number(ws[1])) return fail("no such terminal", 404);
-      return server.upgrade(req, { data: { tid: x.id } }) ? undefined : fail("websocket upgrade failed", 400);
-    }
-    try {
-      return await api(req, url.pathname);
-    } catch (e: any) {
-      return fail(e.message ?? String(e), e.status ?? 500);
-    }
-  },
+  fetch: (req, server) => serve(req, server, false),
 });
 // Written only once the port is bound: a second copy that exits on EADDRINUSE never replaces the live server's token.
 writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 });
 chmodSync(TOKEN_FILE, 0o600); // mode above applies only when the file is new
 console.log(`switchboard on http://${HOST}:${PORT}/#token=${TOKEN} (data in ${HOME})`);
+
+// After the loopback bind: a second copy that exits there never takes the network port either.
+let lanServer: Server<WsData> | null = null;
+if (LAN) {
+  try {
+    const tls = tlsFiles(LAN);
+    lanNames = machineNames(LAN, tls ? tls.cert : null);
+    // 255 s, Bun's longest: event streams ping every 20 s, and a connection that sends nothing (no login yet) does not
+    // stay open for ever. The loopback server keeps 0.
+    lanServer = Bun.serve({ hostname: LAN.listen, port: LAN.port, idleTimeout: 255, websocket: termWs, ...(tls ? { tls } : {}), fetch: (req, server) => serve(req, server, true) });
+    lanUrlList = lanUrls(LAN, tls ? tls.cert : null);
+    console.log(`on the network: ${lanUrlList.join("  ")}`);
+    if (!LAN.password && !LAN.trusted.length) console.log("  no password set yet: run `bun server.ts --password`");
+  } catch (e: any) {
+    lanError = `not on the network: ${e.code === "EADDRINUSE" ? `port ${LAN.port} is in use` : e.message}`;
+    LAN = null;
+  }
+}
+if (lanError) console.error(`switchboard: ${lanError}`);
+pruneLogins(db);
+setInterval(() => pruneLogins(db), 86_400_000);
 
 // After the bind, like the reset below: a second copy that exits on EADDRINUSE must not move a live app's folders.
 moveArtifactFolders();
@@ -1805,6 +1905,7 @@ async function shutdown() {
   // The port frees at once, so a window reopened during the 5 s below starts a new server instead of reading this
   // server's token and attaching to a server that is about to exit.
   httpServer.stop(true);
+  lanServer?.stop(true);
   closeTerms(null);
   await Promise.race([stopAll(), Bun.sleep(5000)]);
   // A run that did not end in the 5 s still has its agent process. One second for SIGTERM and SIGHUP, then SIGKILL to
