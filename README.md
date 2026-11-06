@@ -114,6 +114,11 @@ Add the files to `server.json` and restart Switchboard:
 Open `https://desk.<tailnet>.ts.net:4478`. Tailscale certificates last 90 days: run `tailscale cert` again before
 then, and restart Switchboard.
 
+If another machine cannot connect but the desk itself can, check Tailscale's "block incoming connections" on the
+desk (`tailscale debug prefs` shows `ShieldsUp`; `tailscale set --shields-up=false` turns it off, which lets your
+other tailnet devices reach the desk). `ping` proves nothing here: Windows does not answer it by default. Test with
+`curl https://desk.<tailnet>.ts.net:4478/api/login` from the other machine.
+
 **mkcert.** On the desk, run `mkcert -install` and then `mkcert desk.local 192.168.1.123` (your address) in
 `~/.switchboard`, and put the two files it names in `tls` as above. Each other machine must trust mkcert's root
 certificate: copy `rootCA.pem` from the folder `mkcert -CAROOT` prints, and import it there (Windows: double-click,
