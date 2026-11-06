@@ -58,7 +58,9 @@ export function lanUrls(cfg: LanConfig, certPem: string | null): string[] {
   const all = cfg.listen === "0.0.0.0" || cfg.listen === "::";
   const names = [...cfg.names, ...(certPem ? certNames(certPem) : []), ...(cfg.tls ? [] : [hostname().toLowerCase().replace(/\.local$/, "") + ".local"])]
     .filter((n) => n !== "localhost");
-  return [...new Set([...names, ...(all ? v4 : [cfg.listen])])].map((n) => `${scheme}://${n}${port}`);
+  // With a certificate's name, an address would only show the browser's certificate warning.
+  const addrs = cfg.tls && names.length ? [] : all ? v4 : [cfg.listen];
+  return [...new Set([...names, ...addrs])].map((n) => `${scheme}://${n}${port}`);
 }
 
 // ---------- logins ----------
