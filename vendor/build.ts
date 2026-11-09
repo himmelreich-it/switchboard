@@ -10,6 +10,8 @@ const r = await Bun.build({
 });
 if (!r.success) { console.error(r.logs.join("\n")); process.exit(1); }
 copyFileSync(join(nm, "@xterm/xterm/css/xterm.css"), join(out, "terminal.css"));
+// Already a minified IIFE that sets globalThis.mermaid; loaded only when a markdown file has a mermaid block.
+copyFileSync(join(nm, "mermaid/dist/mermaid.min.js"), join(out, "mermaid.js"));
 
 // Latin subsets, weights 400-700: the Cyberpunk families, and Inter for Monokai (design v8).
 const FONTS: [string, string, string][] = [

@@ -1201,6 +1201,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 /* a long code token (a path, a URL) may break, so the table fits the width; plain words keep their column wide enough */
 .md :is(td, th) code { overflow-wrap: anywhere; }
 .md hr { border: none; border-top: 1px solid var(--border-subtle); }
+.md pre.mmd { text-align: center; }
 /* the Files tab's rendered markdown: each block's source line in a left gutter, centered on the block's first line */
 .md.ln { position: relative; padding-left: 40px; }
 .md.ln [data-line]::before { content: attr(data-line); position: absolute; left: 0; width: 28px; text-align: right; font: 400 11px/calc(14px * 1.65) var(--font-mono); color: var(--text-muted); }
@@ -4052,12 +4053,38 @@ function setMd(el, text) {
   for (const n of old.slice(a, old.length - b)) n.remove();
   el.insertBefore(tpl.content, old[old.length - b] ?? null);   // what is left in the template: the changed blocks
   el._src = text; el._blocks = { html, keys };
+  renderMermaid(el);
 }
+// A ```mermaid block in rendered markdown becomes a diagram in its <pre>; the library (3.5 MB) loads at the first one.
+// securityLevel "strict": mermaid sanitizes labels and drops click handlers. A diagram that does not parse stays code,
+// with mermaid's error as the block's tooltip.
+let mermaidLib, mermaidN = 0;
+async function renderMermaid(el) {
+  const codes = [...el.querySelectorAll("pre > code.language-mermaid")];
+  if (!codes.length) return;
+  await (mermaidLib ??= loadScript("/vendor/mermaid.js"));
+  for (const c of codes) await drawMermaid(c.parentNode, c.textContent, c);
+}
+async function drawMermaid(pre, src, cur) {
+  const theme = isDark() ? "dark" : "default";
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme });
+  try {
+    await mermaid.parse(src);
+    const { svg } = await mermaid.render("mmd" + ++mermaidN, src);
+    if (cur.parentNode !== pre || !pre.isConnected) return;   // replaced while it rendered
+    pre.innerHTML = svg; pre.classList.add("mmd"); pre._mmd = { src, theme };
+  } catch (e) { if (cur.parentNode === pre) pre.title = "Mermaid: " + String(e?.message ?? e); }
+}
+// The diagrams take the theme's colors when drawn, so a theme change draws them again.
+window.addEventListener("sb-theme", async () => {
+  if (!window.mermaid) return;
+  for (const pre of document.querySelectorAll(".md pre.mmd")) if (pre._mmd && pre._mmd.theme !== (isDark() ? "dark" : "default")) await drawMermaid(pre, pre._mmd.src, pre.firstChild);
+});
 // Same elements apart from the line numbers (their keys match), so the two trees walk in step.
 function syncLines(o, n) {
   if (o.nodeType !== 1) return;
   const os = [o, ...o.getElementsByTagName("*")], ns = [n, ...n.getElementsByTagName("*")];
-  os.forEach((x, k) => {
+  os.slice(0, ns.length).forEach((x, k) => {   // a drawn diagram has more elements than its code; only its <pre> has a line
     for (const a of ["data-line", "data-items"]) {
       const v = ns[k].getAttribute(a);
       if (v === null) x.removeAttribute(a); else if (x.getAttribute(a) !== v) x.setAttribute(a, v);

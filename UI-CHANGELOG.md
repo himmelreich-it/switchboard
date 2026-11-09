@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-09 · Mermaid diagrams in rendered markdown files
+- Where: Files tab, a markdown file in Read mode and in the Split and Preview views of the editor.
+- Now: a code block marked as `mermaid` shows as a drawn diagram (flowchart, sequence diagram and the other Mermaid kinds), centered in the code block's box, with its source line in the gutter as before. The diagram takes dark or light colors from the theme and is drawn again when the theme changes. A block that Mermaid cannot read stays as code; hovering it shows Mermaid's error.
+- Why: the user writes explanations with Mermaid diagrams and wanted to see them drawn, not as source.
+- Design question: should a diagram that does not parse show its error visibly under the code instead of as a tooltip, and should the diagram box have its own background?
+
 ### 2026-11-05 · Login page in a browser on another machine
 - Where: the whole page, when Switchboard is opened from another machine on the network and the browser is not logged in.
 - Now: a centered card like the "This page needs a new link" card, titled "Log in to Switchboard · <machine>". It holds a button "Log in with a passkey" (only over https:// with a name, and once a passkey exists), then a password field with a "Log in" button. A wrong password shows "wrong password" in red under the form; five failures in a minute show "too many failed logins from <address>; try again in N s". Over plain http:// a small line reads "Not encrypted (http://): use this only on your own network. Passkeys need https:// and a name." Without any password set, the card says "No password is set. On <machine>, run bun server.ts --password, then reload this page." From a trusted address the card does not show at all; the page logs in by itself. A one-time passkey link shows the card "Add a passkey to Switchboard · <machine>" with a short explanation, a name field ("Name, e.g. 1Password") and a "Save a passkey" button.
