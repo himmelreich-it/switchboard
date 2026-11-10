@@ -1121,6 +1121,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fitem > .ccnt, .tr > .ccnt { margin-left: 2px; }
 .md-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .md-read { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; }
+.html-host { flex: 1; min-height: 0; border: 0; background: #fff; }   /* a page without its own background reads as in a browser */
 .code-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-inset); }
 .code-host .cm-editor { flex: 1; min-height: 0; }
 .md-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -1364,6 +1365,8 @@ pre.cmd > .dollar { color: var(--accent-lime); }
               <div id="fileCode" class="code-host" hidden></div>
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
+              <!-- No allow-same-origin: the page's scripts run in an opaque origin, without the app's token or API. -->
+              <iframe id="fileHtml" class="html-host" sandbox="allow-scripts" title="HTML preview" hidden></iframe>
               <div id="fileFind" class="ffind" role="search" hidden><input id="findIn" type="text" placeholder="Find" aria-label="Find in file" spellcheck="false" autocomplete="off"><span id="findCount" class="meta" aria-live="polite"></span><button type="button" class="mb-iconbtn" data-act="find-step" data-id="-1" aria-label="Previous match" title="Previous · ⇧Enter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg></button><button type="button" class="mb-iconbtn" data-act="find-step" data-id="1" aria-label="Next match" title="Next · Enter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><button type="button" class="mb-iconbtn" data-act="find-close" aria-label="Close find" title="Close · Esc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
             </div><div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize comments" title="Drag to resize · double-click to reset" tabindex="0" data-pane="notes"></div><aside id="fileNotes" class="fnotes" aria-label="Comments" hidden></aside></div>
             <button type="button" id="cmtAdd" class="cmt-add" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Comment</button>
@@ -2400,7 +2403,7 @@ async function openFile(fid, root = "todo", rel = null, mode = null) {
     Object.assign(f, {
       name: root === "todo" ? r.name : basename(rel), byUser: !!r.by_user, abs: root === "todo" ? r.path : r.abs, size: r.size, binary: r.binary, image: r.image, large: r.large,
       content: r.content, mtime: e ? e.mtime : r.mtime, text: e ? e.text : r.content, mark, saved: false,
-      mode: mode ?? (e ? "edit" : "read"),
+      mode: mode ?? (e ? "edit" : isHtml(root === "todo" ? r.name : rel) ? "preview" : "read"),
     });
     dropFile();
     S.file = S.lastFile[id] = f; S.tab = "files"; S.fileRoot[id] = root;
@@ -3655,6 +3658,7 @@ const TOOL_ICONS = {
 };
 const TOOL_TITLES = { heading: "Heading", bold: "Bold", italic: "Italic", quote: "Quote", link: "Link", code: "Code", ul: "Bullet list", ol: "Numbered list", task: "Task", hr: "Rule", table: "Table" };
 const isMd = (name) => /\.(md|markdown)$/i.test(name ?? "");
+const isHtml = (name) => /\.html?$/i.test(name ?? "");
 // While the user types in the editor the preview, the counts and the comment places keep their last state, and a pause
 // renders them once: on a 160 KB file they cost ~150 ms per key. The pause is twice what that render took last time
 // with its layout, 200 ms to 1 s, so a slow typist on a big file is not held up by one between keys.
@@ -3678,14 +3682,16 @@ function renderFile(t) {
   const canDiff = f.root !== "todo" && S.trees[`${f.todoId}:${f.root}`]?.git !== false && !f.binary && !f.image && !f.large && (f.mark || dirty || f.saved || f.deleted);
   if (f.mode === "edit" && (locked || !text0)) f.mode = "read";
   if (f.mode === "diff" && !canDiff) f.mode = "read";
+  if (f.mode === "preview" && !(text0 && isHtml(f.name))) f.mode = "read";
   const mode = f.mode, shown = f.root === "todo" ? f.abs : f.rel, m = f.mark && MARK[f.mark];
   const counts = fileCounts(f, typing);
   const sizeText = f.deleted ? "" : f.binary || f.image || f.large ? fmtBytes(f.size) : `${fmtBytes(counts.size)} · ${plural(f.text != null ? counts.lines : 0, "line")}`;
-  const modes = f.binary || f.image || f.large ? [] : f.deleted ? [["diff", "Diff"]] : [["read", "Read"], ["edit", locked ? "Edit · locked" : "Edit"], ...(canDiff ? [["diff", "Diff"]] : [])];
+  const modes = f.binary || f.image || f.large ? [] : f.deleted ? [["diff", "Diff"]] : [...(isHtml(f.name) ? [["preview", "Preview"]] : []), ["read", "Read"], ["edit", locked ? "Edit · locked" : "Edit"], ...(canDiff ? [["diff", "Diff"]] : [])];
   $("fileLocked").hidden = !locked || mode === "diff";
-  const show = { read: false, md: false, code: false, diff: false, msg: false };
+  const show = { read: false, md: false, code: false, diff: false, msg: false, html: false };
   if (!text0 && !f.deleted) show.msg = true;
   else if (mode === "diff") show.diff = true;
+  else if (mode === "preview") show.html = true;
   else if (md0 && mode === "read") show.read = true;
   else if (md0) show.md = true;
   else show.code = true;
@@ -3693,7 +3699,7 @@ function renderFile(t) {
   const dd = show.diff ? f.diff : null, drows = dd && !dd.error && window.SBEditor ? SBEditor.lineDiff(dd.base, f.deleted ? "" : f.text) : null;
   const dstat = drows && { a: drows.filter((r) => r.sign === "+").length, d: drows.filter((r) => r.sign === "-").length };
   const seg = modes.length > 1 ? `<div class="seg" role="radiogroup" aria-label="File mode">${modes.map(([id, label]) =>
-    `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles, ⌘F finds") : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
+    `<button type="button" role="radio" aria-checked="${id === mode}" data-act="file-mode" data-id="${id}" data-fk="file-mode:${id}" title="${id === "edit" ? keys("Edit · ⌘E toggles, ⌘F finds") : id === "read" ? keys("Read · ⌘E toggles, ⌘F finds") : id === "preview" ? "The page as a browser shows it · scripts run, without access to Switchboard" : "Changes against the merge base"}">${label}</button>`).join("")}</div>`
     : modes.length ? `<span class="ml">${modes[0][1]}</span>` : `<span class="ml">${f.image ? "Image" : f.large ? "Large file" : "Binary"}</span>`;
   const views = show.md ? `<div class="seg" role="radiogroup" aria-label="Markdown view">${[["write", "Write"], ["split", "Split"], ["preview", "Preview"]].map(([v, l]) =>
     `<button type="button" role="radio" aria-checked="${S.mdView === v}" data-act="md-view" data-id="${v}" data-fk="md-view:${v}">${l}</button>`).join("")}</div>`
@@ -3705,7 +3711,10 @@ function renderFile(t) {
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${f.byUser ? '<span class="notetag" title="Your note · editable while the agent runs">your note</span>' : ""}${locked ? `<span title="The agent may change this file. Edit opens when its run ends." style="display:flex">${badge("Read-only · agent running")}</span>` : ""}
     <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}${iconBtn("file-full", S.fileFull ? "Exit full screen · Esc" : "Full screen", S.fileFull ? MINIMIZE : MAXIMIZE)}
       ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${S.meta?.machine ? "" : iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : f.root === "todo" ? iconBtn("archive-file", locked ? "Archive opens when the agent's run ends" : "Archive file", ARCHIVE, locked) : ""}</span>`);
-  $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg;
+  $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg; $("fileHtml").hidden = !show.html;
+  // Set only when the text changed: each set reloads the page and loses its scroll.
+  if (show.html) { destroyEditor(); if ($("fileHtml").srcdoc !== f.text) $("fileHtml").srcdoc = f.text; }
+  else if ($("fileHtml").srcdoc) $("fileHtml").removeAttribute("srcdoc");   // a hidden page's scripts stop
   if (show.msg) {
     destroyEditor();
     const src = f.root === "todo" ? `/api/todos/${f.todoId}/files/${f.id}?raw=1` : fsUrl(f, "fs/raw");

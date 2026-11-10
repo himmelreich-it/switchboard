@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-10 · Preview for HTML files
+- Where: Files tab, the mode switch of an HTML file (Preview · Read · Edit).
+- Now: an HTML file opens in a new first mode "Preview", which shows the page as a browser draws it, on a white background, across the whole file area. Its scripts run, but cannot reach Switchboard. Read still shows the source with line numbers; Edit edits it. The preview reloads when the file changes on disk or after an edit. Find (⌘F) and comments are not offered in Preview.
+- Why: agents write reports as HTML files, and the user wanted to see them rendered instead of as source.
+- Design question: should Preview have its own control (e.g. an "Open in browser" button), and should it follow the dark theme or stay white like a browser?
+
 ### 2026-11-09 · Mermaid diagrams in rendered markdown files
 - Where: Files tab, a markdown file in Read mode and in the Split and Preview views of the editor.
 - Now: a code block marked as `mermaid` shows as a drawn diagram (flowchart, sequence diagram and the other Mermaid kinds), centered in the code block's box, with its source line in the gutter as before. The diagram takes dark or light colors from the theme and is drawn again when the theme changes. A block that Mermaid cannot read stays as code; hovering it shows Mermaid's error.
