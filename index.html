@@ -1366,7 +1366,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
               <div id="fileDiff" class="dv" hidden></div>
               <div id="fileMsg" class="file-msg" hidden></div>
               <!-- No allow-same-origin: the page's scripts run in an opaque origin, without the app's token or API. -->
-              <iframe id="fileHtml" class="html-host" sandbox="allow-scripts" title="HTML preview" hidden></iframe>
+              <iframe id="fileHtml" class="html-host" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" title="HTML preview" hidden></iframe>
               <div id="fileFind" class="ffind" role="search" hidden><input id="findIn" type="text" placeholder="Find" aria-label="Find in file" spellcheck="false" autocomplete="off"><span id="findCount" class="meta" aria-live="polite"></span><button type="button" class="mb-iconbtn" data-act="find-step" data-id="-1" aria-label="Previous match" title="Previous · ⇧Enter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg></button><button type="button" class="mb-iconbtn" data-act="find-step" data-id="1" aria-label="Next match" title="Next · Enter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><button type="button" class="mb-iconbtn" data-act="find-close" aria-label="Close find" title="Close · Esc"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
             </div><div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize comments" title="Drag to resize · double-click to reset" tabindex="0" data-pane="notes"></div><aside id="fileNotes" class="fnotes" aria-label="Comments" hidden></aside></div>
             <button type="button" id="cmtAdd" class="cmt-add" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Comment</button>
@@ -1760,7 +1760,13 @@ const repoName = (t) => t.project_name ?? (t.routed_at ? "no topic" : "");
 const canChangeRepo = (t) => t.status !== "running" && !t.removed_at;
 const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "");
 
-const COPY_ICON = '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>';
+// The HTML preview's iframe: a clicked web or mail link opens in a new tab (the app: the default browser).
+// Loaded in the iframe, it showed a black page. A same-page link (#part) resolves against the app's URL, not about:srcdoc,
+// and loaded the app into the iframe: it sets the hash instead. After the doctype, so the page stays in standards mode.
+const PREVIEW_LINKS = `<script>addEventListener("click", (e) => { const a = e.target.closest?.("a[href]"), h = a?.getAttribute("href"); if (e.defaultPrevented || !h) return;
+if (h.startsWith("#")) { e.preventDefault(); location.hash = h; } else if (/^(https?|mailto):/i.test(a.href)) { e.preventDefault(); open(a.href, "_blank"); } });</` + "script>";
+const previewDoc = (text) => text.replace(/^\s*(<!doctype[^>]*>)?/i, (m) => m + PREVIEW_LINKS);
+const COPY_ICON ='<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>';
 const CHEV_R = '<path d="m9 18 6-6-6-6"/>', CHEV_D = '<path d="m6 9 6 6 6-6"/>';
 const RUNNING_LOCK = ["Read-only", "The agent is running. Edit unlocks when it stops."];
 
@@ -3713,7 +3719,7 @@ function renderFile(t) {
       ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${S.meta?.machine ? "" : iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : f.root === "todo" ? iconBtn("archive-file", locked ? "Archive opens when the agent's run ends" : "Archive file", ARCHIVE, locked) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg; $("fileHtml").hidden = !show.html;
   // Set only when the text changed: each set reloads the page and loses its scroll.
-  if (show.html) { destroyEditor(); if ($("fileHtml").srcdoc !== f.text) $("fileHtml").srcdoc = f.text; }
+  if (show.html) { destroyEditor(); const doc = previewDoc(f.text); if ($("fileHtml").srcdoc !== doc) $("fileHtml").srcdoc = doc; }
   else if ($("fileHtml").srcdoc) $("fileHtml").removeAttribute("srcdoc");   // a hidden page's scripts stop
   if (show.msg) {
     destroyEditor();

@@ -95,7 +95,9 @@ app.whenReady().then(async () => {
   win.on("enter-full-screen", () => page("document.documentElement.classList.add('fullscreen')"));
   win.on("leave-full-screen", () => page("document.documentElement.classList.remove('fullscreen')"));
   // Markdown links get target="_blank" (index.html); open them in the real browser, not a new Electron window.
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+  // Only web and mail links: the HTML preview's untrusted pages reach this handler too.
+  const external = (url) => /^(https?|mailto):/i.test(url);
+  win.webContents.setWindowOpenHandler(({ url }) => { if (external(url)) shell.openExternal(url); return { action: "deny" }; });
   Object.assign(process.env, await shellEnv);
   // A server already running on the port wins: this copy exits on EADDRINUSE and the window attaches to the live one.
   server = spawn("bun", ["server.ts"], {
