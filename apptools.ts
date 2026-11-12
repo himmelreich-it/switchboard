@@ -7,7 +7,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
-import { isClaude, namedAgent } from "./agents";
+import { hasAutoEffort, namedAgent } from "./agents";
 import { AUTO_EFFORTS, addTurn, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
 import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -174,7 +174,7 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
   });
   // Auto effort: the worker switches its own effort level as the work changes (CONTRACT's effort rules). Claude only;
   // a Claude terminal does not get it, as the level belongs to the TODO's session.
-  if (!g.via && isClaude(todoRow(todoId)!.agent)) s.registerTool("set_effort", {
+  if (!g.via && hasAutoEffort(todoRow(todoId)!.agent)) s.registerTool("set_effort", {
     description: "Switch your effort level: low, medium, high or xhigh. reason: a few words the user reads, such as \"verifying the fix\". Refused when the user set the effort.",
     inputSchema: { level: z.enum(AUTO_EFFORTS), reason: z.string() },
   }, async ({ level, reason }) => {
@@ -381,7 +381,7 @@ function routerTools(s: McpServer, todoId: number) {
     addEvent(todoId, "route_todo", "operator", [`topic: "${p?.name ?? "none"}"`, pick && `agent: ${pick}`].filter(Boolean).join(" · "));
     if (pick) setTodo(todoId, { agent: pick });
     routeTo(todoId, p?.id ?? null, reason);
-    if (effort && isClaude(todoRow(todoId)!.agent)) setAutoEffort(todoId, effort, "picked at the start", "operator");
+    if (effort && hasAutoEffort(todoRow(todoId)!.agent)) setAutoEffort(todoId, effort, "picked at the start", "operator");
     return ok(`Routed to ${p?.name ?? "no topic"}. The app starts session 1 there when you stop.`);
   });
   s.registerTool("ask_topic", {

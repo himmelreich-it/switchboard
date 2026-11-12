@@ -82,6 +82,10 @@ export const isKnown = (id: string) => isBuiltin(id) || !!customRow(id);
 // gets the contract as text in front of the first prompt of each session (design §9).
 export const isClaude = (id: string | null) => (id || DEFAULT_AGENT) === "claude";
 
+// Auto effort (the router's pick, set_effort, medium by default): the built-in agents, whose effort option takes the
+// levels low to xhigh (Claude's effort, Codex's reasoning_effort). A user's own agent keeps its own default.
+export const hasAutoEffort = (id: string | null) => isBuiltin(id || DEFAULT_AGENT);
+
 // How the contract names an app tool for this agent: Claude Code's own MCP tool name, else a description any agent
 // maps to its own naming (Codex, for one, does not use the mcp__ prefix).
 export const toolName = (agent: string | null, tool: string) => isClaude(agent) ? `mcp__app__${tool}` : `the app MCP server's ${tool} tool`;

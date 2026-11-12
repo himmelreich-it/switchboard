@@ -3122,8 +3122,8 @@ function sessionRows(t) {
   }
   for (const o of configList(t)) {
     const own = t.overrides?.[o.id] ?? null, inh = pd[o.id] ?? null, live = t.config ? o.value : null;
-    // Auto effort: Claude's effort the user did not set is the router's or the agent's pick, medium until one is made.
-    const auto = agent === "claude" && o.category === "thought_level" && !inh ? t.auto_effort?.value ?? "medium" : null;
+    // Auto effort (built-in agents): effort the user did not set is the router's or the agent's pick, medium until one is made.
+    const auto = agentsAll().find((a) => a.id === agent)?.builtin && o.category === "thought_level" && !inh ? t.auto_effort?.value ?? "medium" : null;
     const eff = own ?? inh ?? auto ?? live;
     const isFast = o.category === "model_config";
     const name = eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null;

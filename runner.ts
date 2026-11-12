@@ -4,7 +4,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
-import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
+import { DEFAULT_AGENT, agentList, agentName, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
   agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
@@ -65,7 +65,7 @@ const EFFORT_RULES = `
 
 // The contract for one agent's session: the TODO's folder filled in, and the app tools named the way that agent sees them.
 export const contractFor = (agent: string, dir: string) =>
-  (CONTRACT + (isClaude(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
+  (CONTRACT + (hasAutoEffort(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
 
 // What an agent without a system-prompt append gets in front of the first prompt of each session (design §9). After a
 // restart the resumed session still has it in its context; an edited topic prompt reaches it with the next session.
@@ -244,7 +244,7 @@ export async function applyConfig(todoId: number, a: Agent, reset?: string) {
   const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a TODO without a topic has no defaults
   const own = (t.agent || DEFAULT_AGENT) === a.agent;
   const wanted = wantedConfig(t, a.agent);
-  const auto = own && isClaude(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
+  const auto = own && hasAutoEffort(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
   if (auto) wanted[auto[0]] = auto[1];
   if (reset && !wanted[reset] && configView(a.live.configOptions).find((o) => o.id === reset)?.options.some((x) => x.value === "default")) wanted[reset] = "default";
   const errors: string[] = [];
@@ -272,8 +272,8 @@ function wantedConfig(t: Todo, agent: string): Record<string, string> {
   return { ...defaultsFor(p.defaults, agent).config, ...(own ? configIn(t.overrides ? JSON.parse(t.overrides) : null) : {}) };
 }
 
-// Auto effort (Claude only): the router's pick at the start or the worker's set_effort, stored in todos.auto_effort and
-// applied by applyConfig while the user has set no effort for the TODO or its topic. Returns that user value when it
+// Auto effort (the built-in agents, hasAutoEffort): the router's pick at the start or the worker's set_effort, stored in
+// todos.auto_effort and applied by applyConfig while the user has set no effort for the TODO or its topic. Returns that user value when it
 // blocks the pick. A live agent gets the level at once, not awaited: the worker's tool call waits on this.
 export function setAutoEffort(todoId: number, value: string, reason: string, by: "agent" | "operator"): string | null {
   const t = todoRow(todoId)!, agent = t.agent || DEFAULT_AGENT;
