@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-12 · Messages from another TODO's agent
+- Where: Focus › chat, a message in the user's column.
+- Now: an agent can send a message to another TODO when the user asks it to. The message shows in the receiving TODO's chat as the user's messages do, with the badge "From T-12" (click opens T-12), the same badge a TODO created by another TODO's agent has on its first message. Before, that badge only appeared on a first message.
+- Why: the user wanted one TODO to be able to send a message to another TODO's chat.
+- Design question: should a message from another TODO's agent sit in the user's column with "You" as its author, or get its own author label and color?
+
 ### 2026-11-10 · Preview for HTML files
 - Where: Files tab, the mode switch of an HTML file (Preview · Read · Edit).
 - Now: an HTML file opens in a new first mode "Preview", which shows the page as a browser draws it, on a white background, across the whole file area. Its scripts run, but cannot reach Switchboard. Read still shows the source with line numbers; Edit edits it. The preview reloads when the file changes on disk or after an edit. Find (⌘F) and comments are not offered in Preview.

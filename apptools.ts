@@ -15,7 +15,7 @@ import {
   HOST, PORT, addEvent, addMessage, attachmentsOf, changed, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, noteTodo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
-export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "remove_todo", "set_schedule", "set_effort"].map((n) => `mcp__app__${n}`);
+export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "send_message", "remove_todo", "set_schedule", "set_effort"].map((n) => `mcp__app__${n}`);
 export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "remove_todo"].map((n) => `mcp__app__${n}`);
 // The operator's routing run for one TODO (801): read other TODOs, then decide.
 export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"].map((n) => `mcp__app__${n}`);
@@ -88,6 +88,18 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     addEvent(todoId, "post_message", "agent", [g.via && `from ${g.via}`, file_name].filter(Boolean).join(" · ") || null);
     g.onPost();
     return ok();
+  });
+  s.registerTool("send_message", {
+    description: "Send a message to another TODO's chat, only when the user's instruction says to. It shows there as \"From T-<this TODO>\" and its agent gets it like a user message, marked as written by this TODO's agent.",
+    inputSchema: { todo_id: z.number().int(), body: z.string() },
+  }, async ({ todo_id, body }) => {
+    const t = todoRow(todo_id);
+    if (!t || t.removed_at) return err(`no live TODO T-${todo_id}`);
+    if (todo_id === todoId) return err("That is this TODO; use post_message.");
+    if (!body.trim()) return err("body is empty");
+    commitMessage(todo_id, "user via operator", body.trim(), [], `T-${todoId}`);
+    addEvent(todoId, "send_message", "agent", [g.via && `from ${g.via}`, `T-${todo_id}`].filter(Boolean).join(" · "));
+    return ok(`Message ${deliveryOutcome(t, todo_id)}.`);
   });
   s.registerTool("remove_todo", {
     description: "Remove a TODO this TODO created with create_todo, only when the user's instruction says to: like the user's Remove, its run stops and it moves to the Removed fold, where the user can restore it.",
@@ -233,11 +245,7 @@ function operatorTools(s: McpServer, used: Used) {
     const t = todoRow(todo_id);
     if (!t || t.removed_at) return err(`no live TODO T-${todo_id}`);
     if (!body.trim()) return err("body is empty");
-    const outcome = {
-      pending: "stored; it is delivered when the user starts the TODO",
-      queue: "queued; the agent gets it when its current turn ends",
-      send: "delivered now",
-    }[deliveryAction(t.routing ? "not_started" : t.status, isRunning(todo_id))];
+    const outcome = deliveryOutcome(t, todo_id);
     commitMessage(todo_id, "user via operator", body.trim());
     used("send_message", `T-${todo_id}`);
     return ok(`Message ${outcome}.`);
@@ -252,6 +260,15 @@ function operatorTools(s: McpServer, used: Used) {
     used("remove_todo", `T-${todo_id}`);
     return ok(`Removed T-${todo_id}. The user can restore it from the Removed fold.`);
   });
+}
+
+// Read before commitMessage: delivery changes the TODO's state.
+function deliveryOutcome(t: NonNullable<ReturnType<typeof todoRow>>, id: number) {
+  return {
+    pending: "stored; it is delivered when the user starts the TODO",
+    queue: "queued; the agent gets it when its current turn ends",
+    send: "delivered now",
+  }[deliveryAction(t.routing ? "not_started" : t.status, isRunning(id))];
 }
 
 // Item 145: create_todo for the operator (`parent` null), the workers and Claude terminals.

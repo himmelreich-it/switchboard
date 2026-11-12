@@ -1035,3 +1035,7 @@ CREATE TABLE IF NOT EXISTS passkey_invites (hash TEXT PRIMARY KEY, expires_at TE
     }
   })();
 }
+
+// A message another TODO's agent sent (via "T-<n>") says so to the receiving agent, for the contract's rule on its authority.
+export const markFromTodo = (body: string, via: string | null) =>
+  /^T-\d+$/.test(via ?? "") ? `[Message from the agent of ${via}, not typed by the user]\n${body}` : body;

@@ -5,6 +5,7 @@ import {
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
   DEFAULT_ALLOW, DEFAULT_LAN_PORT, Throttle, typedLine, accessOf, hostOk, inCidrs, ipNum, lanConfigIn, parseCidr, rpIdOf,
+  markFromTodo,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -700,4 +701,9 @@ test("Throttle.forgive takes back a try counted ahead", () => {
   expect(t.wait("a", 1000)).toBe(0);
   t.fail("a", 2000);
   expect(t.wait("a", 2000)).toBe(30_000);
+});
+
+test("markFromTodo: marks only messages from another TODO's agent", () => {
+  expect(markFromTodo("hi", "T-12")).toBe("[Message from the agent of T-12, not typed by the user]\nhi");
+  for (const via of [null, "schedule", "run now", "Claude terminal", "T-12x"]) expect(markFromTodo("hi", via)).toBe("hi");
 });
