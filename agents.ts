@@ -22,7 +22,7 @@ const adapter = (pkg: string) => {
   return p;
 };
 
-// The bundled adapters run on the Bun that runs this server (verified in the spike): no Node needed. Codex's adapter
+// The bundled adapters run on the Bun that runs this server (Claude: the spike; Codex: T-218): no Node needed. Codex's adapter
 // starts the Codex binary it depends on (@openai/codex), and reads the user's ~/.codex login and config.
 const BUILTINS: { id: string; name: string; command: () => string[] | null; shown: string; hint: string | null }[] = [
   { id: "claude", name: "Claude", command: () => [process.execPath, adapter("@agentclientprotocol/claude-agent-acp")], shown: "claude-agent-acp (bundled)", hint: null },
