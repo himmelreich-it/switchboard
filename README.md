@@ -46,7 +46,9 @@ with its own folder, shortcut and icon, and runs `bun install` first in a fresh 
 server on the same data would end the first one's runs, so the other app refuses to start until you quit the running
 one. Appearance settings are kept per app.
 
-Needs a Claude Code login. Agents run with your normal Claude Code settings, in auto permission mode. Topics are
+Needs a Claude Code login. Agents run with your normal Claude Code settings, in auto permission mode. A TODO can run
+on Codex instead (the agent select, or a topic's default agent); it uses your Codex login and `~/.codex/config.toml`,
+and starts in Codex's auto review mode. Topics are
 set up in Settings › Topics (the gear, or ⌘,). A topic is one folder, a git repository or not: agents start
 there, and only a git repository gets worktrees, branches and pull requests. In the code and the database a topic is
 still a project. Shortcuts written with ⌘ use Alt on Linux and Windows.
