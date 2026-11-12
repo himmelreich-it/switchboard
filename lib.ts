@@ -211,6 +211,21 @@ export function cycleEnd(u: any) {
 
 const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) + `\n… ${text.length - max} more characters` : text);
 
+// Codex's auto review ("Guardian Review", codex-acp's GuardianReporter): a tool call of its own, id
+// `guardian_assessment:<id>`, that reviews another tool call. null for any other update. `denied` once it ends as
+// denied or timed out (the action did not run); aborted (an interrupt) is not a denial. `name` is the action as Codex
+// names it ("exec", "MCP post_message"), `action` has the command when there is one.
+export function guardianReview(u: any): { denied: boolean; name: string; action: any; reason: string } | null {
+  if (!String(u?.toolCallId ?? "").startsWith("guardian_assessment:")) return null;
+  const ev = u.rawOutput ?? u.rawInput ?? {}, a = ev.action ?? {}, status = ev.review?.status;
+  const name = a.type === "command" || a.type === "execve" ? "exec" : a.type === "mcpToolCall" ? `MCP ${a.toolName}` : a.type === "applyPatch" ? "apply_patch" : "Codex";
+  const command = a.command ?? (Array.isArray(a.argv) ? a.argv.join(" ") : undefined);
+  return {
+    denied: u.status === "failed" && (status === "denied" || status === "timedOut"),
+    name, action: command ? { command } : {}, reason: String(ev.review?.rationale ?? status ?? ""),
+  };
+}
+
 // One ACP tool call as a transcript row's meta, merged from its tool_call and tool_call_update notifications. Text
 // output is cut to 8 KB; diffs are kept up to 200 KB per side, enough for the code an agent writes in one call.
 export type ToolMeta = {

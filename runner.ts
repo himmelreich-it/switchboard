@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
   markFromTodo,
 } from "./lib";
@@ -514,6 +514,12 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
       return;
     }
     if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
+    // Codex's auto review gets no row of its own (it would double the rows); a denial is reported like Claude's below.
+    const review = guardianReview(u);
+    if (review) {
+      if (review.denied) onDenied(review.name, review.action, review.reason);
+      return;
+    }
     let c = calls.get(u.toolCallId);
     if (!c) {
       flush(true);
