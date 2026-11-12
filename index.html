@@ -1905,7 +1905,7 @@ const S = {
   events: false,                        // events mixed into the chat (item 100), kept in localStorage
   nsMode: {},                           // TODO id -> composer in new-session mode (item 71); browser only
   nsAgent: {},                          // TODO id -> agent chosen for the new session (P5); browser only
-  newAgent: null,                       // the New TODO card's agent (P5); null: the project's default
+  newAgent: null,                       // the New TODO card's agent (P5), kept in localStorage; null: the project's default
   live: {},   // item 130: the text a running agent is writing now, per TODO ({kind, text}), from SSE "stream" events
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
   // design v6
@@ -1933,6 +1933,7 @@ S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // te
 S.termFocus = false;   // the Terminal tab was just opened: the selected terminal takes the keys once it has loaded
 try { S.termSel = JSON.parse(localStorage.getItem("switchboard-term-sel") || "{}"); } catch (e) {}   // TODO id -> selected terminal id; terminals outlive a reload
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
+try { S.newAgent = localStorage.getItem("switchboard-new-agent"); } catch (e) {}   // New TODO preselects the last agent picked there
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
 // ponytail: unsent attachments live only in this tab, so a reload drops them and Restore never sends them.
@@ -3075,7 +3076,7 @@ function renderNew() {
   $("newAgentField").hidden = found.length < 2;
   const akey = found.map((a) => a.id).join("|");
   if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(""); newAgent.dataset.key = akey; }
-  newAgent.value = S.newAgent ?? "";
+  newAgent.value = found.some((a) => a.id === S.newAgent) ? S.newAgent : "";   // an agent no longer found falls back to the topic's
   S.rep ??= REP0();
   $("newNote").textContent = keys(S.rep.on ? "Paste images with ⌘V. Lands in the Scheduled lane. The operator picks the topic at the first run." : "Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.");
   setHtml($("newRepeat"), `<div class="repeat"><label class="mb-switch" style="align-self:flex-start"><input type="checkbox" data-act="rep-toggle"${S.rep.on ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Repeat</span></label>
@@ -5067,7 +5068,7 @@ acceptFiles(newText.closest(".new-dlg"), () => "new");
 addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
-newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; });
+newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; try { localStorage.setItem("switchboard-new-agent", newAgent.value); } catch (e) {} });
 [pName, pPath, pPrompt, pProfile, pMode].forEach((el) => el.addEventListener("input", renderProjects));
 pMode.addEventListener("change", renderProjects);
 pAgent.addEventListener("change", renderProjects);

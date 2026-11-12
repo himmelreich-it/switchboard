@@ -960,7 +960,8 @@ const ROUTING_PROMPT = `You are the operator of switchboard, a local app where e
   - mcp__app__route_todo with the topic's name when one topic clearly fits, or with topic "none" when the TODO fits no topic and is thinking only (its agent then runs in the TODO's own folder). The reason is one short sentence the user reads, such as "the MCP server lives there".
   - mcp__app__ask_topic with a short question and the 2 or 3 likely topics when you cannot tell. The user also gets a "No topic" choice.
 - A topic without a profile can still be picked on its name and folder; say so when you ask.
-- With route_todo, pass effort from the kind of work the TODO asks for: low for brainstorming, sketches and easy edits; medium for regular feature work; high for bug fixes in existing code, reviews and anything with hidden edge cases; xhigh for security reviews, performance work and long autonomous work on a hard problem. Leave it out when unsure: the agent starts at medium.`;
+- With route_todo, pass effort from the kind of work the TODO asks for: low for brainstorming, sketches and easy edits; medium for regular feature work; high for bug fixes in existing code, reviews and anything with hidden edge cases; xhigh for security reviews, performance work and long autonomous work on a hard problem. Leave it out when unsure: the agent starts at medium.
+- With route_todo, pass agent only when the TODO's text names the agent that should run it, such as "with Codex". Never pick one by the kind of work.`;
 const ROUTING_BUILTINS = ["Read", "Grep", "Glob"];
 
 const refuse = (r: PermissionRequest) => {

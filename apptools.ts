@@ -7,7 +7,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
-import { isClaude } from "./agents";
+import { isClaude, namedAgent } from "./agents";
 import { AUTO_EFFORTS, addTurn, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
 import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -279,10 +279,13 @@ function createTool(s: McpServer, by: { parent: number | null; used: (detail: st
   const names = `${topics.map((x) => x.name).join(", ") || "(none yet)"}, or "none"`;
   s.registerTool("create_todo", {
     description: `Create a TODO with its first instruction. title: a short title for its card; leave it out and the TODO's agent sets one. topic: one of ${names} for a thinking-only TODO; leave it out and routing picks it at the start. start: true starts it now, only when the user's words say to start it; otherwise it lands in the user's backlog. key: a dedupe key such as "pr:api-service#490"; when a TODO has that key already, removed ones too, nothing is created.`
-      + ` schedule: {days: [1,2,3,4,5], times: ["09:00"]} or {days, every: 30, from: "08:00", to: "18:00"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.`,
-    inputSchema: { instruction: z.string(), title: z.string().optional(), topic: z.string().optional(), start: z.boolean().optional(), key: z.string().optional(), schedule: z.any().optional() },
-  }, async ({ instruction, title, topic, start: go, key, schedule }: { instruction: string; title?: string; topic?: string; start?: boolean; key?: string; schedule?: unknown }) => {
+      + ` schedule: {days: [1,2,3,4,5], times: ["09:00"]} or {days, every: 30, from: "08:00", to: "18:00"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.`
+      + ` agent: ${namedAgent("").names}, only when the user's words name the agent to run it; leave it out and the topic's default agent runs it.`,
+    inputSchema: { instruction: z.string(), title: z.string().optional(), topic: z.string().optional(), start: z.boolean().optional(), key: z.string().optional(), schedule: z.any().optional(), agent: z.string().optional() },
+  }, async ({ instruction, title, topic, start: go, key, schedule, agent }: { instruction: string; title?: string; topic?: string; start?: boolean; key?: string; schedule?: unknown; agent?: string }) => {
     if (!instruction.trim()) return err("instruction is empty");
+    const a = agent?.trim() ? namedAgent(agent) : null;
+    if (a && !a.id) return err(`Unknown agent "${agent}". Agents: ${a.names}.`);
     let project: number | null | undefined;
     if (topic !== undefined) {
       const name = topic.trim().toLowerCase(), p = topics.find((x) => x.name.toLowerCase() === name);
@@ -300,10 +303,10 @@ function createTool(s: McpServer, by: { parent: number | null; used: (detail: st
     const cap = Number(getMeta("started_todos_per_turn")) || DEFAULT_STARTED_PER_TURN;
     const started = (db.query("SELECT COUNT(*) AS n FROM events WHERE todo_id IS ? AND kind = 'create_todo' AND detail LIKE '%· started%' AND at >= ?").get(by.parent, by.since()) as { n: number }).n;
     if (go && started >= cap) return err(`Cap of ${cap} started TODOs per turn reached. Create the rest with start: false, or the user raises it in Settings › Runs.`);
-    const id = createTodo(instruction.trim(), op ? "operator" : "agent", [], null, { parent_id: by.parent, key: k, project_id: project, schedule: sched, title: title?.trim() || null });
+    const id = createTodo(instruction.trim(), op ? "operator" : "agent", [], a?.id ?? null, { parent_id: by.parent, key: k, project_id: project, schedule: sched, title: title?.trim() || null });
     if (go) start(id);
     const name = project === undefined ? null : topics.find((x) => x.id === project)?.name ?? "none";
-    by.used([`T-${id}`, go && "started", sched && "scheduled", name && `topic ${name}`].filter(Boolean).join(" · "));
+    by.used([`T-${id}`, go && "started", sched && "scheduled", name && `topic ${name}`, a && `agent ${a.id}`].filter(Boolean).join(" · "));
     return ok(`Created T-${id} · ${go ? "started" : sched ? "scheduled" : "in the backlog"}${name ? ` · topic ${name}.` : go ? "; routing picks its topic." : "; routing picks its topic when it starts."}`);
   });
 }
@@ -363,14 +366,20 @@ function routerTools(s: McpServer, todoId: number) {
   const names = () => topics().map((x) => x.name).join(", ") || "none";
   const decided = () => !!todoRow(todoId)!.routed_at || JSON.parse(todoRow(todoId)!.routing ?? "{}").state === "asking";
   s.registerTool("route_todo", {
-    description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium. Stop after this call.",
-    inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional() },
-  }, async ({ topic, reason, effort }) => {
+    description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium."
+      + ` agent: ${namedAgent("").names}, only when the TODO's text names the agent to run it; leave it out and the topic's default agent runs it. Stop after this call.`,
+    inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional(), agent: z.string().optional() },
+  }, async ({ topic, reason, effort, agent }) => {
     if (decided()) return err("This TODO's routing is decided already. Stop now.");
     const none = topic.trim().toLowerCase() === "none";
     const p = none ? null : find(topic);
     if (!none && !p) return err(`Unknown topic "${topic}". Topics: ${names()}, or "none".`);
-    addEvent(todoId, "route_todo", "operator", `topic: "${p?.name ?? "none"}"`);
+    const a = agent?.trim() ? namedAgent(agent) : null;
+    if (a && !a.id) return err(`Unknown agent "${agent}". Agents: ${a.names}.`);
+    // The user's own pick in New TODO wins over the text; routeTo keeps an agent already set.
+    const pick = a && !todoRow(todoId)!.agent ? a.id : null;
+    addEvent(todoId, "route_todo", "operator", [`topic: "${p?.name ?? "none"}"`, pick && `agent: ${pick}`].filter(Boolean).join(" · "));
+    if (pick) setTodo(todoId, { agent: pick });
     routeTo(todoId, p?.id ?? null, reason);
     if (effort && isClaude(todoRow(todoId)!.agent)) setAutoEffort(todoId, effort, "picked at the start", "operator");
     return ok(`Routed to ${p?.name ?? "no topic"}. The app starts session 1 there when you stop.`);

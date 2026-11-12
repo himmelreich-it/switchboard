@@ -64,6 +64,12 @@ export function agentList(): AgentInfo[] {
   ];
 }
 
+// An agent the operator or a worker names in route_todo or create_todo: its id or name, any case, installed ones only.
+export function namedAgent(name: string): { id: string | null; names: string } {
+  const found = agentList().filter((a) => a.found), key = name.trim().toLowerCase();
+  return { id: found.find((a) => a.id === key || a.name.toLowerCase() === key)?.id ?? null, names: found.map((a) => a.name).join(", ") };
+}
+
 // Without agentList: that looks up every agent's command on PATH, and a name needs none of it.
 export const agentName = (id: string | null) => {
   const key = id || DEFAULT_AGENT;
