@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-13 · Mistral Vibe as a second agent
+- Where: Settings › Agents; the agent selects on the New TODO card, the Focus header and New session.
+- Now: Settings › Agents lists a second built-in agent, "Mistral Vibe" (command vibe-acp). When it is not installed, its row reads "Install it with uv tool install mistral-vibe, then run vibe-acp --setup once to save your Mistral API key." Once it is found, the agent selects and agent badges appear, since there is now a choice of agent. Its resume hint in the session list reads "vibe --resume <session id>".
+- Why: the user wanted to run TODOs on Mistral's coding agent.
+- Design question: should the Agents row offer a way to enter the Mistral API key in the app, rather than pointing to a terminal command?
+
 ### 2026-11-13 · Design review: switch, topic settings and badges
 - Where: New TODO dialog; Settings › Topics; board cards, backlog rows and the Focus header.
 - Now: New TODO has a switch "Design review first" next to the Agent select (only with two or more agents; tooltip "The agent writes a design first; another agent reviews it until they agree. The topic's settings pick the reviewer."). Settings › Topics has a card "Design review" under Agent defaults: "For a TODO started with "Design review first": the author writes a design, the reviewer reviews it in a TODO of its own, and the app passes it back and forth until they agree.", with the selects Author ("Topic's default agent"; hint "Unless you picked an agent for the TODO."), Reviewer ("Another agent than the author"), the number field Max rounds (hint "Then the TODO waits for you with the open findings.") and the select After agreement (Wait for me, Start implementing). A TODO with design review shows a badge on its card, backlog row and header: "Design review" or "Design · round 2/3" (blue), "Design stuck · round 3/3" (amber), "Design agreed" (green). The header also has a chip "reviewer T-12" that opens the reviewer's TODO.

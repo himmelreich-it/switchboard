@@ -1,6 +1,7 @@
-// The agent registry (P5): which ACP agents a TODO can run, and what differs between them. Claude and Codex are
-// built in (Gemini waits until it can be tested); the user's own agents are rows of the `agents` table. runner.ts asks
-// this file how to start an agent and how to talk to it; acp.ts knows nothing about agents beyond its command line.
+// The agent registry (P5): which ACP agents a TODO can run, and what differs between them. Claude, Codex and Mistral
+// Vibe are built in (Gemini waits until it can be tested); the user's own agents are rows of the `agents` table.
+// runner.ts asks this file how to start an agent and how to talk to it; acp.ts knows nothing about agents beyond its
+// command line.
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -33,6 +34,12 @@ const BUILTINS: { id: string; name: string; command: () => string[] | null; show
   { id: "claude", name: "Claude", command: () => [process.execPath, adapter("@agentclientprotocol/claude-agent-acp")], shown: "claude-agent-acp (bundled)", hint: null },
   { id: "codex", name: "Codex", command: () => [process.execPath, adapter("@agentclientprotocol/codex-acp")], shown: "codex-acp (bundled)", hint: null,
     loggedIn: codexLoggedIn },
+  // Mistral Vibe's ACP agent, a Python program (3.12+) the user installs. It reads its key from MISTRAL_API_KEY, the
+  // keyring or ~/.vibe/.env; `vibe-acp --setup` asks for one in a terminal.
+  {
+    id: "mistral", name: "Mistral Vibe", command: () => onPath("vibe-acp", []), shown: "vibe-acp",
+    hint: "Install it with uv tool install mistral-vibe, then run vibe-acp --setup once to save your Mistral API key.",
+  },
 ];
 
 // Codex keeps its login, ChatGPT or API key, in $CODEX_HOME/auth.json, or config.toml says it needs none there
@@ -98,19 +105,26 @@ export const isKnown = (id: string) => isBuiltin(id) || !!customRow(id);
 // gets the contract as text in front of the first prompt of each session (design §9).
 export const isClaude = (id: string | null) => (id || DEFAULT_AGENT) === "claude";
 
-// Auto effort (the router's pick, set_effort, medium by default): the built-in agents, whose effort option takes the
-// levels low to xhigh (Claude's effort, Codex's reasoning_effort). A user's own agent keeps its own default.
-export const hasAutoEffort = (id: string | null) => isBuiltin(id || DEFAULT_AGENT);
+// Auto effort (the router's pick, set_effort, medium by default): Claude and Codex, whose effort option takes the
+// levels low to xhigh (Claude's effort, Codex's reasoning_effort). Mistral Vibe's `thinking` option is not a
+// thought_level, and a user's own agent keeps its own default.
+export const hasAutoEffort = (id: string | null) => ["claude", "codex"].includes(id || DEFAULT_AGENT);
 
-// How the contract names an app tool for this agent: Claude Code's own MCP tool name, else a description any agent
-// maps to its own naming (Codex, for one, does not use the mcp__ prefix).
-export const toolName = (agent: string | null, tool: string) => isClaude(agent) ? `mcp__app__${tool}` : `the app MCP server's ${tool} tool`;
+// How the contract names an app tool for this agent: the agent's own MCP tool name where it is known (Claude Code's
+// mcp__app__, Vibe's <server>_<tool>), else a description any agent maps to its own naming (Codex uses neither).
+export function toolName(agent: string | null, tool: string) {
+  const id = agent || DEFAULT_AGENT;
+  if (id === "claude") return `mcp__app__${tool}`;
+  if (id === "mistral") return `app_${tool}`;
+  return `the app MCP server's ${tool} tool`;
+}
 
 // The command that resumes a session outside the app, where the agent has one (item 78).
 export function resumeHint(agent: string | null, sessionId: string): string | null {
   const id = agent || DEFAULT_AGENT;
   if (id === "claude") return `claude --resume ${sessionId}`;
   if (id === "codex") return `codex resume ${sessionId}`;   // the ACP session id is the Codex session id
+  if (id === "mistral") return `vibe --resume ${sessionId}`;
   return null;
 }
 

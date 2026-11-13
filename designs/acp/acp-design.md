@@ -195,6 +195,12 @@ The operator's session id stays in `meta.operator_session_id`, and `reopen()` ha
   - `claude`: the bundled `claude-agent-acp`, spawned with Bun's node compatibility (P0 checks this) or the user's `node`.
   - `codex`: the bundled `codex-acp`. It needs the Codex CLI and the user's login.
   - `gemini`: `gemini --acp` from the login-shell `PATH`.
+  - `mistral` (added 2026-11-13, built): Mistral Vibe's `vibe-acp` from the login-shell `PATH`, installed by the user (Python 3.12+, `uv tool install mistral-vibe`). Checked against Vibe 3.1.2 by reading its source, not run yet:
+    - Login: the key comes from `MISTRAL_API_KEY`, the keyring or `~/.vibe/.env`. Without one, `session/new` answers -32000. Vibe offers `browser-auth`, an agent-type method, and offers its terminal method (`vibe-acp --setup`) only to a client that sets `clientCapabilities._meta["terminal-auth"]`, which this app does not.
+    - Sessions: `loadSession` but no advertised `session/resume`, so a reopen uses `session/load`. HTTP MCP works, but SSE makes `session/new` fail. The model sees the app tools as `app_<tool>`.
+    - Config: `mode` (`ask` by default, plus `accept-edits`, `smart-approve` and `auto-approve`; no plan mode), `model`, and a `thinking` option that is not `thought_level`.
+    - Resume outside the app: `vibe --resume <id>`.
+    - Known Vibe issues: permission requests carry no tool title or input (#1333, #1485); switching the mode may fail (#1069); a session can stay stuck as "A turn is already running" after the host quits mid-turn (#1493); `vibe-acp` can outlive its client (#1345).
   - Custom entries add `{id, name, command, args, env}`.
 - **Choosing an agent.**
   - `projects.default_agent` sets the default.
