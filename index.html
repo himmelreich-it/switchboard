@@ -2277,7 +2277,8 @@ async function commit(key, el) {
   render();
   let sent = null;
   try {
-    sent = await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
+    sent = await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}),
+      ...(key === "operator" && S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" ? { viewing: S.sel } : {}) });   // the operator reads "this TODO" as the one on screen
     if (ns) nsStarted(tid, nsNo);
   } catch (e) {
     drafts[key] = body;
