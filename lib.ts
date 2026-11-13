@@ -31,7 +31,19 @@ export function cutReason(error: string): string | null {
   if (error.includes("went to sleep mid-response")) return "the computer slept";
   if (error.includes("Request timed out")) return "the request timed out";
   if (/API Error: 5\d\d\b/.test(error)) return "an API server error";
+  // Codex (codexError)
+  if (error.includes("stream disconnected before completion")) return "the connection dropped";
+  if (/(exceeded retry limit, last status:|unexpected status) 5\d\d\b/.test(error)) return "an API server error";
+  if (/exceeded retry limit, last status: 429\b/.test(error)) return "a rate limit";
+  if (error.includes("Selected model is at capacity")) return "the model was at capacity";
   return null;
+}
+
+// Codex ends a failed turn as a normal one (codex-acp, ACP v1): its error is the turn's last text. The texts are Codex's
+// own (codex 0.166): a dropped stream, a status after its retries, a full model or context window. null for any other text.
+export function codexError(text: string): string | null {
+  const m = text.match(/(?:^|\n)((?:stream disconnected before completion|exceeded retry limit, last status|unexpected status \d{3}|Selected model is at capacity|(?:Codex )?ran out of room in the model's context window)[\s\S]*)$/);
+  return m ? m[1]!.trim() : null;
 }
 
 export const lineCount =(text: string) => text.trim().split("\n").filter((l) => l.trim()).length;
@@ -50,10 +62,11 @@ export function followUpError(items: string[]): string | null {
 // The prompt for one turn: the worktree line (while one is registered), then every delivered message.
 // With no messages, as on a restore with nothing queued and no draft, the prompt is "continue".
 // The first turn of a later session starts with the hand-over header instead, which names the worktree itself.
+// A slash command gets no worktree line: the agent runs it only when the prompt starts with it.
 export function deliveryPrompt(worktree: string | null, bodies: string[], header = ""): string {
   const text = bodies.map((b) => b.trim()).filter(Boolean).join("\n\n") || "continue";
   if (header) return `${header}\n\n${text}`;
-  return worktree ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
+  return worktree && !/^\/[\w$:.-]+(\s|$)/.test(text) ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
 }
 
 // Change topic: a TODO's worktree, branch and PR per topic it left, keyed by project id ("none": no topic).
@@ -82,7 +95,7 @@ export function handOver(o: {
     o.worktree && `Your worktree: ${o.worktree}. Work there.`,
     o.pr && `Pull request: #${o.pr}.`,
     o.last && `Last message of session ${o.last.no}: ${o.last.body.replace(/\s*\n\s*/g, " ")}`,
-    o.files.length && "Files from earlier sessions (open with Read what you need):\n"
+    o.files.length && "Files from earlier sessions (open what you need):\n"
       + o.files.map((f) => `${f.path} (${f.by_user ? "the user's notes" : f.session_no ? `session ${f.session_no}` : "added outside a session"})`).join("\n"),
     o.work && `Earlier output for the agent itself (logs, raw results, scripts) is in ${o.work}.`,
   ].filter(Boolean).join("\n");
@@ -211,6 +224,36 @@ export function cycleEnd(u: any) {
 
 const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) + `\n… ${text.length - max} more characters` : text);
 
+// An agent named in route_todo or create_todo, among the found ones: its id or name, any case. `names` lists them.
+export function matchAgent(found: { id: string; name: string }[], name: string): { id: string | null; names: string } {
+  const key = name.trim().toLowerCase();
+  return { id: found.find((a) => a.id === key || a.name.toLowerCase() === key)?.id ?? null, names: found.map((a) => a.name).join(", ") };
+}
+
+// Codex's config.toml when there is no auth.json: the login is in the keychain (cli_auth_credentials_store "keyring"
+// or "auto"), or a model_provider other than OpenAI may need none. Top-level keys only: a [profiles.x] table is not
+// the active config. shortcut: a line regex, not a TOML parser; enough for the two keys, upgrade if Codex adds forms.
+export function codexConfigLogin(toml: string): boolean {
+  const top = toml.split(/^\s*\[/m)[0]!;
+  return /^\s*cli_auth_credentials_store\s*=\s*["'](keyring|auto)["']/m.test(top)
+    || /^\s*model_provider\s*=\s*["'](?!openai["'])[^"']+["']/m.test(top);
+}
+
+// Codex's auto review ("Guardian Review", codex-acp's GuardianReporter): a tool call of its own, id
+// `guardian_assessment:<id>`, that reviews another tool call. null for any other update. `denied` once it ends as
+// denied or timed out (the action did not run); aborted (an interrupt) is not a denial. `name` is the action as Codex
+// names it ("exec", "MCP post_message"), `action` has the command when there is one.
+export function guardianReview(u: any): { denied: boolean; name: string; action: any; reason: string } | null {
+  if (!String(u?.toolCallId ?? "").startsWith("guardian_assessment:")) return null;
+  const ev = u.rawOutput ?? u.rawInput ?? {}, a = ev.action ?? {}, status = ev.review?.status;
+  const name = a.type === "command" || a.type === "execve" ? "exec" : a.type === "mcpToolCall" ? `MCP ${a.toolName}` : a.type === "applyPatch" ? "apply_patch" : "Codex";
+  const command = a.command ?? (Array.isArray(a.argv) ? a.argv.join(" ") : undefined);
+  return {
+    denied: u.status === "failed" && (status === "denied" || status === "timedOut"),
+    name, action: command ? { command } : {}, reason: String(ev.review?.rationale ?? status ?? ""),
+  };
+}
+
 // One ACP tool call as a transcript row's meta, merged from its tool_call and tool_call_update notifications. Text
 // output is cut to 8 KB; diffs are kept up to 200 KB per side, enough for the code an agent writes in one call.
 export type ToolMeta = {
@@ -219,7 +262,7 @@ export type ToolMeta = {
 };
 export function toolMeta(prev: ToolMeta | null, u: any): ToolMeta {
   const m: ToolMeta = prev ? { ...prev } : {
-    toolCallId: u.toolCallId, name: u._meta?.claudeCode?.toolName ?? u.name ?? u.title ?? "tool", title: "", kind: "other", status: "pending",
+    toolCallId: u.toolCallId, name: u._meta?.claudeCode?.toolName ?? shellName(u) ?? u.name ?? u.title ?? "tool", title: "", kind: "other", status: "pending",
     input: {}, locations: [], diffs: [], output: "",
   };
   if (u.title) m.title = u.title;
@@ -235,7 +278,30 @@ export function toolMeta(prev: ToolMeta | null, u: any): ToolMeta {
     if (text && (u.status === "completed" || u.status === "failed" || !m.output)) m.output = cut(text, 8000);
   }
   if (typeof u.rawOutput === "string" && u.rawOutput && (u.status === "completed" || u.status === "failed")) m.output = cut(u.rawOutput, 8000);
+  // Codex (codex-acp): a command's output streams in `_meta.terminal_output_delta` chunks and ends with its exit code;
+  // an MCP tool's result is `rawOutput {result, error}`.
+  const chunk = u._meta?.terminal_output_delta?.data ?? u._meta?.terminal_output?.data;
+  if (typeof chunk === "string" && !m.output.endsWith(CUT_MARK)) {
+    const all = m.output + chunk;
+    m.output = all.length > 8000 ? all.slice(0, 8000) + CUT_MARK : all;
+  }
+  const exit = u._meta?.terminal_exit?.exit_code ?? u.rawOutput?.exit_code;
+  if (typeof exit === "number" && exit !== 0) m.output += `${m.output && !m.output.endsWith("\n") ? "\n" : ""}exit code ${exit}`;
+  const r = u.rawOutput;
+  if (r && typeof r === "object" && ("result" in r || "error" in r) && (r.result != null || r.error != null)) {
+    const text = r.error != null ? String(r.error.message ?? JSON.stringify(r.error))
+      : Array.isArray(r.result?.content) ? r.result.content.filter((c: any) => c?.type === "text").map((c: any) => c.text).join("\n") : "";
+    if (text) m.output = cut(text, 8000);
+  }
   return m;
+}
+const CUT_MARK = "\n… cut at 8000 characters";
+
+// Codex runs every command through one tool (`exec_command`; without a name when a permission request opened the call).
+// Its row is named by what the command does, as Claude's tools are: Read, Search, else Shell with the command.
+function shellName(u: any): string | undefined {
+  if (u.name !== "exec_command" && (u.name || u.kind !== "execute" || typeof u.rawInput?.command !== "string")) return;
+  return u.kind === "read" ? "Read" : u.kind === "search" ? "Search" : "Shell";
 }
 
 // The agent's plan (its todo list) as `done/total`, or null without one.
@@ -246,8 +312,13 @@ export const planCount = (entries: PlanEntry[] | null) =>
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
 export function withAttachments(body: string, paths: string[]): string {
   if (!paths.length) return body;
-  return [body.trim(), `Attached files (open with Read):\n${paths.join("\n")}`].filter(Boolean).join("\n\n");
+  return [body.trim(), `${ATTACHED}\n${paths.join("\n")}`].filter(Boolean).join("\n\n");
 }
+const ATTACHED = "Attached files (open them to read):";
+// The attached images of a prompt (withAttachments' lists), for an agent that takes image blocks (acp.ts prompt).
+export const attachedImages = (text: string) =>
+  text.split(ATTACHED).slice(1).flatMap((part) => part.split("\n\n")[0]!.split("\n").map((l) => l.trim()))
+    .filter((p) => /^\/.*\.(png|jpe?g|gif|webp)$/i.test(p));
 
 // "../My Shot (1).png" -> "My-Shot-1-.png": an uploaded file's name as one safe path segment, at most 120 characters
 // (the end is kept, so the extension stays).
@@ -285,13 +356,48 @@ export const MODES = ["auto", "default", "acceptEdits", "plan", "bypassPermissio
 export type Permission = {
   id: string; name: string; title: string; kind: string; input: any; diffs: ToolMeta["diffs"];
   options: { optionId: string; name: string; kind: string }[]; at: string;
+  question?: boolean;   // the agent asks the user (askQuestions): a chat message answers it too
 };
-export function permissionOf(r: { toolCall: any; options: any[] }, at: string): Permission {
+export function permissionOf(r: { toolCall: any; options: any[]; question?: boolean }, at: string): Permission {
   const m = toolMeta(null, r.toolCall ?? {});
   return {
+    ...(r.question ? { question: true } : {}),
     id: m.toolCallId, name: m.name, title: m.title, kind: m.kind, input: m.input, diffs: m.diffs, at,
     options: (r.options ?? []).map((o) => ({ optionId: String(o.optionId), name: String(o.name ?? o.optionId), kind: String(o.kind ?? "") })),
   };
+}
+
+// The questions of an agent's form (ACP form elicitation: Codex's request_user_input, an MCP server's form), one per
+// property: its choices from oneOf, enum or boolean, else none (answered in the user's words). Codex's note fields
+// ("Additional answer or note") are left out: a chat message answers in the user's own words instead.
+export type FormQuestion = { id: string; title: string; description: string | null; type: string; choices: [string, string][] };
+export function formQuestions(schema: any): FormQuestion[] {
+  return Object.entries<any>(schema?.properties ?? {}).filter(([, s]) => s && s._meta?.codex?.role !== "user_note").map(([id, s]) => ({
+    id, title: String(s.title ?? id), description: s.description ? String(s.description) : null, type: String(s.type ?? "string"),
+    choices: Array.isArray(s.oneOf) ? s.oneOf.map((o: any) => [String(o.const), String(o.title ?? o.const)] as [string, string])
+      : Array.isArray(s.enum) ? s.enum.map((v: any) => [String(v), String(v)] as [string, string])
+      : s.type === "boolean" ? [["true", "Yes"], ["false", "No"]] : [],
+  }));
+}
+// Asks a form's questions one after the other (`ask`: a choice's value as `=value`, `skip`, a text answer, or null when
+// the form is cancelled) and returns the ACP elicitation response: accept with the answers, decline when every
+// question was skipped, cancel when one was cancelled.
+export type FormAnswer = { value: string } | { text: string } | "skip" | null;
+export async function answerForm(questions: FormQuestion[], ask: (q: FormQuestion) => Promise<FormAnswer>) {
+  const content: Record<string, unknown> = {};
+  for (const q of questions) {
+    const a = await ask(q);
+    if (a === null) return { action: "cancel" as const };
+    if (a !== "skip") content[q.id] = formValue(q, "text" in a ? a.text : a.value);
+  }
+  return Object.keys(content).length ? { action: "accept" as const, content } : { action: "decline" as const };
+}
+
+// An answer as the form's type wants it: a boolean or a number where the property is one, else the text.
+export function formValue(q: FormQuestion, answer: string): unknown {
+  if (q.type === "boolean" && /^(true|false|yes|no)$/i.test(answer.trim())) return /^(true|yes)$/i.test(answer.trim());
+  if ((q.type === "number" || q.type === "integer") && answer.trim() !== "" && Number.isFinite(Number(answer))) return Number(answer);
+  return answer;
 }
 
 // The board lane: a running TODO with an open permission request needs the user now, so it shows in Waiting. So does
@@ -317,9 +423,10 @@ export function configView(raw: any[]): ConfigOption[] {
   }));
 }
 
-// The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config).
-// The permission mode has its own setting (P3); options without a category (Claude's `agent`) are left to the agent.
-export const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+// The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config),
+// and Codex's plan mode (collaboration_mode). The permission mode has its own setting (P3); options without a category
+// (Claude's `agent`) are left to the agent.
+export const CONFIG_CATEGORIES = ["model", "thought_level", "model_config", "collaboration_mode"];
 
 // What to set for the wanted values ({config id: value}, the project's defaults under the TODO's own): the changes
 // against the agent's current options, and the values it does not offer (effort on a model without it). `models`
@@ -543,8 +650,10 @@ export class Throttle {
 }
 
 // The interesting argument of a tool call: the Bash command, the file path, the search pattern...
+// Codex's MCP calls nest the tool's input in `arguments`: their first text value stands for it.
 export const toolArg = (input: any): string =>
-  String(input?.command ?? input?.file_path ?? input?.pattern ?? input?.skill ?? input?.path ?? input?.url ?? "").slice(0, 300);
+  String(input?.command ?? input?.file_path ?? input?.pattern ?? input?.skill ?? input?.path ?? input?.url
+    ?? Object.values(input?.arguments ?? {}).find((v) => typeof v === "string") ?? "").slice(0, 300);
 
 // "Bash git status", "Read /a/b.ts": one line per tool call for the events list.
 export const toolLine = (name: string, input: any) => `${name} ${toolArg(input)}`.trim();
@@ -803,7 +912,7 @@ const independentText = (git: boolean) => [
 // Item 114: what a Claude terminal reads first, written to <artifact folder>/terminal/context.md at each launch.
 export function contextFile(c: {
   title: string; project: string; status: string; first: string; worktree: string | null; branch: string | null;
-  git: string | null; pr: string | null; sessions: { no: number; session_id: string; started_at: string; ended_at: string | null }[];
+  git: string | null; pr: string | null; sessions: { no: number; session_id: string; started_at: string; ended_at: string | null; agent?: string | null }[];
   messages: { author: string; body: string; at: string; session_no: number | null }[]; files: string[];
 }): string {
   const out: string[] = [
@@ -815,7 +924,7 @@ export function contextFile(c: {
     "The TODO's own agent may be working in the same folder or worktree at the same time. Check with the user before you commit, switch branches or rewrite history.", "",
   ];
   if (c.files.length) out.push("## Files", "", ...c.files.map((f) => `- ${f}`), "");
-  if (c.sessions.length) out.push("## Sessions", "", ...c.sessions.map((s) => `- Session ${s.no}: ${s.session_id} (${s.started_at}${s.ended_at ? ` to ${s.ended_at}` : ", live"}). Its full transcript is under ~/.claude/projects/.`), "");
+  if (c.sessions.length) out.push("## Sessions", "", ...c.sessions.map((s) => `- Session ${s.no}: ${s.session_id} (${s.started_at}${s.ended_at ? ` to ${s.ended_at}` : ", live"}). Its full transcript is under ${s.agent === "codex" ? "~/.codex/sessions/" : "~/.claude/projects/"}.`), "");
   out.push("## Chat", "");
   const groups = c.sessions.length ? c.sessions.map((s) => s.no) : [null];
   for (const no of groups) {

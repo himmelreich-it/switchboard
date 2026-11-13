@@ -10,10 +10,10 @@ import {
 } from "./lib";
 import { CLI_HELP, lanApi, lanCli, lanUrls, loginOk, machineNames, pruneLogins, readLan, tlsFiles, type Here } from "./lan";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
-import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
+import { DEFAULT_AGENT, agentList, codexAppConfig, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
-  contractFor, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
+  contractFor, releaseAgent, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
@@ -903,9 +903,9 @@ function fileFacts(real: string) {
 
 // Kept in memory only: a terminal ends with its tab, its TODO's removal or the app (item 115).
 type Term = {
-  id: number; todoId: number; kind: "shell" | "claude"; root: "worktree" | "project"; cwd: string; no: number; message: string;
+  id: number; todoId: number; kind: "shell" | "claude" | "codex"; root: "worktree" | "project"; cwd: string; no: number; message: string;
   title: string | null; proc: Subprocess | null; exited: boolean; code: number | null; signal: string | null;
-  secret: string | null;   // a Claude terminal's grant for the app tools (P6), revoked when its process ends
+  secret: string | null;   // an agent terminal's grant for the app tools (P6), revoked when its process ends
   buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<WsData>>; cols: number; rows: number; fresh: boolean;
 };
 const terms = new Map<number, Term>();
@@ -958,11 +958,26 @@ async function spawnTerm(x: Term) {
     x.secret = secret = g.secret;
     const mcp = join(dir, "terminal", "mcp.json"), contract = join(dir, "terminal", "contract.md");
     writeFileSync(mcp, JSON.stringify({ mcpServers: { app: { type: "http", url: g.server.url, headers: { "X-Switchboard-Session": "${SWITCHBOARD_MCP_SECRET}" } } } }, null, 1));
-    writeFileSync(contract, TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir));
+    writeFileSync(contract, terminalContract("claude", dir));
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
     // `--add-dir` and the other list flags take every argument after them, so `--` ends them before the first message.
     cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.filter((n) => !n.endsWith("__suggest_follow_ups") && !n.endsWith("__set_effort")).join(","),
       ...(x.message ? ["--", x.message] : [])];
+  } else if (x.kind === "codex") {
+    // Codex's own CLI, else the bundled one. The app tools and the contract go in as config overrides (-c): the server
+    // in Codex's form (codexAppConfig), its header read from SWITCHBOARD_MCP_SECRET, so the secret is not in argv.
+    const codex = onPath("codex", []) ?? [process.execPath, Bun.resolveSync("@openai/codex/bin/codex.js", import.meta.dir)];
+    await writeContext(t);
+    if (terms.get(x.id) !== x || x.proc) return;
+    const g = grant({ kind: "worker", todoId: t.id, dir, onPost: () => {}, via: `Codex ${x.no}` }, () => "");
+    x.secret = secret = g.secret;
+    const app = JSON.parse(codexAppConfig(g.server.url)).mcp_servers.app;
+    // shortcut: -c developer_instructions replaces one set in ~/.codex/config.toml (the worker path appends to it); read and
+    // join the user's own when someone sets it.
+    const contract = terminalContract("codex", dir);
+    cmd = [...codex, "--add-dir", dir, "-c", `developer_instructions=${JSON.stringify(contract)}`,
+      "-c", `mcp_servers.app.url=${JSON.stringify(app.url)}`, "-c", `mcp_servers.app.env_http_headers={ "X-Switchboard-Session" = "SWITCHBOARD_MCP_SECRET" }`,
+      "-c", `mcp_servers.app.default_tools_approval_mode="approve"`, ...(x.message ? ["--", x.message] : [])];
   } else cmd = LOGIN_SHELL ? [SHELL, "-l"] : [SHELL];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
   if (secret) env.SWITCHBOARD_MCP_SECRET = secret;
@@ -1019,7 +1034,7 @@ function killTerm(x: Term) {
 // Background jobs (`cmd &`) do not count; closing the tab ends them with the shell. Unknown (Windows, ps fails): busy.
 async function termBusy(x: Term) {
   if (x.exited || !x.proc) return false;
-  if (x.kind === "claude" || process.platform === "win32") return true;
+  if (x.kind !== "shell" || process.platform === "win32") return true;
   const [tpgid, pgid] = (await sh(["ps", "-o", "tpgid=,pgid=", "-p", String(x.proc.pid)])).out.split(/\s+/);
   return !tpgid || tpgid !== pgid;
 }
@@ -1062,7 +1077,7 @@ const termWs = {
   close(ws: ServerWebSocket<WsData>) { terms.get(ws.data.tid)?.sockets.delete(ws); if (ws.data.drop) lanConns.delete(ws.data.drop); },
 };
 
-const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
+const RESTORE_DETAIL = (agent: string | null) => "Nothing was started and the TODO stays removed." + ((agent || DEFAULT_AGENT) === "claude" ? " Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json)." : "");
 
 async function api(req: Request, path: string): Promise<Response> {
   const method = req.method;
@@ -1431,7 +1446,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!m[2] && method === "POST") {
       const t = liveTodo(id);
       if (TERM_UNSUPPORTED) return fail(TERM_UNSUPPORTED, 409);
-      const kind = body.kind === "claude" ? "claude" : "shell";
+      const kind = body.kind === "claude" || body.kind === "codex" ? body.kind : "shell";
       const root = body.root === "worktree" && t.worktree_path && existsSync(t.worktree_path) ? "worktree" : "project";
       const key = `${id}:${kind}`, no = (termNos.get(key) ?? 0) + 1;
       termNos.set(key, no);
@@ -1535,9 +1550,12 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({});
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session|stop)$/)) && method === "POST") {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session|stop|release)$/)) && method === "POST") {
     const id = Number(m[1]);
     const action = m[2];
+
+    // The user copied the resume command: Codex opens a session in one process only, so the idle agent process lets go.
+    if (action === "release") return json({ release: releaseAgent(todoOr404(id).id) });
 
     // Item 72: ends the live session and starts the next with the hand-over header, the queued messages and this one.
     if (action === "new-session") {
@@ -1595,10 +1613,10 @@ async function api(req: Request, path: string): Promise<Response> {
         const folder = projectRow(t.project_id)?.local_path ?? artifactDir(id);
         const spec = specOf(t.agent || DEFAULT_AGENT);
         if (spec && existsSync(folder) && !(await sessionExists(spec, folder, t.session_id).catch(() => true)))
-          return json({ warning: `The ${agentName(t.agent)} session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+          return json({ warning: `The ${agentName(t.agent)} session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL(t.agent) }, 409);
         if (t.worktree_path && !existsSync(t.worktree_path))
-          return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
-        if (!existsSync(folder)) return json({ warning: `The topic's folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+          return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL(t.agent) }, 409);
+        if (!existsSync(folder)) return json({ warning: `The topic's folder ${folder} no longer exists.`, detail: RESTORE_DETAIL(t.agent) }, 409);
       }
       // A scheduled TODO gets its next slot from now (item 144); the slots missed while removed are skipped.
       const s = t.schedule ? (JSON.parse(t.schedule) as Schedule) : null;
@@ -1679,10 +1697,12 @@ async function api(req: Request, path: string): Promise<Response> {
     const id = m[1]!, spec = specOf(id);
     if (!spec) return fail(`${agentName(id)} is not installed`, 409);
     try {
-      if (!(await authenticate(spec, String(body.methodId ?? "")))) return fail("the login did not complete", 409);
+      const apiKey = typeof body.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : undefined;
+      if (!(await authenticate(spec, String(body.methodId ?? ""), apiKey))) return fail("the login did not complete", 409);
     } catch (e: any) {
       return fail(`the login failed: ${e?.message ?? e}`, 502);
     }
+    emit({ type: "agents" });   // "Needs login" turns to "Found"
     return json({});
   }
 

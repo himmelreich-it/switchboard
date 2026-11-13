@@ -3,11 +3,11 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
-import { DEFAULT_AGENT, agentList, agentName, isClaude, secretHeader, specOf, toolName } from "./agents";
+import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Handlers, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
+import { DEFAULT_AGENT, agentList, agentName, codexAppConfig, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, answerForm, attentionAfterAnswer, autoEffort, codexError, formQuestions, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
   markFromTodo,
 } from "./lib";
@@ -52,6 +52,10 @@ The app's MCP tools write to the TODO, which the user sees on its card and in it
 
 The TODO's own agent may be working in the same folder or worktree at the same time. Check with the user before you commit, switch branches or rewrite history.`;
 
+// The terminal contract for an agent's CLI, with the TODO's folder and the app tools named the way that agent sees them.
+export const terminalContract = (agent: string, dir: string) =>
+  TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
+
 // Auto effort: Claude's worker switches its effort level itself (mcp__app__set_effort), after the levels in
 // claude.dev/blog/spending-your-effort. max stays a user choice.
 const EFFORT_RULES = `
@@ -65,14 +69,16 @@ const EFFORT_RULES = `
 
 // The contract for one agent's session: the TODO's folder filled in, and the app tools named the way that agent sees them.
 export const contractFor = (agent: string, dir: string) =>
-  (CONTRACT + (isClaude(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
+  (CONTRACT + (hasAutoEffort(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool))
+    .replace("When auto mode blocks", agent === "codex" ? "When auto review blocks" : "When auto mode blocks");
 
-// What an agent without a system-prompt append gets in front of the first prompt of each session (design §9). After a
-// restart the resumed session still has it in its context; an edited topic prompt reaches it with the next session.
+// What an agent without a system-prompt append (neither Claude's `_meta` nor ACP's `systemPrompt`) gets in front of the
+// first prompt of each session (design §9). A resumed session still has it in its context; an edited topic prompt
+// reaches it with the next session.
 const instructionsText = (contract: string, prompt: string) =>
   `# Switchboard instructions\n\n${[contract, prompt.trim()].filter(Boolean).join("\n\n")}\n\n# Your task\n\n`;
 
-const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
+const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is an agent session (Claude Code or Codex) the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
 
 - Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, never remove a TODO on your own, and never start a TODO on your own: start one with mcp__app__create_todo(start: true) only when the user says so. When the user presses Start, a separate routing run of yours decides which topic the TODO belongs to.
 - Get the state of the TODOs from your tools every time (mcp__app__list_todos, mcp__app__read_todo, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh operator session at any time.
@@ -103,13 +109,17 @@ const bgTasks = (n: number) => `${n} background task${n === 1 ? "" : "s"}`;
 type Key = number | "operator"; // a TODO id, or the operator
 
 // What a turn's updates feed: the run's own state, swapped in for every run of a live agent process.
-type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Promise<any> | any };
+type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Promise<any> | any; onQuestion?: Handlers["onQuestion"] };
 
 // The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
 // `bg` is its background tasks still running (item 136), oldest first; `bgNames` and `bgSince` their names and when the app first
-// saw each (item 148).
-type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; bgNames: Record<string, string>; bgSince: Record<string, string>; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
+// saw each (item 148). Codex's are its commands still running when the turn ended, kept with their rows in `bgCalls`.
+type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; bgNames: Record<string, string>; bgSince: Record<string, string>; idle?: Timer;
+  bgCalls?: Map<string, { meta: ToolMeta; eventId: number | null }>; configError?: string; skipped?: string; modeMiss?: string;
+  // The options as the session reported them when the process opened it, before the app set any: the reset value of an
+  // agent without a `default` value (Codex).
+  initial: Record<string, string> };
 const agents = new Map<Key, Agent>();
 
 // `live` is set once the agent process is ready; `cancel` records a Stop that came before that; `kill` is the fallback
@@ -123,6 +133,26 @@ let shuttingDown = false;
 export const isRunning = (key: Key) => running.has(key);
 // Item 136: how many background tasks a TODO's agent has running. With no turn running the TODO still shows running.
 export const backgroundCount = (todoId: number) => agents.get(todoId)?.bg.length ?? 0;
+// A later update of a Codex command that outlived its turn: its row follows it. Once the last one ends while no turn
+// runs, the TODO no longer waits, and the user is told, as Claude's follow-up on a finished task would.
+function codexBackground(todoId: number, a: Agent, u: any) {
+  const c = a.bgCalls!.get(u.toolCallId)!;
+  c.meta = toolMeta(c.meta, u);
+  if (c.eventId !== null) setEvent(c.eventId, todoId, toolLine(c.meta.name, c.meta.input), c.meta);
+  if (c.meta.status !== "completed" && c.meta.status !== "failed") return;
+  a.bgCalls!.delete(u.toolCallId);
+  a.bg = a.bg.filter((id) => id !== u.toolCallId);
+  emit({ type: "todo", id: todoId });
+  if (a.bg.length || running.has(todoId) || agents.get(todoId) !== a) return;
+  const t = todoRow(todoId);
+  if (!t || t.removed_at) return;
+  addMessage(todoId, "app", cutToTwoLines(`Background command ${c.meta.status === "failed" ? "failed" : "ended"}: ${toolArg(c.meta.input) || c.meta.title}`));
+  if (!t.attention) addEvent(todoId, "attention raised", "app", "background task finished");
+  setTodo(todoId, { attention: 1, attention_by: t.attention ? t.attention_by : "app", ...(t.status === "running" ? { status: statusAfterRun(1) } : {}) });
+  if (t.status === "running") addEvent(todoId, "run ended", "app", `${todoRow(todoId)!.status} · background tasks ended`);
+  parkAgent(todoId);
+}
+
 // Item 148: the same tasks with their names and start, for the Running view. The name is "" until the SDK gives one.
 export function backgroundTasks(todoId: number) {
   const a = agents.get(todoId);
@@ -134,7 +164,7 @@ function seen(a: Agent) {
 }
 // A worker's open permission request (P3): the agent blocks on it, so there is at most one per TODO. The user's
 // answer, a Stop, a removal, a shutdown or the end of the turn settles it.
-const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutcome) => void }>();
+const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutcome & { text?: string }) => void }>();
 // TODOs whose agent posted a chat message in the current turn, so its final text is not posted as well. A set, not run
 // state, because the app tools' grant lives as long as the agent process, across runs.
 const posted = new Set<number>();
@@ -171,17 +201,43 @@ export function interrupt(key: Key, by: "user" | "app" = "app") {
 
 // The user's answer to the open request: the agent gets the chosen option, the request leaves the card, and the
 // attention flag drops when the request raised it. False when no request is open (answered already, or the turn ended).
-export function answerPermission(todoId: number, optionId: string): boolean {
+export function answerPermission(todoId: number, optionId: string, text?: string): boolean {
   const p = pending.get(todoId);
-  const option = p?.perm.options.find((o) => o.optionId === optionId);
+  const option = text !== undefined ? (p?.perm.question ? { name: "Answered in the chat" } : null) : p?.perm.options.find((o) => o.optionId === optionId);
   if (!p || !option) return false;
   pending.delete(todoId);
   const t = todoRow(todoId)!;
   setTodo(todoId, { permission: null, attention: t.attention ? attentionAfterAnswer(t.attention_by) : 0, attention_by: t.attention_by === "permission" ? null : t.attention_by });
   addEvent(todoId, "permission answered", "user", `${option.name}: ${toolLine(p.perm.name, p.perm.input)}`);
-  p.resolve({ outcome: "selected", optionId });
+  p.resolve({ outcome: "selected", optionId, text });
   return true;
 }
+
+// The agent's questions (Spec.questions; Codex's request_user_input): one after the other as a request on the card and in
+// the chat, its choices as the options. A chat message answers the open one in the user's words (commitMessage). Skip
+// leaves a question unanswered; a Stop, the end of the turn or the agent no longer waiting cancels the form.
+const SKIP = "__skip";
+async function askQuestions(todoId: number, r: any, signal: AbortSignal): Promise<any> {
+  // Codex's async questions ("Codex keeps working while you answer") are in its message too, and a reply steers it:
+  // a card would block steering and another request would cancel it.
+  if (r._meta?.codex?.delivery === "async") return { action: "cancel" };
+  const onAbort = () => cancelPermission(todoId);
+  signal.addEventListener("abort", onAbort);
+  try {
+    return await answerForm(formQuestions(r.requestedSchema), async (q) => {
+      const out = await askPermission(todoId, {
+        question: true, sessionId: r.sessionId, toolCall: { toolCallId: `question:${q.id}`, title: q.title, kind: "other", rawInput: q.description ? { description: q.description } : {} },
+        options: [...q.choices.map(([v, name]) => ({ optionId: `=${v}`, name, kind: "allow_once" as const })), { optionId: SKIP, name: "Skip", kind: "reject_once" as const }],
+      } as PermissionRequest & { question: true });
+      if (signal.aborted || out.outcome !== "selected") return null;
+      return out.text !== undefined ? { text: out.text } : out.optionId === SKIP ? "skip" : { value: out.optionId.slice(1) };
+    });
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+export const hasOpenQuestion = (todoId: number) => !!pending.get(todoId)?.perm.question;
 
 // An open request that can no longer be answered (Stop, remove, shutdown, the turn ended): the agent is told it was cancelled.
 function cancelPermission(todoId: number) {
@@ -197,11 +253,11 @@ function cancelPermission(todoId: number) {
 // The agent asks (a mode other than auto, or something auto still asks about): the request goes on the card and in
 // the chat, the TODO shows in Waiting, and the turn waits for the user. A request while one is already open (it
 // should not happen: the agent blocks) replaces it, and the earlier one is cancelled.
-function askPermission(todoId: number, r: PermissionRequest): Promise<PermissionOutcome> {
+function askPermission(todoId: number, r: PermissionRequest): Promise<PermissionOutcome & { text?: string }> {
   cancelPermission(todoId);
   const perm = permissionOf(r, now());
   const t = todoRow(todoId)!;
-  if (!t.attention) addEvent(todoId, "attention raised", "app", `${perm.name} needs approval`);
+  if (!t.attention) addEvent(todoId, "attention raised", "app", perm.question ? `question: ${perm.name}` : `${perm.name} needs approval`);
   setTodo(todoId, { permission: JSON.stringify(perm), attention: 1, attention_by: t.attention ? t.attention_by : "permission" });
   addEvent(todoId, "permission asked", "agent", toolLine(perm.name, perm.input));
   return new Promise((resolve) => pending.set(todoId, { perm, resolve }));
@@ -240,13 +296,25 @@ async function applyMode(a: Agent, mode: string | null) {
 // back to the agent's default (no value of the TODO's or the project's): the agent's `default` value is set where it
 // offers one (Claude's model and effort), since an unset option would otherwise keep its last value.
 // Effort the user did not set comes from auto effort (setAutoEffort), medium until the router or the worker picks one.
-export async function applyConfig(todoId: number, a: Agent, reset?: string) {
+// `opening`: the TODO's worker session that opens now, also on another agent (New session), whose agent becomes the
+// TODO's only once it opened: its first turn gets auto effort too.
+export async function applyConfig(todoId: number, a: Agent, reset?: string, opening = false) {
   const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a TODO without a topic has no defaults
   const own = (t.agent || DEFAULT_AGENT) === a.agent;
   const wanted = wantedConfig(t, a.agent);
-  const auto = own && isClaude(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
+  const auto = (own || opening) && hasAutoEffort(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
   if (auto) wanted[auto[0]] = auto[1];
-  if (reset && !wanted[reset] && configView(a.live.configOptions).find((o) => o.id === reset)?.options.some((x) => x.value === "default")) wanted[reset] = "default";
+  // Codex keeps its plan mode in the session: unless the TODO or topic picks it, it is off (a resumed session would
+  // otherwise stay in the mode it last had).
+  const collab = configView(a.live.configOptions).find((c) => c.category === "collaboration_mode");
+  if (collab && !wanted[collab.id] && collab.options.some((x) => x.value === "default")) wanted[collab.id] = "default";
+  // shortcut: a resumed Codex session reports the value it last ran with, so a reset reaches the config.toml value only
+  // in a process that opened a new session; upgrade by reading Codex's config (config/read) when that matters.
+  if (reset && !wanted[reset]) {
+    const o = configView(a.live.configOptions).find((x) => x.id === reset);
+    const back = o?.options.some((x) => x.value === "default") ? "default" : a.initial[reset];
+    if (back && o?.options.some((x) => x.value === back)) wanted[reset] = back;
+  }
   const errors: string[] = [];
   let skipped: [string, string][] = [];
   for (const models of [true, false]) {
@@ -272,8 +340,8 @@ function wantedConfig(t: Todo, agent: string): Record<string, string> {
   return { ...defaultsFor(p.defaults, agent).config, ...(own ? configIn(t.overrides ? JSON.parse(t.overrides) : null) : {}) };
 }
 
-// Auto effort (Claude only): the router's pick at the start or the worker's set_effort, stored in todos.auto_effort and
-// applied by applyConfig while the user has set no effort for the TODO or its topic. Returns that user value when it
+// Auto effort (the built-in agents, hasAutoEffort): the router's pick at the start or the worker's set_effort, stored in
+// todos.auto_effort and applied by applyConfig while the user has set no effort for the TODO or its topic. Returns that user value when it
 // blocks the pick. A live agent gets the level at once, not awaited: the worker's tool call waits on this.
 export function setAutoEffort(todoId: number, value: string, reason: string, by: "agent" | "operator"): string | null {
   const t = todoRow(todoId)!, agent = t.agent || DEFAULT_AGENT;
@@ -300,6 +368,19 @@ function saveConfig(todoId: number, a: Agent) {
   if (a.live.commands.length) setMeta(metaKey("agent_commands", a.agent), JSON.stringify(a.live.commands));
 }
 
+// Codex switches its plan mode itself on /plan, and leaves it once the user approves the plan ("Implement this plan?"):
+// the TODO's pick follows, else the next turn would switch back (applyConfig).
+function followPlan(todoId: number, a: Agent) {
+  const t = todoRow(todoId)!, own = t.overrides ? JSON.parse(t.overrides) : {};
+  const o = configView(a.live.configOptions).find((x) => x.category === "collaboration_mode");
+  if (!o || o.value === (wantedConfig(t, a.agent)[o.id] ?? "default")) return;
+  const topic = defaultsFor((projectRow(t.project_id) ?? { defaults: null }).defaults, a.agent).config[o.id] ?? "default";
+  if (o.value === topic) delete own[o.id];
+  else own[o.id] = o.value;
+  setTodo(todoId, { overrides: Object.keys(own).length ? JSON.stringify(own) : null });
+  addEvent(todoId, "config", "agent", `${o.name}: ${o.options.find((x) => x.value === o.value)?.name ?? o.value}`);
+}
+
 // Every agent's last seen config options, for /api/meta.
 export const agentConfigs = () =>
   Object.fromEntries(agentList().map((x) => [x.id, JSON.parse(getMeta(metaKey("agent_config", x.id)) ?? "[]")]));
@@ -313,7 +394,23 @@ export function commandsOf(todoId: number): Command[] {
 }
 
 // The live agent process of a TODO, when it is still alive (for a mode change between turns).
-export const liveAgent = (todoId: number) => { const a = agents.get(todoId); return a && a.live.alive ? a : null; };
+// The TODO's own session only: while routing runs, the agent under the TODO's key is the router, whose config and
+// commands are not the TODO's.
+export const liveAgent = (todoId: number) => {
+  const a = agents.get(todoId);
+  return a && a.live.alive && a.live.sessionId === todoRow(todoId)?.session_id ? a : null;
+};
+
+// An idle worker's agent process closes now (the next turn resumes the session in a new one), so `codex resume` in a
+// terminal can open the session: Codex lets one process write a session. "busy" while a turn or a background task runs.
+export function releaseAgent(todoId: number): "released" | "busy" | "none" {
+  const a = agents.get(todoId);
+  if (running.has(todoId) || a?.bg.length) return "busy";   // running also covers a turn whose process still starts
+  if (!a) return "none";
+  cuts.delete(todoId);   // a pending auto-continue would resume the session the user is about to open
+  closeAgent(todoId);
+  return "released";
+}
 
 // Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
 // Background tasks end with it, so a TODO that showed running only for them is idle (or waiting) again.
@@ -387,10 +484,11 @@ async function steerQueued(todoId: number, agent: Agent) {
 
 // The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
 // session/resume in a new process. The config options and the permission mode are set afterwards, by applyConfig().
-async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; grant: Parameters<typeof grant>[0] }) {
-  const fingerprint = JSON.stringify([o.agent, o.cwd, o.dirs, o.meta]);
+async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; systemPrompt?: string; title?: string; grant: Parameters<typeof grant>[0] }) {
+  // The system prompt counts only for an agent that took it: another one gets it with the first prompt of a session.
+  const print = (sp: boolean) => JSON.stringify([o.agent, o.cwd, o.dirs, o.meta, sp ? o.systemPrompt : null]);
   const had = agents.get(key);
-  if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === fingerprint) {
+  if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === print(had.live.systemPrompt)) {
     clearTimeout(had.idle);
     return had;
   }
@@ -404,6 +502,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
   let self: Agent | null = null; // null while session/load replays the history
   const onUpdate = (u: Update) => {
     if (!self) return;
+    if (typeof key === "number" && self.bgCalls?.has((u as any).toolCallId)) return codexBackground(key, self, u);
     const bg = backgroundStep(self.bg, u);
     if (bg !== self.bg && typeof key === "number") emit({ type: "todo", id: key });
     self.bg = bg;
@@ -425,11 +524,18 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
       parkAgent(key);
     }
   };
-  const handlers = { onUpdate, onSdk, onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
+  const handlers: Handlers = {
+    onUpdate, onSdk, onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" },
+    onQuestion: async (r, signal) => sink.s?.onQuestion ? sink.s.onQuestion(r, signal) : { action: "cancel" },
+  };
   const g = grant(o.grant, (secret) => secretHeader(o.agent, secret));
   // Claude forwards the SDK's level of live background tasks, which tells when one ends (backgroundLevel).
   const meta = isClaude(o.agent) ? { ...o.meta, claudeCode: { ...(o.meta.claudeCode as object), emitRawSDKMessages: [{ type: "system", subtype: "background_tasks_changed" }] } } : o.meta;
-  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
+  const codex = o.agent === "codex";
+  const opts = {
+    cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: codex ? [] : [g.server], meta, systemPrompt: o.systemPrompt, title: o.title,
+    env: { SWITCHBOARD_MCP_SECRET: g.secret, ...(codex ? { CODEX_CONFIG: codexAppConfig(g.server.url) } : {}) },
+  };
   let live: Live;
   try {
     live = sessionId ? await reopenSession(spec, sessionId, opts, handlers as any) : await acpOpen(spec, opts, handlers as any);
@@ -437,7 +543,8 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     revoke(g.secret);
     throw e;
   }
-  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint, bg: [], bgNames: {}, bgSince: {} });
+  const initial = Object.fromEntries(configView(live.configOptions).map((c) => [c.id, c.value]));
+  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint: print(live.systemPrompt), bg: [], bgNames: {}, bgSince: {}, initial });
   agents.set(key, a);
   // A process that dies between turns takes its background tasks along.
   live.exited.then(() => agents.get(key) === a && !running.has(key) && closeAgent(key));
@@ -514,6 +621,14 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
       return;
     }
     if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
+    // On a Stop, Codex ends its open tool calls as failed: they were cut off, as Claude's "ended" ones are.
+    if (u.status === "failed" && todo !== null && interrupting.has(todo) && agents.get(todo)?.agent === "codex") u = { ...u, status: "ended" };
+    // Codex's auto review gets no row of its own (it would double the rows); a denial is reported like Claude's below.
+    const review = guardianReview(u);
+    if (review) {
+      if (review.denied) onDenied(review.name, review.action, review.reason);
+      return;
+    }
     let c = calls.get(u.toolCallId);
     if (!c) {
       flush(true);
@@ -538,15 +653,19 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
   };
   // The turn ended: thinking still open is written; the text is the result. The live item is cleared. A tool call
   // that never got a final status (a server tool such as advisor, or one cut off by an interrupt) is marked ended.
-  const finish = () => {
+  // `keep`: calls that go on after the turn (Codex's background commands), left open and returned.
+  const finish = (keep: (m: ToolMeta) => boolean = () => false) => {
     flush(false);
     buf = null;
-    for (const c of calls.values()) {
+    const kept = new Map<string, { meta: ToolMeta; eventId: number | null }>();
+    for (const [id, c] of calls) {
       if (c.meta.status === "completed" || c.meta.status === "failed") continue;
+      if (keep(c.meta)) { kept.set(id, c); continue; }
       c.meta = { ...c.meta, status: "ended" };
       if (c.eventId !== null) setEvent(c.eventId, todo!, toolLine(c.meta.name, c.meta.input), c.meta);
     }
     if (todo !== null) emit({ type: "stream", id: todo, item: null });
+    return kept;
   };
   return { t, hooks, onUpdate, finish };
 }
@@ -559,13 +678,20 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
 // question also runs one more routing turn.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = [], via: string | null = null) {
   setTodo(todoId, { suggestions: null }, false);   // a sent message answers the suggestions, picked or not
+  // The agent's open question (askQuestions) takes the user's message as its answer, also one relayed by the operator or
+  // with files (their paths go with it); not a message from another TODO's agent (`via`).
+  const answers = !via && hasOpenQuestion(todoId);
   const t = todoRow(todoId)!, routing = t.routing ? (JSON.parse(t.routing) as Routing) : null;
   const action = deliveryAction(routing ? "not_started" : t.status, running.has(todoId));
   const id = db.transaction(() => {
-    const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued", null, via);
+    const id = addMessage(todoId, author, body, answers ? "delivered" : action === "pending" ? "pending" : "queued", null, via);
     saveAttachments(todoId, id, uploads);
     return id;
   })();
+  if (answers) {
+    answerPermission(todoId, "", withAttachments(body, attachmentsOf(id).map((a) => a.path)));
+    return id;
+  }
   if (action === "send") deliver(todoId);
   if (routing?.state === "asking" && !running.has(todoId)) runRouting(todoId);
   return id;
@@ -708,9 +834,12 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
           // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).
           claudeCode: { options: { allowedTools: WORKER_TOOLS, extraArgs: { "system-prompt-snapshot": "off" } } },
         } : {},
-        grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId) },
+        // The others get it through ACP's systemPrompt when they take it (Codex), else in front of the first prompt.
+        systemPrompt: isClaude(agentId) ? undefined : [contract, prompt].filter(Boolean).join("\n\n"),
+        title: `T-${todoId} ${t.title}`,
+        grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId), agent: agentId },
       });
-      await applyConfig(todoId, agent);
+      await applyConfig(todoId, agent, undefined, true);
     } catch (e: any) {
       running.delete(todoId);
       interrupting.delete(todoId);
@@ -779,7 +908,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       open?.no === 1 && cur.parent_id && `This TODO was created by the agent of T-${cur.parent_id}, not typed by the user.`,
       first != null && cur.title !== first && `Title: ${cur.title}. Keep this title.`,
     ].filter((x): x is string => !!x);
-    const text = (open && !isClaude(agentId) ? instructionsText(contract, prompt) : "")
+    const text = (open && !isClaude(agentId) && !live.systemPrompt ? instructionsText(contract, prompt) : "")
       + deliveryPrompt(cur.worktree_path, [...created, ...takeBodies()], open?.header ?? "");
     addEvent(todoId, "prompt", "app");
     try {
@@ -796,6 +925,11 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       }
     }
     if (stop === "refusal" || stop === "max_tokens" || stop === "max_turn_requests") error ||= `The turn ended early: ${stop.replaceAll("_", " ")}.`;
+    const failed = !error && agentId === "codex" ? codexError(turn.t.text) : null;
+    if (failed) {
+      error = failed;
+      cut = cutReason(failed);
+    }
     endRun(todoId, run, agent, turn, started, error, false, cut);
   })();
 }
@@ -807,7 +941,7 @@ function workerTurn(todoId: number, agent: Agent) {
     const what = toolArg(input) || why;
     if (denied.has(name + what)) return;
     denied.add(name + what);
-    addMessage(todoId, "app", `Auto mode blocked ${name}: ${what}`);
+    addMessage(todoId, "app", `${agent.agent === "codex" ? "Auto review" : "Auto mode"} blocked ${name}: ${what}`);
     const was = todoRow(todoId)!;
     setTodo(todoId, { attention: 1, attention_by: was.attention ? was.attention_by : "app" });
     addEvent(todoId, "attention raised", "app", `${name} denied`);
@@ -819,11 +953,15 @@ function workerTurn(todoId: number, agent: Agent) {
   agent.sink.s = {
     onUpdate: (u) => {
       // The agent changed an option itself (plan mode left, a /model command): the Focus header follows.
-      if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") saveConfig(todoId, agent);
+      if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") {
+        saveConfig(todoId, agent);
+        followPlan(todoId, agent);
+      }
       turn.onUpdate(u);
     },
     // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
     onPermission: (r) => askPermission(todoId, r),
+    onQuestion: (r, signal) => askQuestions(todoId, r, signal),
   };
   return turn;
 }
@@ -835,7 +973,15 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
   // or sees the TODO idle and starts its own turn.
   cancelPermission(todoId); // a request still open when the turn ended (the agent died, or gave up waiting)
-  turn.finish();
+  // Codex goes on running a command started in the background (unified exec) after the turn: it counts as a background
+  // task until its row completes (codexBackground). Claude's come from the SDK (backgroundLevel).
+  const kept = turn.finish((m) => agent.agent === "codex" && agent.live.alive && m.status === "in_progress" && m.kind === "execute");
+  for (const [id, c] of kept) {
+    (agent.bgCalls ??= new Map()).set(id, c);
+    if (!agent.bg.includes(id)) agent.bg = [...agent.bg, id];
+    agent.bgNames = { ...agent.bgNames, [id]: toolArg(c.meta.input) };
+  }
+  seen(agent);
   saveConfig(todoId, agent);
   clearTimeout(run.kill);
   running.delete(todoId);
@@ -901,9 +1047,11 @@ function autoContinue(todoId: number, why: string) {
 // Item 136: an update from a parked agent, with no turn running. Between turns Claude works on its own when a
 // background task finishes: it gets the task's notification and follows up. That cycle shows as a run of its own,
 // from its first update to the usage_update that ends it (or QUIET_MS without updates, or the end of the process).
+// Claude only: it marks the cycle's end. Codex sends a stray message after a turn (a plugin warning), which would show
+// the TODO running until QUIET_MS; it is dropped.
 function unprompted(todoId: number, agent: Agent, u: Update) {
   const t = todoRow(todoId);
-  if (!agentActivity(u) || running.has(todoId) || !t || t.removed_at || shuttingDown) return;
+  if (!isClaude(agent.agent) || !agentActivity(u) || running.has(todoId) || !t || t.removed_at || shuttingDown) return;
   const run: Run = { done: Promise.resolve(), live: agent.live };
   running.set(todoId, run);
   clearTimeout(agent.idle);
@@ -949,7 +1097,7 @@ function backToStart(todoId: number, open: { no: number } | null) {
 
 // The step between Start and session 1: the operator picks the TODO's topic, picks no topic, or asks the user. Stored in
 // todos.routing while it runs or asks; todos.routed_at is set once the topic is decided.
-export type Routing = { state: "running" } | { state: "asking"; question: string; options: { id: number; name: string }[] };
+export type Routing = { state: "running" } | { state: "asking"; question: string; options: { id: number; name: string }[]; agent?: string };
 
 const ROUTING_PROMPT = `You are the operator of switchboard, a local app where each TODO is an agent session the user starts and steers. The user pressed Start on one TODO. You decide which topic it belongs to; its agent then runs in that topic's folder. You do not do the task.
 
@@ -960,7 +1108,8 @@ const ROUTING_PROMPT = `You are the operator of switchboard, a local app where e
   - mcp__app__route_todo with the topic's name when one topic clearly fits, or with topic "none" when the TODO fits no topic and is thinking only (its agent then runs in the TODO's own folder). The reason is one short sentence the user reads, such as "the MCP server lives there".
   - mcp__app__ask_topic with a short question and the 2 or 3 likely topics when you cannot tell. The user also gets a "No topic" choice.
 - A topic without a profile can still be picked on its name and folder; say so when you ask.
-- With route_todo, pass effort from the kind of work the TODO asks for: low for brainstorming, sketches and easy edits; medium for regular feature work; high for bug fixes in existing code, reviews and anything with hidden edge cases; xhigh for security reviews, performance work and long autonomous work on a hard problem. Leave it out when unsure: the agent starts at medium.`;
+- With route_todo, pass effort from the kind of work the TODO asks for: low for brainstorming, sketches and easy edits; medium for regular feature work; high for bug fixes in existing code, reviews and anything with hidden edge cases; xhigh for security reviews, performance work and long autonomous work on a hard problem. Leave it out when unsure: the agent starts at medium.
+- With route_todo or ask_topic, pass agent only when the TODO's text names the agent that should run it, such as "with Codex". Never pick one by the kind of work.`;
 const ROUTING_BUILTINS = ["Read", "Grep", "Glob"];
 
 const refuse = (r: PermissionRequest) => {
@@ -1071,6 +1220,8 @@ export function cancelRouting(todoId: number) {
 export function changeRepo(todoId: number, projectId: number | null, branch: string | null = null) {
   const t = todoRow(todoId)!;
   if (t.routing) {
+    const r = JSON.parse(t.routing) as Routing;   // ask_topic's agent from the TODO's text, when it named one
+    if (r.state === "asking" && r.agent && !t.agent) setTodo(todoId, { agent: r.agent });
     routeTo(todoId, projectId, null);
     addMessage(todoId, "app", projectId ? `Runs in ${projectRow(projectId)!.name}.` : "Runs without a topic, in the TODO's own folder.");
     return startRouted(todoId);

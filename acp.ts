@@ -1,7 +1,7 @@
 // The agent driver: Agent Client Protocol (ACP) over stdio, one agent process per live session.
 // Nothing about TODOs here; runner.ts decides what a session is for. See designs/acp/ (investigation, design, spike).
 import * as acp from "@agentclientprotocol/sdk";
-import { descendants } from "./lib";
+import { attachedImages, descendants } from "./lib";
 
 export type Update = acp.SessionUpdate & { _meta?: Record<string, any> };
 export type PermissionRequest = acp.RequestPermissionRequest;
@@ -9,31 +9,43 @@ export type PermissionOutcome = acp.RequestPermissionResponse["outcome"];
 export type McpServer = acp.McpServer;
 export type Command = { name: string; description: string; hint: string | null };
 // How to start an agent: its command line and extra environment (agents.ts builds it from the registry).
-export type Spec = { command: string[]; env?: Record<string, string> };
-export type AuthMethod = { id: string; name: string; description: string | null };
+// `questions`: the app takes the agent's questions as ACP form elicitations (Codex's request_user_input). Off for Claude,
+// whose workers ask through the app tools (the contract), not with AskUserQuestion.
+export type Spec = { command: string[]; env?: Record<string, string>; questions?: boolean };
+// `key`: the method takes an API key from the user (`_meta["api-key"]`, Codex's API key login).
+export type AuthMethod = { id: string; name: string; description: string | null; key?: boolean };
 
 // session/new refused for want of a login (ACP error -32000): the agent's ways to log in, from its initialize answer.
 export class AuthRequired extends Error {
   constructor(readonly methods: AuthMethod[]) { super("the agent needs a login"); }
 }
 const authMethodsOf = (init: any): AuthMethod[] =>
-  (init?.authMethods ?? []).map((m: any) => ({ id: String(m.id), name: String(m.name ?? m.id), description: m.description ?? null }));
+  (init?.authMethods ?? []).map((m: any) => ({ id: String(m.id), name: String(m.name ?? m.id), description: m.description ?? null, ...(m._meta?.["api-key"] ? { key: true } : {}) }));
 
 export type Handlers = {
   onUpdate(u: Update): void;
   onSdk?(m: any): void; // a raw SDK message the session asked for in `_meta.claudeCode.emitRawSDKMessages` (Claude only)
   onPermission(r: PermissionRequest): Promise<PermissionOutcome> | PermissionOutcome;
+  // A form elicitation (Spec.questions): the answer, or decline/cancel. `signal` aborts when the agent stops waiting.
+  onQuestion?(r: acp.CreateElicitationRequest, signal: AbortSignal): Promise<acp.CreateElicitationResponse>;
 };
 export type SessionOpts = {
   cwd: string;
   additionalDirectories?: string[];
   mcpServers: McpServer[];
   meta?: Record<string, unknown>; // the agent's own `_meta` for session/new and session/resume
+  // Appended to the agent's system prompt, for an agent that declares `sessionCapabilities.systemPrompt` (Codex).
+  systemPrompt?: string;
+  // The new session's title, for an agent that takes one (`sessionCapabilities.title`, Codex): Codex lists it in
+  // `codex resume`, and skips the extra model turn it runs to make a title of its own.
+  title?: string;
   env?: Record<string, string>; // added to the agent process's environment
 };
 
 export type Live = {
   sessionId: string;
+  // The agent took SessionOpts.systemPrompt; false: the caller sends the instructions with the first prompt instead.
+  readonly systemPrompt: boolean;
   // The session's config options (mode, model, effort, …) as the agent last reported them: from session/new or
   // session/resume, a set_config_option answer, or a config_option_update. A model switch rewrites the others.
   readonly configOptions: any[];
@@ -82,6 +94,8 @@ async function spawnAgent(spec: Spec, handlers: { h: Handlers | null }, extraEnv
     .onRequest(acp.methods.client.session.requestPermission, async (ctx) => ({
       outcome: handlers.h ? await handlers.h.onPermission(ctx.params) : { outcome: "cancelled" as const },
     }))
+    .onRequest(acp.methods.client.elicitation.create, async (ctx) =>
+      ctx.params.mode === "form" && handlers.h?.onQuestion ? handlers.h.onQuestion(ctx.params, ctx.signal) : { action: "cancel" as const })
     .onNotification(acp.methods.client.session.update, (ctx) => {
       const u: any = ctx.params.update;
       if (u.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions)) state.configOptions = u.configOptions;
@@ -97,7 +111,7 @@ async function spawnAgent(spec: Spec, handlers: { h: Handlers | null }, extraEnv
   try {
     const init = await withTimeout(conn.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, ...(spec.questions ? { elicitation: { form: {} } } : {}) },
       clientInfo: { name: "switchboard", version: "1" },
     }), INIT_TIMEOUT, "starting the agent");
     return { proc, conn, init, state, log: () => log };
@@ -134,17 +148,18 @@ export async function killTree(pid: number, signal: NodeJS.Signals) {
 const pendingKills = new Set<() => void>();
 export const killNow = () => { for (const kill of [...pendingKills]) kill(); };
 
-function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, configOptions: any[] | null | undefined): Live {
+function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, configOptions: any[] | null | undefined, systemPrompt: boolean): Live {
   let alive = true;
   a.proc.exited.then(() => (alive = false));
   if (configOptions) a.state.configOptions = configOptions;
   return {
     sessionId,
+    systemPrompt,
     get configOptions() { return a.state.configOptions; },
     get commands() { return a.state.commands; },
     async prompt(text) {
       try {
-        const r = await a.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: "text", text }] });
+        const r = await a.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: "text", text }, ...(await imageBlocks(a.init, text))] });
         return r.stopReason;
       } catch (e) {
         // The connection can close on the agent's stdout ending before the exit is seen: name the exit, not the closed connection.
@@ -156,7 +171,7 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     async steer(text) {
       if (!(a.init as any)._meta?.steering?.supported) return false;
       const r: any = await a.conn.agent.request("_session/steering" as any, {
-        sessionId, prompt: [{ type: "text", text }], _meta: { steering: { idleBehavior: "promptRequired" } },
+        sessionId, prompt: [{ type: "text", text }, ...(await imageBlocks(a.init, text))], _meta: { steering: { idleBehavior: "promptRequired" } },
       } as any);
       return r?.outcome === "injected";
     },
@@ -180,15 +195,35 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
   };
 }
 
+// The attached images as image blocks, for an agent that takes them (Codex); their paths stay in the text. Claude reads
+// them with its Read tool as before. An image that cannot be read is left to the path.
+async function imageBlocks(init: any, text: string): Promise<acp.ContentBlock[]> {
+  if (!init.agentCapabilities?.promptCapabilities?.image || init.agentInfo?.name === "@agentclientprotocol/claude-agent-acp") return [];
+  const blocks: acp.ContentBlock[] = [];
+  for (const path of attachedImages(text)) {
+    const f = Bun.file(path);
+    if (f.size > 0 && f.size <= 20 * 1024 * 1024) blocks.push({ type: "image", mimeType: f.type, data: Buffer.from(await f.arrayBuffer()).toString("base64"), uri: `file://${path}` });
+  }
+  return blocks;
+}
+
+// ACP's `systemPrompt` (append) for session/new and session/resume, when the caller has one and the agent takes it.
+const systemPromptOf = (init: any, o: SessionOpts) =>
+  o.systemPrompt && init.agentCapabilities?.sessionCapabilities?.systemPrompt
+    ? { systemPrompt: { mode: "append", content: [{ type: "text", text: o.systemPrompt }] } } : {};
+
 // session/new in a new agent process. The agent makes the session id; for Claude it is the Claude Code session id.
 export async function openSession(spec: Spec, o: SessionOpts, h: Handlers): Promise<Live> {
   const handlers = { h };
   const a = await spawnAgent(spec, handlers, o.env);
   try {
+    const sp = systemPromptOf(a.init, o);
     const s = await a.conn.agent.request(acp.methods.agent.session.new, {
-      cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta,
+      cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta, ...sp,
     } as acp.NewSessionRequest);
-    return live(a, s.sessionId, s.configOptions);
+    if (o.title && (a.init.agentCapabilities as any)?.sessionCapabilities?.title)
+      await a.conn.agent.request("session/set_title" as any, { sessionId: s.sessionId, title: o.title }).catch(() => {});   // a name only
+    return live(a, s.sessionId, s.configOptions, !!sp.systemPrompt);
   } catch (e: any) {
     a.proc.kill();
     if (e?.code === -32000) throw new AuthRequired(authMethodsOf(a.init));
@@ -203,13 +238,14 @@ export async function reopenSession(spec: Spec, sessionId: string, o: SessionOpt
   const a = await spawnAgent(spec, handlers, o.env);
   try {
     const caps: any = a.init.agentCapabilities ?? {};
-    const params = { sessionId, cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta };
+    const sp = systemPromptOf(a.init, o);
+    const params = { sessionId, cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta, ...sp };
     let s: any;
     if (caps.sessionCapabilities?.resume) s = await a.conn.agent.request(acp.methods.agent.session.resume, params as any);
     else if (caps.loadSession) s = await a.conn.agent.request(acp.methods.agent.session.load, params as any);
     else throw new Error("this agent cannot resume sessions");
     handlers.h = h;
-    return live(a, sessionId, s?.configOptions);
+    return live(a, sessionId, s?.configOptions, !!sp.systemPrompt);
   } catch (e: any) {
     a.proc.kill();
     if (e?.code === -32000) throw new AuthRequired(authMethodsOf(a.init));
@@ -227,10 +263,11 @@ export async function describe(spec: Spec): Promise<{ name: string | null; versi
 
 // ACP authenticate in a short-lived agent process. The agent does the login itself (codex-acp opens the browser for
 // ChatGPT and stores the login in ~/.codex/, P5 probe); this resolves when it is done, false when the agent reports a failure.
-export async function authenticate(spec: Spec, methodId: string, timeoutMs = 5 * 60_000): Promise<boolean> {
+export async function authenticate(spec: Spec, methodId: string, apiKey?: string, timeoutMs = 5 * 60_000): Promise<boolean> {
   const a = await spawnAgent(spec, { h: null });
   try {
-    const r: any = await withTimeout(a.conn.agent.request(acp.methods.agent.authenticate, { methodId } as any), timeoutMs, "the login");
+    const params = { methodId, ...(apiKey ? { _meta: { "api-key": { apiKey } } } : {}) };
+    const r: any = await withTimeout(a.conn.agent.request(acp.methods.agent.authenticate, params as any), timeoutMs, "the login");
     return r !== false;
   } finally {
     a.proc.kill();

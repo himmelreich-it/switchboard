@@ -7,9 +7,9 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
-import { isClaude } from "./agents";
+import { hasAutoEffort, namedAgent } from "./agents";
 import { AUTO_EFFORTS, addTurn, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
-import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, setAutoEffort, start } from "./runner";
+import { DEFAULT_STARTED_PER_TURN, commitMessage, hasOpenQuestion, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOST, PORT, addEvent, addMessage, attachmentsOf, changed, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, noteTodo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
@@ -22,18 +22,19 @@ export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"
 
 // `onPost` tells the run that the agent posted a chat message this turn (so its final text is not posted as well).
 // `via` names the Claude terminal a grant belongs to (P6): its chat messages carry it.
-type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void; via?: string } | { kind: "operator" } | { kind: "router"; todoId: number };
+// A worker's `agent` is its session's: a New session on another agent lists its tools before the TODO's agent changes.
+type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void; via?: string; agent?: string } | { kind: "operator" } | { kind: "router"; todoId: number };
 const grants = new Map<string, Grant>();
 
 // A secret for one agent process, and the MCP server entry that names it. Revoke it when the agent process ends.
 // `header` gives the header value for the secret: Claude's is a ${VAR} reference to the agent process's environment
 // (runner.ts sets SWITCHBOARD_MCP_SECRET), see agents.ts secretHeader.
-export function grant(g: Grant, header: (secret: string) => string): { secret: string; server: McpServerConfig } {
+export function grant(g: Grant, header: (secret: string) => string): { secret: string; server: Extract<McpServerConfig, { type: "http" }> } {
   const secret = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
   grants.set(secret, g);
   return {
     secret,
-    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: header(secret) }] } as McpServerConfig,
+    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: header(secret) }] },
   };
 }
 export const revoke = (secret: string) => grants.delete(secret);
@@ -172,9 +173,9 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     if (pid) refreshPrs(pid);
     return ok();
   });
-  // Auto effort: the worker switches its own effort level as the work changes (CONTRACT's effort rules). Claude only;
-  // a Claude terminal does not get it, as the level belongs to the TODO's session.
-  if (!g.via && isClaude(todoRow(todoId)!.agent)) s.registerTool("set_effort", {
+  // Auto effort: the worker switches its own effort level as the work changes (CONTRACT's effort rules). The built-in
+  // agents only (hasAutoEffort); a Claude terminal does not get it, as the level belongs to the TODO's session.
+  if (!g.via && hasAutoEffort(g.agent ?? todoRow(todoId)!.agent)) s.registerTool("set_effort", {
     description: "Switch your effort level: low, medium, high or xhigh. reason: a few words the user reads, such as \"verifying the fix\". Refused when the user set the effort.",
     inputSchema: { level: z.enum(AUTO_EFFORTS), reason: z.string() },
   }, async ({ level, reason }) => {
@@ -264,6 +265,7 @@ function operatorTools(s: McpServer, used: Used) {
 
 // Read before commitMessage: delivery changes the TODO's state.
 function deliveryOutcome(t: NonNullable<ReturnType<typeof todoRow>>, id: number) {
+  if (hasOpenQuestion(id)) return "delivered now as the answer to the agent's open question";
   return {
     pending: "stored; it is delivered when the user starts the TODO",
     queue: "queued; the agent gets it when its current turn ends",
@@ -279,10 +281,13 @@ function createTool(s: McpServer, by: { parent: number | null; used: (detail: st
   const names = `${topics.map((x) => x.name).join(", ") || "(none yet)"}, or "none"`;
   s.registerTool("create_todo", {
     description: `Create a TODO with its first instruction. title: a short title for its card; leave it out and the TODO's agent sets one. topic: one of ${names} for a thinking-only TODO; leave it out and routing picks it at the start. start: true starts it now, only when the user's words say to start it; otherwise it lands in the user's backlog. key: a dedupe key such as "pr:api-service#490"; when a TODO has that key already, removed ones too, nothing is created.`
-      + ` schedule: {days: [1,2,3,4,5], times: ["09:00"]} or {days, every: 30, from: "08:00", to: "18:00"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.`,
-    inputSchema: { instruction: z.string(), title: z.string().optional(), topic: z.string().optional(), start: z.boolean().optional(), key: z.string().optional(), schedule: z.any().optional() },
-  }, async ({ instruction, title, topic, start: go, key, schedule }: { instruction: string; title?: string; topic?: string; start?: boolean; key?: string; schedule?: unknown }) => {
+      + ` schedule: {days: [1,2,3,4,5], times: ["09:00"]} or {days, every: 30, from: "08:00", to: "18:00"} (days 0 = Sunday, local time) makes a scheduled TODO that runs a new session at each slot; only when the user asks for one.`
+      + ` agent: ${namedAgent("").names}, only when the user's words name the agent to run it; leave it out and the topic's default agent runs it.`,
+    inputSchema: { instruction: z.string(), title: z.string().optional(), topic: z.string().optional(), start: z.boolean().optional(), key: z.string().optional(), schedule: z.any().optional(), agent: z.string().optional() },
+  }, async ({ instruction, title, topic, start: go, key, schedule, agent }: { instruction: string; title?: string; topic?: string; start?: boolean; key?: string; schedule?: unknown; agent?: string }) => {
     if (!instruction.trim()) return err("instruction is empty");
+    const a = agent?.trim() ? namedAgent(agent) : null;
+    if (a && !a.id) return err(`Unknown agent "${agent}". Agents: ${a.names}.`);
     let project: number | null | undefined;
     if (topic !== undefined) {
       const name = topic.trim().toLowerCase(), p = topics.find((x) => x.name.toLowerCase() === name);
@@ -300,10 +305,10 @@ function createTool(s: McpServer, by: { parent: number | null; used: (detail: st
     const cap = Number(getMeta("started_todos_per_turn")) || DEFAULT_STARTED_PER_TURN;
     const started = (db.query("SELECT COUNT(*) AS n FROM events WHERE todo_id IS ? AND kind = 'create_todo' AND detail LIKE '%· started%' AND at >= ?").get(by.parent, by.since()) as { n: number }).n;
     if (go && started >= cap) return err(`Cap of ${cap} started TODOs per turn reached. Create the rest with start: false, or the user raises it in Settings › Runs.`);
-    const id = createTodo(instruction.trim(), op ? "operator" : "agent", [], null, { parent_id: by.parent, key: k, project_id: project, schedule: sched, title: title?.trim() || null });
+    const id = createTodo(instruction.trim(), op ? "operator" : "agent", [], a?.id ?? null, { parent_id: by.parent, key: k, project_id: project, schedule: sched, title: title?.trim() || null });
     if (go) start(id);
     const name = project === undefined ? null : topics.find((x) => x.id === project)?.name ?? "none";
-    by.used([`T-${id}`, go && "started", sched && "scheduled", name && `topic ${name}`].filter(Boolean).join(" · "));
+    by.used([`T-${id}`, go && "started", sched && "scheduled", name && `topic ${name}`, a && `agent ${a.id}`].filter(Boolean).join(" · "));
     return ok(`Created T-${id} · ${go ? "started" : sched ? "scheduled" : "in the backlog"}${name ? ` · topic ${name}.` : go ? "; routing picks its topic." : "; routing picks its topic when it starts."}`);
   });
 }
@@ -362,32 +367,47 @@ function routerTools(s: McpServer, todoId: number) {
   const find = (name: string) => topics().find((x) => x.name === name) ?? topics().find((x) => x.name.toLowerCase() === name.trim().toLowerCase());
   const names = () => topics().map((x) => x.name).join(", ") || "none";
   const decided = () => !!todoRow(todoId)!.routed_at || JSON.parse(todoRow(todoId)!.routing ?? "{}").state === "asking";
+  // The agent the TODO's text names. The user's own pick in New TODO wins over the text: no pick then.
+  const agentArg = (agent?: string): { pick: string | null } | { error: string } => {
+    const a = agent?.trim() ? namedAgent(agent) : null;
+    if (a && !a.id) return { error: `Unknown agent "${agent}". Agents: ${a.names}.` };
+    return { pick: a && !todoRow(todoId)!.agent ? a.id : null };
+  };
+  const agentHelp = ` agent: ${namedAgent("").names}, only when the TODO's text names the agent to run it; leave it out and the topic's default agent runs it.`;
   s.registerTool("route_todo", {
-    description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium. Stop after this call.",
-    inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional() },
-  }, async ({ topic, reason, effort }) => {
+    description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium."
+      + agentHelp + " Stop after this call.",
+    inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional(), agent: z.string().optional() },
+  }, async ({ topic, reason, effort, agent }) => {
     if (decided()) return err("This TODO's routing is decided already. Stop now.");
     const none = topic.trim().toLowerCase() === "none";
     const p = none ? null : find(topic);
     if (!none && !p) return err(`Unknown topic "${topic}". Topics: ${names()}, or "none".`);
-    addEvent(todoId, "route_todo", "operator", `topic: "${p?.name ?? "none"}"`);
+    const a = agentArg(agent);
+    if ("error" in a) return err(a.error);
+    const { pick } = a;
+    addEvent(todoId, "route_todo", "operator", [`topic: "${p?.name ?? "none"}"`, pick && `agent: ${pick}`].filter(Boolean).join(" · "));
+    if (pick) setTodo(todoId, { agent: pick });
     routeTo(todoId, p?.id ?? null, reason);
-    if (effort && isClaude(todoRow(todoId)!.agent)) setAutoEffort(todoId, effort, "picked at the start", "operator");
+    if (effort && hasAutoEffort(todoRow(todoId)!.agent)) setAutoEffort(todoId, effort, "picked at the start", "operator");
     return ok(`Routed to ${p?.name ?? "no topic"}. The app starts session 1 there when you stop.`);
   });
   s.registerTool("ask_topic", {
-    description: "Ask the user which topic this TODO belongs to, when you cannot tell: a short question and the 2 or 3 likely topics by name. The user also gets a \"No topic\" choice. Stop after this call.",
-    inputSchema: { question: z.string(), options: z.array(z.string()) },
-  }, async ({ question, options }) => {
+    description: "Ask the user which topic this TODO belongs to, when you cannot tell: a short question and the 2 or 3 likely topics by name. The user also gets a \"No topic\" choice." + agentHelp + " Stop after this call.",
+    inputSchema: { question: z.string(), options: z.array(z.string()), agent: z.string().optional() },
+  }, async ({ question, options, agent }) => {
     if (decided()) return err("This TODO's routing is decided already. Stop now.");
     if (!question.trim()) return err("question is empty");
+    const a = agentArg(agent);
+    if ("error" in a) return err(a.error);
     const picked = options.map(find);
     if (picked.some((p) => !p)) return err(`Unknown topic in ${JSON.stringify(options)}. Topics: ${names()}.`);
     const opts = [...new Map(picked.map((p) => [p!.id, { id: p!.id, name: p!.name }])).values()];
     if (opts.length < 1 || opts.length > 3) return err("Give one to three topics.");
-    addEvent(todoId, "ask_topic", "operator", opts.map((o) => o.name).join(", "));
+    addEvent(todoId, "ask_topic", "operator", [opts.map((o) => o.name).join(", "), a.pick && `agent: ${a.pick}`].filter(Boolean).join(" · "));
     addMessage(todoId, "operator", question.trim());
-    setTodo(todoId, { routing: JSON.stringify({ state: "asking", question: question.trim(), options: opts }) });
+    // A click on an option applies the agent (changeRepo); a typed reply runs routing again, which names it again.
+    setTodo(todoId, { routing: JSON.stringify({ state: "asking", question: question.trim(), options: opts, ...(a.pick ? { agent: a.pick } : {}) }) });
     return ok("Asked. The user's click or reply decides; stop now.");
   });
 }

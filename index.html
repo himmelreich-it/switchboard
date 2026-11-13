@@ -1377,7 +1377,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 
       <div id="termView" class="term-view" hidden>
         <div class="term-info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
-          <span>Shells run in the worktree and stay private. A <strong>Claude terminal</strong> is its own session with your settings. It can post to this chat, attach files and raise attention.</span></div>
+          <span>Shells run in the worktree and stay private. A <strong>Claude</strong> or <strong>Codex terminal</strong> is its own session with your settings. It can post to this chat, attach files and raise attention.</span></div>
         <div class="term-body">
           <div id="termStrip" class="term-list"></div>
           <div class="pane-sep" role="separator" aria-orientation="vertical" aria-label="Resize terminal list" title="Drag to resize · double-click to reset" tabindex="0" data-pane="term"></div>
@@ -1905,7 +1905,7 @@ const S = {
   events: false,                        // events mixed into the chat (item 100), kept in localStorage
   nsMode: {},                           // TODO id -> composer in new-session mode (item 71); browser only
   nsAgent: {},                          // TODO id -> agent chosen for the new session (P5); browser only
-  newAgent: null,                       // the New TODO card's agent (P5); null: the project's default
+  newAgent: null,                       // the New TODO card's agent (P5), kept in localStorage; null: the project's default
   live: {},   // item 130: the text a running agent is writing now, per TODO ({kind, text}), from SSE "stream" events
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
   // design v6
@@ -1933,6 +1933,7 @@ S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // te
 S.termFocus = false;   // the Terminal tab was just opened: the selected terminal takes the keys once it has loaded
 try { S.termSel = JSON.parse(localStorage.getItem("switchboard-term-sel") || "{}"); } catch (e) {}   // TODO id -> selected terminal id; terminals outlive a reload
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
+try { S.newAgent = localStorage.getItem("switchboard-new-agent"); } catch (e) {}   // New TODO preselects the last agent picked there
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
 // ponytail: unsent attachments live only in this tab, so a reload drops them and Restore never sends them.
@@ -1960,9 +1961,11 @@ const waitingList = () => live().filter((t) => laneOf(t) === "waiting" && inFilt
 const agentsAll = () => S.meta?.agents ?? [{ id: "claude", name: "Claude", builtin: true, found: true }];
 const agentsFound = () => agentsAll().filter((a) => a.found);
 const agentLabel = (id) => agentsAll().find((a) => a.id === (id || "claude"))?.name ?? id;
+// An agent's option in the agent selects; design v10 marks one without a login.
+const agentOption = (a) => a.name + (a.needsLogin ? " · needs login" : "");
 // Per agent, the config options last seen from any of its sessions (meta).
 const agentConfig = (agent) => S.meta?.agent_config?.[agent || "claude"] ?? [];
-const agentSelect = (value, attrs) => `<select ${attrs}>${agentsFound().map((a) => `<option value="${esc(a.id)}"${(value || "claude") === a.id ? " selected" : ""}>${esc(a.name)}</option>`).join("")}</select>`;
+const agentSelect = (value, attrs) => `<select ${attrs}>${agentsFound().map((a) => `<option value="${esc(a.id)}"${(value || "claude") === a.id ? " selected" : ""}>${esc(agentOption(a))}</option>`).join("")}</select>`;
 // The permission modes (lib.ts MODES); the UI's labels for them. They are Claude's: another agent's modes are its own
 // `mode` option, from its session or the last one seen.
 const MODES = { auto: "Auto", default: "Default (ask)", acceptEdits: "Accept edits", plan: "Plan", bypassPermissions: "Bypass permissions" };
@@ -1978,7 +1981,7 @@ const modeOptions = (value, projectDefault, agent, t) => {
 };
 // P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
 // is the TODO's session's as the agent last reported it, else the last one seen from any session of that agent (meta).
-const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+const CONFIG_CATEGORIES = ["model", "thought_level", "model_config", "collaboration_mode"];
 const configList = (t, agent) => (t?.config ?? agentConfig(t?.agent ?? agent)).filter((o) => CONFIG_CATEGORIES.includes(o.category));
 const optName = (o, v) => o.options.find((x) => x.value === v)?.name ?? v;
 // One select's options: "" first (the project's value, or the agent's own when the project sets none), then the agent's.
@@ -2580,7 +2583,7 @@ function fillProjForm() {
   S.projDefs = JSON.parse(JSON.stringify(p?.defaults ?? {}));
   const found = agentsFound();
   $("pAgents").hidden = found.length < 2;
-  const opts = found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("");
+  const opts = found.map((a) => `<option value="${esc(a.id)}">${esc(agentOption(a))}</option>`).join("");
   pAgent.innerHTML = pDefAgent.innerHTML = opts;
   pAgent.value = p?.default_agent ?? "claude";
   S.projDefAgent = pDefAgent.value = pAgent.value;
@@ -2807,7 +2810,10 @@ const statHtml = (s) => (s ? `<span class="stat"><span class="a">+${s.a}</span>$
 function waitCard(t) {
   const p = t.status === "running" ? t.permission : null, last = lastWord(t), pr = prChip(t);
   let box = "", acts = "";
-  if (p) {
+  if (p?.question) {
+    box = `<div class="askbox"><span class="ml b" style="color:var(--accent-cyan)">${esc(agentLabel(t.agent))} asks</span><span class="t clamp3">${esc(p.title || p.name)}</span></div>`;
+    acts = p.options.filter((o) => o.kind === "allow_once").slice(0, 2).map((o) => btn(o.name, "perm", { id: `${t.id}|${o.optionId}` })).join("") + `<span class="reply">Reply →</span>`;
+  } else if (p) {
     const cmd = permCmd(p), path = cmd ? null : permPath(p), stat = path ? diffStat(p.diffs) : null;
     const verb = cmd ? "Run" : path ? "Edit" : esc(p.name);
     const line = cmd ? `<span class="dollar">$</span><span class="ellipsis">${esc(cmd)}</span>` : `<span class="ellipsis">${esc(path ?? p.title ?? p.name)}</span>${statHtml(stat)}`;
@@ -2842,7 +2848,7 @@ function activityOf(t) {
   if (t.background_wait) return ["other", `Waiting for ${plural(t.background, "background task")}`];
   if (t.last_tool) {
     const name = t.last_tool.split(" ")[0];
-    const kind = /^(Read|Glob|LS)$/.test(name) ? "read" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name) ? "edit" : /^(Bash|BashOutput)$/.test(name) ? "run"
+    const kind = /^(Read|Glob|LS)$/.test(name) ? "read" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name) ? "edit" : /^(Bash|BashOutput|Shell)$/.test(name) ? "run"
       : /^(Grep|Search|ToolSearch)$/.test(name) ? "search" : /^(WebFetch|WebSearch)$/.test(name) ? "fetch" : "other";
     return [kind, t.last_tool.replace(/^Bash /, "")];
   }
@@ -2858,7 +2864,7 @@ function runCard(t) {
   return `<div class="card run" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
     <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${fromBadge(t)}${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Goes to the agent after its current step">${t.queued_count} queued</span>` : ""}
       <span class="right"><span class="ticker"><span class="live-dot"></span>${t.run_started_at ? `<span class="timer" data-since="${esc(t.run_started_at)}"></span>` : ""}</span>
-        <span class="stop" title="Stop · interrupts the agent, like Esc in Claude Code">${btn("Stop", "stop", { id: t.id })}</span></span></div>
+        <span class="stop" title="Stop · interrupts the agent, like Esc in its own CLI">${btn("Stop", "stop", { id: t.id })}</span></span></div>
     <div class="card-title clamp2">${esc(t.title)}</div>
     <div class="activity" title="${esc(text)}">${ico(kind, 13, "var(--accent-cyan)")}<span class="ellipsis">${esc(text)}</span></div>
     ${planSegs(t)}
@@ -3073,9 +3079,9 @@ function renderNew() {
   // is not reset by a live update. "Topic's default" leaves the pick to the topic routing chooses (801).
   const found = agentsFound();
   $("newAgentField").hidden = found.length < 2;
-  const akey = found.map((a) => a.id).join("|");
-  if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(""); newAgent.dataset.key = akey; }
-  newAgent.value = S.newAgent ?? "";
+  const akey = found.map((a) => a.id + (a.needsLogin ? "?" : "")).join("|");
+  if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(agentOption(a))}</option>`).join(""); newAgent.dataset.key = akey; }
+  newAgent.value = found.some((a) => a.id === S.newAgent) ? S.newAgent : "";   // an agent no longer found falls back to the topic's
   S.rep ??= REP0();
   $("newNote").textContent = keys(S.rep.on ? "Paste images with ⌘V. Lands in the Scheduled lane. The operator picks the topic at the first run." : "Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.");
   setHtml($("newRepeat"), `<div class="repeat"><label class="mb-switch" style="align-self:flex-start"><input type="checkbox" data-act="rep-toggle"${S.rep.on ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Repeat</span></label>
@@ -3121,16 +3127,16 @@ function sessionRows(t) {
   }
   for (const o of configList(t)) {
     const own = t.overrides?.[o.id] ?? null, inh = pd[o.id] ?? null, live = t.config ? o.value : null;
-    // Auto effort: Claude's effort the user did not set is the router's or the agent's pick, medium until one is made.
-    const auto = agent === "claude" && o.category === "thought_level" && !inh ? t.auto_effort?.value ?? "medium" : null;
+    // Auto effort (built-in agents): effort the user did not set is the router's or the agent's pick, medium until one is made.
+    const auto = agentsAll().find((a) => a.id === agent)?.builtin && o.category === "thought_level" && !inh ? t.auto_effort?.value ?? "medium" : null;
     const eff = own ?? inh ?? auto ?? live;
-    const isFast = o.category === "model_config";
+    const isFast = o.category === "model_config", isPlan = o.category === "collaboration_mode";
     const name = eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null;
     rows.push({ kind: "cfg", id: o.id, label: o.name, own, from: inh ? "Project" : auto ? "Auto" : "Agent",
       first: inh ? `Topic's (${optName(o, inh)})` : auto ? `Auto (${optName(o, auto)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
       options: o.options.map((x) => [x.value, x.name]), value: eff, desc: auto && !own ? `Picked by the app: ${t.auto_effort?.reason ?? "medium until routing picks a level"}. Pick a level to set it yourself.` : null,
       // v10: the chip names the effort ("Effort High") and marks the app's pick with a small "auto" tag.
-      short: isFast ? (eff === "on" ? "Fast" : null) : o.category === "thought_level" && name ? `Effort ${name}` : name, auto: !!(auto && !own),
+      short: isFast ? (eff === "on" ? "Fast" : null) : isPlan ? (eff === "plan" ? "Plan" : null) : o.category === "thought_level" && name ? `Effort ${name}` : name, auto: !!(auto && !own),
       why: auto && !own ? t.auto_effort?.reason ?? "medium until routing picks a level" : null });
   }
   return rows;
@@ -3171,14 +3177,14 @@ function renderFocusHead(t, d) {
   const from = S.focusFrom === "backlog" ? "Backlog" : S.focusFrom === "running" ? "Running" : "Board";
   // Row 1: back, number, title, status, actions, the waiting queue
   let status = "";
-  if (perm) status += badge("Needs approval", "amber", true);
+  if (perm) status += perm.question ? badge("Question", "cyan", true) : badge("Needs approval", "amber", true);
   if (t.attention && !perm) status += `<span class="wait-clear">${badge("Waiting on you", "amber", true)}<button type="button" class="xbtn" data-act="clear" data-id="${t.id}" data-fk="clear:${t.id}" aria-label="Clear attention" title="Clear attention">${SVG(CLOSE, 12)}</button></span>`;
   else if (t.status === "idle" || t.status === "waiting") status += badge("Idle", "neutral", true);
   if (t.status === "not_started") status += badge("Not started", "violet", true) + btn("Start", "start", { v: "primary", id: t.id });
   if (t.routing?.state === "asking" && !running) status += `<span title="Back to the backlog, not started" style="display:flex">${btn("Don't start", "stop", { id: t.id })}</span>`;
   if (running) {
     const since = t.run_started_at ? `<span data-since="${esc(t.run_started_at)}"></span>` : "";
-    const tip = t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : keys("Stop · interrupts the agent, like Esc in Claude Code. Queued messages wait for the next turn. ⌘.");
+    const tip = t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : keys("Stop · interrupts the agent, like Esc in its own CLI. Queued messages wait for the next turn. ⌘.");
     status += `<span class="runseg"><span class="l"><span class="live-dot"></span>${t.routing ? "Picking a topic" : t.background_wait ? "Background" : "Running"} ${since}</span><button type="button" data-act="stop" data-id="${t.id}" data-fk="stop:${t.id}" title="${esc(tip)}"><i></i>Stop</button></span>`;
   }
   if (!running && t.session_id) status += S.nsMode[t.id] ? `<span title="Stay in session ${n || 1} · Esc" style="display:flex">${btn(`Keep session ${n || 1}`, "cancel-ns", { id: t.id })}</span>`
@@ -3407,7 +3413,7 @@ function workHtml(g, t, live, key) {
   const result = evs.find((e) => e.kind === "result");
   const asking = live && !!t.permission, stopped = evs.some((e) => e.kind === "interrupted");
   const dur = result?.meta?.duration_ms != null ? fmtDurW(result.meta.duration_ms) : g.end ? fmtDurW(new Date(g.end.at) - new Date(g.start.at)) : "";
-  const label = asking ? ["Waiting for approval", "var(--accent-amber)"] : live ? [`Working <span data-since="${esc(g.start.at)}"></span>`, "var(--accent-cyan)"]
+  const label = asking ? [t.permission.question ? "Waiting for your answer" : "Waiting for approval", "var(--accent-amber)"] : live ? [`Working <span data-since="${esc(g.start.at)}"></span>`, "var(--accent-cyan)"]
     : [`Worked ${stopped ? "· stopped" : esc(dur)}`, "var(--text-secondary)"];
   const stats = [plural(tools.length, "tool call"), edits && plural(edits, "edit"), cmds && plural(cmds, "command"), pd && "plan " + pd].filter(Boolean).join(" · ");
   const isOpen = S.openWork.get(key) ?? (tr || live);
@@ -3482,6 +3488,13 @@ function chatHtml(t, d) {
 function approvalHtml(t) {
   const p = t.permission, cmd = permCmd(p), path = cmd ? null : permPath(p), stat = path ? diffStat(p.diffs) : null;
   const mode = sessionRows(t).find((r) => r.kind === "mode");
+  if (p.question) return `<div class="appr" data-act="noop">
+    <div class="hd">${SVG(I.shield, 14, "var(--accent-cyan)")}<span class="ml b" style="color:var(--accent-cyan)">${esc(agentLabel(t.agent))} asks</span><span class="mut" style="color:var(--text-muted)">·</span>
+      <span class="verb">${esc(p.title || p.name)}</span><span class="right"><span class="mono muted" style="font-size:11px">${esc(hm(p.at))}</span></span></div>
+    ${p.input?.description ? `<span class="small">${esc(p.input.description)}</span>` : ""}
+    <div class="opts">${p.options.slice(0, 9).map((o, i) => `<button type="button" class="aopt${o.kind === "allow_once" ? " yes" : ""}" data-act="perm" data-id="${t.id}|${esc(o.optionId)}" data-fk="perm:${i}" title="press ${i + 1}"><span class="k">${i + 1}</span><span class="l">${esc(o.name)}</span></button>`).join("")}</div>
+    <span class="small">Or answer in your own words: send a message.</span>
+  </div>`;
   const body = cmd ? `<pre class="cmd"><span class="dollar">$ </span>${esc(cmd)}</pre>`
     : p.diffs?.length ? p.diffs.map((d) => dvHtml(d, 220)).join("")
     : Object.keys(p.input ?? {}).length ? `<pre class="cmd">${esc(JSON.stringify(p.input, null, 1))}</pre>` : "";
@@ -3549,7 +3562,7 @@ function renderChat(t, d) {
   // v10: the mode reads as a violet frame around the composer; Esc or "Keep session n" leaves it.
   $("chatView").querySelector(".composer").classList.toggle("ns", ns);
   setHtml(nsHead, ns ? `${SVG(PLUS, 16, "var(--accent-violet)")}<span class="t">New session ${nSess + 1}</span><span class="s">Your next message starts it. The hand-over carries this TODO's history. Esc keeps session ${nSess || 1}.</span>${nsAgent}${btn(`Keep session ${nSess || 1}`, "cancel-ns", { v: "ghost", id: t.id })}` : "");
-  $("commitBtn").textContent = ns ? `Start session ${nSess + 1}` : running && !t.background_wait ? "Queue" : "Send";
+  $("commitBtn").textContent = ns ? `Start session ${nSess + 1}` : running && !t.background_wait ? (t.permission?.question ? "Answer" : "Queue") : "Send";
   // R56: after an app restart queued messages wait for the user; nothing is delivered on its own
   const q = t.queued_count;
   const bar = $("deliverBar");
@@ -3566,6 +3579,7 @@ function renderHint() {
   const running = t.status === "running" && !t.background_wait;
   const hint = t.routing?.state === "asking" && !running ? "Goes to the operator, which picks the topic. Session 1 then starts with it."
     : t.routing ? "Stored. Delivered with the first instruction when session 1 starts."
+    : running && t.permission?.question ? "Sends as your answer to the question above."
     : running && t.permission ? "Queued until you answer the request above."
     : running ? "Goes to the agent after its current step, or when the turn ends."
     : ns ? `Starts session ${n + 1}. The hand-over carries this TODO's history.`
@@ -3822,7 +3836,7 @@ function termTheme() {
   };
 }
 addEventListener("sb-theme", () => { const th = termTheme(); for (const v of xterms.values()) if (v.term) v.term.options.theme = th; });
-const termLabel = (x, t) => (x.title || `${x.kind === "claude" ? "Claude" : "Shell"} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · topic" : "");
+const termLabel = (x, t) => (x.title || `${x.kind === "shell" ? "Shell" : agentLabel(x.kind)} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · topic" : "");
 const claudeDefault = (t) => {
   const p = S.projects.find((x) => x.id === t.project_id);
   return `I'm working on the Switchboard TODO "${t.title}". What its agent is doing, its branch and PR, the recent chat and its files are in ${artifactPath(t)}terminal/context.md. Read it, then wait for my instructions.`;
@@ -3847,9 +3861,9 @@ async function newTerm(kind, root, message = "") {
   } catch (e) { toast("danger", "No terminal", e.message); render(); }
   need("terms");
 }
-function openClaudeForm(root) {
+function openClaudeForm(root, kind = "claude") {
   const t = cur(), dir = termDirs(t).find((d) => d[0] === root) ?? termDirs(t)[0];
-  S.cform = { todoId: t.id, root: dir[0], cwd: dir[2], message: claudeDefault(t) };
+  S.cform = { todoId: t.id, kind, root: dir[0], cwd: dir[2], message: claudeDefault(t) };
   render();
 }
 async function askCloseTerm(tid) {
@@ -3864,7 +3878,7 @@ async function askCloseTerm(tid) {
   if (!x || x.exited) return close();
   // An idle shell (no program in the foreground) closes without asking.
   if (x.kind === "shell" && !(await call("GET", `/api/todos/${t.id}/terminals/${tid}/busy`).catch(() => ({ busy: true }))).busy) return close();
-  openDialog({ title: "Close terminal", body: `${x.kind === "claude" ? "Claude" : "The shell"} in this tab is still running. Closing the tab ends its process.`, detail: x.cwd,
+  openDialog({ title: "Close terminal", body: `${x.kind === "shell" ? "The shell" : agentLabel(x.kind)} in this tab is still running. Closing the tab ends its process.`, detail: x.cwd,
     buttons: [["Cancel", "ghost"], ["Close terminal", "danger", close]] });
 }
 async function restartTerm(tid) {
@@ -3959,7 +3973,7 @@ function renderTermFoot() {
   const focused = v.host.contains(document.activeElement);
   // v10: above the terminal, which one it is and where the keys go; the frame turns lime while it has them.
   const down = v.down && !v.exit && !v.ended;
-  const kind = x.kind === "claude" ? "claude · separate session" : (S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell");
+  const kind = x.kind !== "shell" ? `${x.kind} · separate session` : (S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell");
   setHtml(foot, `<span class="cwd" title="${esc(kind + " · " + x.cwd)}">${esc(termLabel(x, t) === x.cwd ? x.cwd : termLabel(x, t) + " · " + x.cwd)}</span>
     <span class="right${focused && !down ? " on" : ""}">${down ? "Disconnected · reconnecting…" : focused ? "Typing goes to this terminal" : "Click to type"}</span>`);
 }
@@ -3968,30 +3982,31 @@ function renderTerminals(t, d) {
   if (S.terms[t.id] === undefined) need("terms");
   let sel = S.termSel[t.id];
   if (S.terms[t.id] && !list.some((x) => x.id === sel)) sel = S.termSel[t.id] = list.at(-1)?.id;   // not before the list loads: a reload keeps the pick
-  const dirs = termDirs(t), def = dirs[0];
+  const dirs = termDirs(t), def = dirs[0], codexTerm = agentsFound().some((a) => a.id === "codex" && !a.needsLogin);
   // Design v6: the terminals as a list on the left, Shell and Claude below it; the selected one on the right.
   const items = list.map((x) => `<div class="titem" role="tab" tabindex="0" aria-selected="${!S.cform && x.id === sel}" data-act="term-sel" data-id="${x.id}" data-fk="term:${x.id}" title="${esc(x.cwd)}">
-      ${x.kind === "claude" ? SVG(I.run, 14, "var(--accent-violet)") : SVG(I.run, 14, "var(--text-primary)")}
-      <span class="c"><span class="nm" style="color:${x.kind === "claude" ? "var(--accent-violet)" : "var(--text-primary)"}">${esc(termLabel(x, t))}</span>
-        <span class="sb"${x.busy && !x.exited ? ' style="color:var(--accent-cyan)"' : ""}>${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind === "claude" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "topic folder" : "TODO folder") : basename(x.cwd))}</span></span>
-      <span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="${x.exited ? "Close" : x.kind === "claude" ? "Close · asks first, Claude runs in it" : x.busy ? "Close · asks first, a program runs in it" : "Close"}">${SVG(CLOSE, 12)}</span></div>`).join("");
+      ${x.kind !== "shell" ? SVG(I.run, 14, "var(--accent-violet)") : SVG(I.run, 14, "var(--text-primary)")}
+      <span class="c"><span class="nm" style="color:${x.kind !== "shell" ? "var(--accent-violet)" : "var(--text-primary)"}">${esc(termLabel(x, t))}</span>
+        <span class="sb"${x.busy && !x.exited ? ' style="color:var(--accent-cyan)"' : ""}>${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind !== "shell" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "topic folder" : "TODO folder") : basename(x.cwd))}</span></span>
+      <span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="${x.exited ? "Close" : x.kind !== "shell" ? `Close · asks first, ${agentLabel(x.kind)} runs in it` : x.busy ? "Close · asks first, a program runs in it" : "Close"}">${SVG(CLOSE, 12)}</span></div>`).join("");
   const add = S.termsUnsupported ? "" : dirs.map(([root, head]) => `<div class="term-add">${dirs.length > 1 ? `<span class="ml h ellipsis" title="${esc(head)}">${esc(root === "worktree" ? "Worktree" : "Project folder")}</span>` : ""}
       <span title="A shell in ${esc(head)}: git, docker, tests, a dev server" style="display:flex">${btn("Shell", "term-new", { id: "shell:" + root })}</span>
-      <span title="Claude in ${esc(head)}, starting with this TODO's context" style="display:flex">${btn("Claude", "term-new", { id: "claude:" + root })}</span></div>`).join("");
+      <span title="Claude in ${esc(head)}, starting with this TODO's context" style="display:flex">${btn("Claude", "term-new", { id: "claude:" + root })}</span>${codexTerm ? `
+      <span title="Codex in ${esc(head)}, starting with this TODO's context" style="display:flex">${btn("Codex", "term-new", { id: "codex:" + root })}</span>` : ""}</div>`).join("");
   setHtml($("termStrip"), `<div role="tablist" aria-label="Terminals" style="display:contents">${items}</div>${add}`);
   const panel = $("termPanel");
   if (S.cform?.todoId === t.id) {
-    const f = S.cform;
+    const f = S.cform, name = agentLabel(f.kind);
     setHtml(panel, `<div class="cform">
-      <div class="tt"><span class="t">New Claude terminal</span><span class="ml">Separate session · your settings · app tools, no hooks</span></div>
+      <div class="tt"><span class="t">New ${esc(name)} terminal</span><span class="ml">Separate session · your settings · app tools${f.kind === "claude" ? ", no hooks" : ""}</span></div>
       <div style="display:flex; flex-direction:column; gap:4px"><span class="ml">Folder</span><span class="mono" style="font-size:13px">${esc(f.cwd)}</span></div>
-      <div class="mb-field"><label class="mb-field__label" for="cfMsg">First message</label><textarea id="cfMsg" class="mb-textarea" rows="3">${esc(f.message)}</textarea><span class="mb-field__hint">Add your own ask, or keep it and give instructions once Claude has read the context.</span></div>
+      <div class="mb-field"><label class="mb-field__label" for="cfMsg">First message</label><textarea id="cfMsg" class="mb-textarea" rows="3">${esc(f.message)}</textarea><span class="mb-field__hint">Add your own ask, or keep it and give instructions once ${esc(name)} has read the context.</span></div>
       <div style="display:flex; flex-direction:column; gap:4px"><span class="ml">Runs</span><pre>cd ${esc(f.cwd)}
-claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append-system-prompt-file terminal/contract.md "&lt;first message&gt;"</pre></div>
+${f.kind === "codex" ? `codex --add-dir ${esc(artifactPath(t))} -c developer_instructions=&lt;contract&gt; -c mcp_servers.app=&lt;app tools&gt; "&lt;first message&gt;"` : `claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append-system-prompt-file terminal/contract.md "&lt;first message&gt;"`}</pre></div>
       <span class="small" style="line-height:1.5">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Only what it posts with the app's tools shows in this chat, marked as coming from the terminal.</span>
       <div class="acts">${btn("Cancel", "cform-cancel", { v: "ghost" })}<span class="kbd">${keys("⌘↵")}</span>${btn("Open", "cform-start", { v: "primary" })}</div></div>`);
   } else if (!list.length) {
-    setHtml(panel, `<div class="term-empty">${S.termsUnsupported ? esc(S.termsUnsupported) : `No terminals for this TODO. Open a shell or a Claude terminal. They start in ${esc(def[2])}; the agent isn't told about them.`}</div>`);
+    setHtml(panel, `<div class="term-empty">${S.termsUnsupported ? esc(S.termsUnsupported) : `No terminals for this TODO. Open a shell or an agent terminal. They start in ${esc(def[2])}; the agent isn't told about them.`}</div>`);
   } else setHtml(panel, "");
   // xterm hosts stay in the page; only the selected one shows
   const hosts = $("termHosts");
@@ -4008,8 +4023,8 @@ claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append
   exitEl.hidden = !!S.cform || !(ended || exited);
   if (!exitEl.hidden) {
     const code = v.exit ?? x;
-    setHtml(exitEl, `<div class="term-exit"><span>${ended ? "Ended: the app restarted." : code.signal ? `Process ended by signal ${esc(code.signal)}.` : `Process exited with code ${code.code}.`}${x.kind === "claude" ? " Its transcript stays; claude --resume finds it." : ""}</span>
-      ${ended ? "" : `<span class="right">${x.kind === "claude" ? btn("Shell here", "term-new", { v: "ghost", id: "shell:" + x.root }) : ""}${btn("Restart", "term-restart", { id: x.id })}</span>`}</div>`);
+    setHtml(exitEl, `<div class="term-exit"><span>${ended ? "Ended: the app restarted." : code.signal ? `Process ended by signal ${esc(code.signal)}.` : `Process exited with code ${code.code}.`}${x.kind === "claude" ? " Its transcript stays; claude --resume finds it." : x.kind === "codex" ? " Its session stays; codex resume finds it." : ""}</span>
+      ${ended ? "" : `<span class="right">${x.kind !== "shell" ? btn("Shell here", "term-new", { v: "ghost", id: "shell:" + x.root }) : ""}${btn("Restart", "term-restart", { id: x.id })}</span>`}</div>`);
   }
   renderTermFoot();
 }
@@ -4251,10 +4266,10 @@ function renderAgents() {
   // design v6: one row per agent, its state, how it runs, and its actions on the right
   setHtml($("agentList"), agentsAll().map((a) => {
     const info = S.agentInfo[a.id], busy = S.loggingIn === a.id;
-    const state = !a.found ? badge("Not found", "red", true) : badge("Found", "success", true);
-    const note = a.id === "claude" ? "Uses your Claude Code login, settings, skills and hooks." : !a.found ? a.hint || "Not found on your login-shell PATH." : info?.error ?? "";
+    const state = !a.found ? badge("Not found", "red", true) : a.needsLogin ? badge("Needs login", "amber", true) : badge("Found", "success", true);
+    const note = a.id === "claude" ? "Uses your Claude Code login, settings, skills and hooks." : a.id === "codex" && a.found && !a.needsLogin ? "Uses your Codex login and ~/.codex config: skills, plugins, MCP servers and hooks." : !a.found ? a.hint || "Not found on your login-shell PATH." : info?.error ?? "";
     const login = a.found && a.id !== "claude" && info?.authMethods?.length
-      ? info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex">${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { v: "primary", id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("") : "";
+      ? info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex; gap:6px">${m.key ? `<input type="password" class="mb-input" id="apikey-${esc(a.id)}-${esc(m.id)}" placeholder="API key" aria-label="${esc(a.name)} API key" autocomplete="off" style="width:180px; height:var(--control-sm); font-size:12px">` : ""}${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { v: "primary", id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("") : "";
     return `<div class="ag-row"><div class="l">
         <div class="line"><span class="nm">${esc(a.name)}</span><span class="ml">${a.builtin ? "Built-in" : "Custom"}</span>${state}</div>
         <span class="cmd">${esc(a.command)}<span style="color:var(--text-muted)">${/bundled/.test(a.command) ? "" : a.builtin ? " · bundled" : " · custom"}${info?.version ? ` · ${esc(info.name ?? "")} ${esc(info.version)}` : ""}</span></span>
@@ -4265,11 +4280,13 @@ function renderAgents() {
 }
 async function agentLogin(key) {
   const [id, method] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+  const keyInput = document.getElementById(`apikey-${id}-${method}`), apiKey = keyInput?.value.trim() || undefined;
+  if (keyInput && !apiKey) return toast("danger", "No API key", `Paste the key into the field next to ${agentLabel(id)}'s button first.`);
   S.loggingIn = id;
   render();
   toast("info", `Logging in to ${agentLabel(id)}`, "Finish the login where the agent opened it, usually your browser.");
   try {
-    await call("POST", `/api/agents/${id}/login`, { methodId: method });
+    await call("POST", `/api/agents/${id}/login`, { methodId: method, apiKey });
     toast("success", `Logged in to ${agentLabel(id)}`, "Start or message the TODO again.");
   } catch (e) { toast("danger", "Not logged in", e.message); }
   S.loggingIn = null;
@@ -4312,7 +4329,7 @@ function renderProjects() {
   pPath.disabled = !!p?.locked;   // R44
   $("pPathHint").textContent = p?.locked
     ? "Read-only: a TODO in this topic has started. Claude Code keeps session transcripts under this folder, so a new path would make those TODOs impossible to resume."
-    : "Agents launch here, so CLAUDE.md, CLAUDE.local.md and .claude/ apply. Any folder; a git repository adds worktrees, branches and pull requests.";
+    : "Agents launch here, so the folder's agent files apply: CLAUDE.md, CLAUDE.local.md and .claude/ for Claude, AGENTS.md and .codex/ for Codex. Any folder; a git repository adds worktrees, branches and pull requests.";
   $("projErr").textContent = S.projErr;
   $("projSave").textContent = p ? "Save changes" : "Create topic";
   $("projSave").disabled = !projDirty() || !pName.value.trim() || !pPath.value.trim();
@@ -4401,7 +4418,15 @@ const ACTIONS = {
   },
   "ev-toggle": (id) => { const k = Number(id); S.openEv.has(k) ? S.openEv.delete(k) : S.openEv.add(k); render(); },
   "sess-toggle": (id) => { S.openSess.has(id) ? S.openSess.delete(id) : S.openSess.add(id); render(); },
-  copy: (id) => { S.pop = null; copyText(id, "Copied", id); render(); },
+  copy: (id) => {
+    S.pop = null; copyText(id, "Copied", id); render();
+    // Codex opens a session in one process at a time: the TODO's idle agent process lets go of it (releaseAgent).
+    // The live session's resume command as the server gave it (agents.ts resumeHint).
+    const t = cur(), live = t && S.detail?.todo.id === t.id ? S.detail.sessions.at(-1) : null;
+    if (t && live?.agent === "codex" && live.session_id === t.session_id && id === live.resume)
+      call("POST", `/api/todos/${t.id}/release`).then((r) => r.release === "busy" && toast("muted", "Session still open here",
+        "Codex works on this TODO, or runs a background command. Stop it or let it finish, then copy the command again."), () => {});
+  },
   "open-ns": (id) => { S.nsMode[Number(id)] = true; S.tab = "chat"; S.pop = null; render(); composer.focus(); },
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),
@@ -4436,7 +4461,7 @@ const ACTIONS = {
     const at = id.indexOf("|"), tid = Number(id.slice(0, at)), oid = id.slice(at + 1);
     const o = S.todos.find((x) => x.id === tid)?.permission?.options.find((x) => x.optionId === oid);
     S.pop = null;
-    act(call("POST", `/api/todos/${tid}/permission`, { optionId: oid }).then(() => o && (o.kind.startsWith("allow") ? toast("success", "Allowed", "· " + o.name) : toast("muted", "Rejected", "· the agent was told"))), "Not answered");
+    act(call("POST", `/api/todos/${tid}/permission`, { optionId: oid }).then(() => o && (o.kind.startsWith("allow") ? toast("success", o.optionId.startsWith("=") ? "Answered" : "Allowed", "· " + o.name) : toast("muted", o.optionId === "__skip" ? "Skipped" : "Rejected", "· the agent was told"))), "Not answered");
     if (o && !o.kind.startsWith("allow") && /tell/i.test(o.name)) { if (S.sel !== tid || S.mode !== "focus") select(tid); setTimeout(() => composer.focus(), 0); }
   },
   noop: () => {},   // a click inside the permission card must not open the TODO
@@ -4465,12 +4490,12 @@ const ACTIONS = {
   "archive-file": archiveFile,
   "work-files": () => { S.workOpen[S.sel] = !S.workOpen[S.sel]; render(); },
   "md-tool": (id) => S.cm?.handle?.format(id),
-  "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
+  "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" || kind === "codex" ? openClaudeForm(root, kind) : newTerm("shell", root); },
   "term-sel": (id) => { const t = cur(); pickTerm(t.id, Number(id)); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
   "term-close": (id) => askCloseTerm(Number(id)),
   "term-restart": (id) => restartTerm(Number(id)),
   "cform-cancel": () => { S.cform = null; render(); },
-  "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm("claude", f.root, msg); },
+  "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm(f.kind, f.root, msg); },
   "md-view": (id) => { S.mdView = id; render(); },
   "diff-view": (id) => { S.diffView = id; try { localStorage.setItem("switchboard-diff-view", id); } catch (e) {} render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
@@ -5019,7 +5044,7 @@ function drawCmds() {
     const g = c.name.includes(":") ? "Plugins" : "Commands";
     if (g !== grp) { grp = g; body += `<div class="ml grp">${g}</div>`; }
     const pre = q && c.name.toLowerCase().startsWith(q.toLowerCase()) ? c.name.slice(0, q.length) : "";
-    body += `<div class="c" role="option" id="cmd-${i}" aria-selected="${i === CMDS.sel}" data-cmd="${i}"><span class="nm"><b>/${esc(pre)}</b>${esc(c.name.slice(pre.length))}</span><span class="hint">${esc(c.hint ?? "")}</span><span class="ds" title="${esc(c.description)}">${esc(c.description)}</span><span class="ent">${i === CMDS.sel ? "↵" : ""}</span></div>`;
+    body += `<div class="c" role="option" id="cmd-${i}" aria-selected="${i === CMDS.sel}" data-cmd="${i}"><span class="nm"><b>${c.name.startsWith("$") ? "" : "/"}${esc(pre)}</b>${esc(c.name.slice(pre.length))}</span><span class="hint">${esc(c.hint ?? "")}</span><span class="ds" title="${esc(c.description)}">${esc(c.description)}</span><span class="ent">${i === CMDS.sel ? "↵" : ""}</span></div>`;
   });
   if (!CMDS.items.length) body = CMDS.total ? `<div style="padding:16px 12px; display:flex; flex-direction:column; gap:4px"><span style="font-size:13px">No command matches /${esc(q)}</span><span class="small">The list comes from the agent and updates while the session runs.</span></div>`
     : '<div style="padding:16px 12px; display:flex; flex-direction:column; gap:4px"><span style="font-size:13px">No commands yet</span><span class="small">The agent sends its list once the session starts.</span></div>';
@@ -5037,7 +5062,7 @@ function closeCmds() {
 function pickCmd(i) {
   const c = CMDS.items[i];
   if (!c) return;
-  composer.value = `/${c.name} `;
+  composer.value = c.name.startsWith("$") ? `${c.name} ` : `/${c.name} `;   // a Codex skill is mentioned as $name, not run as /name
   closeCmds();
   saveDraftSoon(draftKey(), composer.value);
   renderHint();
@@ -5067,7 +5092,7 @@ acceptFiles(newText.closest(".new-dlg"), () => "new");
 addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
-newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; });
+newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; try { localStorage.setItem("switchboard-new-agent", newAgent.value); } catch (e) {} });
 [pName, pPath, pPrompt, pProfile, pMode].forEach((el) => el.addEventListener("input", renderProjects));
 pMode.addEventListener("change", renderProjects);
 pAgent.addEventListener("change", renderProjects);

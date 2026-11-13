@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue, type FormQuestion, answerForm, codexError, attachedImages,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -40,13 +40,16 @@ test("deliveryPrompt", () => {
   expect(deliveryPrompt(null, ["fix it", " also tests "])).toBe("fix it\n\nalso tests");
   expect(deliveryPrompt("/w/feat", ["go"])).toBe("Your worktree: /w/feat. Work there.\n\ngo");
   expect(deliveryPrompt(null, [])).toBe("continue");
+  expect(deliveryPrompt("/w/feat", ["/plan"])).toBe("/plan");
+  expect(deliveryPrompt("/w/feat", ["/review check the auth"])).toBe("/review check the auth");
+  expect(deliveryPrompt("/w/feat", ["/w/feat/a.ts looks wrong"])).toBe("Your worktree: /w/feat. Work there.\n\n/w/feat/a.ts looks wrong");
   expect(deliveryPrompt("/w/feat", ["", " "])).toBe("Your worktree: /w/feat. Work there.\n\ncontinue");
 });
 
 test("withAttachments and safeFileName", () => {
   expect(withAttachments("fix it", [])).toBe("fix it");
-  expect(withAttachments(" cut off ", ["/u/1-1-a.png", "/u/1-2-b.pdf"])).toBe("cut off\n\nAttached files (open with Read):\n/u/1-1-a.png\n/u/1-2-b.pdf");
-  expect(withAttachments("", ["/u/1-1-a.png"])).toBe("Attached files (open with Read):\n/u/1-1-a.png");
+  expect(withAttachments(" cut off ", ["/u/1-1-a.png", "/u/1-2-b.pdf"])).toBe("cut off\n\nAttached files (open them to read):\n/u/1-1-a.png\n/u/1-2-b.pdf");
+  expect(withAttachments("", ["/u/1-1-a.png"])).toBe("Attached files (open them to read):\n/u/1-1-a.png");
   expect(safeFileName("../My Shot (1).png")).toBe("My-Shot-1-.png");
   expect(safeFileName("..")).toBe("file");
   expect(safeFileName(".env")).toBe("env");
@@ -160,7 +163,7 @@ test("handOver leaves out lines without a value", () => {
     "Your worktree: /w/ai-1234. Work there.",
     "Pull request: #512.",
     "Last message of session 2: Server done, client stubs left.",
-    "Files from earlier sessions (open with Read what you need):",
+    "Files from earlier sessions (open what you need):",
     "/d/plan.md (session 1)",
     "/d/notes.md (added outside a session)",
     "/d/notes-2.md (the user's notes)",
@@ -295,6 +298,17 @@ test("toolMeta merges a tool call's updates; planCount", () => {
   expect(m).toMatchObject({ name: "Write", title: "Write b.txt", kind: "edit", status: "completed", input: { file_path: "/r/b.txt" }, output: "done",
     locations: [{ path: "/r/b.txt" }], diffs: [{ path: "/r/b.txt", oldText: null, newText: "x" }] });
   expect(toolMeta(null, { toolCallId: "t2", rawOutput: "x".repeat(9000), status: "completed" }).output.length).toBeLessThan(8100);
+  // Codex: a command's output in chunks, its exit code at the end; an MCP tool's result and error in rawOutput.
+  const term = (data: string) => ({ toolCallId: "c1", _meta: { terminal_output_delta: { data, terminal_id: "c1" } } });
+  const exec = [{ toolCallId: "c1", name: "exec_command", kind: "execute", status: "in_progress", rawInput: { command: "git pull" } },
+    term("There is no tracking information\n"), term("for the current branch.\n"),
+    { toolCallId: "c1", status: "failed", _meta: { terminal_exit: { exit_code: 1, signal: null, terminal_id: "c1" } } }];
+  expect(exec.reduce<any>((m, u) => toolMeta(m, u), null).output).toBe("There is no tracking information\nfor the current branch.\nexit code 1");
+  expect([term("y".repeat(7000)), term("y".repeat(7000)), term("z")].reduce<any>((m, u) => toolMeta(m, u), null).output).toMatch(/^y{8000}\n… cut/);
+  expect(toolMeta(null, { toolCallId: "c2", status: "completed", rawOutput: { exit_code: 0 } }).output).toBe("");
+  const mcp = (rawOutput: any) => toolMeta(null, { toolCallId: "m1", title: "mcp.app.post_message", status: "completed", rawOutput }).output;
+  expect(mcp({ result: { content: [{ type: "text", text: "posted" }] }, error: null })).toBe("posted");
+  expect(mcp({ result: null, error: { message: "unknown TODO" } })).toBe("unknown TODO");
   expect(planCount(null)).toBe(null);
   expect(planCount([{ content: "a", status: "completed" }, { content: "b", status: "pending" }])).toBe("1/2");
 });
@@ -706,4 +720,100 @@ test("Throttle.forgive takes back a try counted ahead", () => {
 test("markFromTodo: marks only messages from another TODO's agent", () => {
   expect(markFromTodo("hi", "T-12")).toBe("[Message from the agent of T-12, not typed by the user]\nhi");
   for (const via of [null, "schedule", "run now", "Claude terminal", "T-12x"]) expect(markFromTodo("hi", via)).toBe("hi");
+});
+
+test("guardianReview: Codex's auto review, denied only when the command did not run", () => {
+  const ev = (status: string, rationale: string | null = null) =>
+    ({ targetItemId: "exec-1", action: { type: "command", command: "git push --force" }, review: { status, rationale } });
+  const id = "guardian_assessment:r1";
+  expect(guardianReview({ toolCallId: "exec-1", status: "failed" })).toBeNull();
+  expect(guardianReview({ toolCallId: id, status: "in_progress", rawInput: ev("inProgress") })?.denied).toBe(false);
+  expect(guardianReview({ toolCallId: id, status: "completed", rawOutput: ev("approved") })?.denied).toBe(false);
+  expect(guardianReview({ toolCallId: id, status: "failed", rawOutput: ev("denied", "not asked for") }))
+    .toEqual({ denied: true, name: "exec", action: { command: "git push --force" }, reason: "not asked for" });
+  // An MCP call has no command: the message falls back to the rationale.
+  expect(guardianReview({ toolCallId: id, status: "failed", rawOutput: { action: { type: "mcpToolCall", server: "app", toolName: "post_message" }, review: { status: "denied", rationale: "r" } } }))
+    .toEqual({ denied: true, name: "MCP post_message", action: {}, reason: "r" });
+  expect(guardianReview({ toolCallId: id, status: "failed", rawOutput: ev("timedOut") })?.denied).toBe(true);
+  expect(guardianReview({ toolCallId: id, status: "failed", rawOutput: ev("aborted") })?.denied).toBe(false);
+  // A review that completes without a start sends the whole event as rawInput.
+  expect(guardianReview({ toolCallId: id, status: "failed", rawInput: ev("denied") })?.denied).toBe(true);
+});
+
+test("matchAgent: an agent named by id or name, any case, among the found ones", () => {
+  const found = [{ id: "claude", name: "Claude" }, { id: "codex", name: "Codex" }, { id: "open-code", name: "OpenCode" }];
+  expect(matchAgent(found, "CODEX")).toEqual({ id: "codex", names: "Claude, Codex, OpenCode" });
+  expect(matchAgent(found, " claude ").id).toBe("claude");
+  expect(matchAgent(found, "opencode").id).toBe("open-code");   // by name
+  expect(matchAgent(found, "open-code").id).toBe("open-code");  // by id
+  expect(matchAgent(found, "gemini").id).toBeNull();
+  expect(matchAgent([], "codex")).toEqual({ id: null, names: "" });
+});
+
+test("codexConfigLogin: a Codex login outside auth.json, from config.toml's top-level keys", () => {
+  expect(codexConfigLogin("")).toBe(false);
+  expect(codexConfigLogin('model = "gpt-6"\nsandbox_mode = "workspace-write"')).toBe(false);
+  expect(codexConfigLogin('cli_auth_credentials_store = "keyring"')).toBe(true);
+  expect(codexConfigLogin("cli_auth_credentials_store = 'auto'")).toBe(true);
+  expect(codexConfigLogin('cli_auth_credentials_store = "file"')).toBe(false);
+  expect(codexConfigLogin('model_provider = "bedrock"')).toBe(true);
+  expect(codexConfigLogin('model_provider = "openai"')).toBe(false);   // OpenAI still needs a login
+  expect(codexConfigLogin('model = "x"\n\n[profiles.local]\nmodel_provider = "ollama"')).toBe(false);   // not the active config
+});
+
+test("formQuestions and formValue: an agent's form as questions, answers in the form's types", () => {
+  // codex-acp buildUserInputSchema: a question with choices and Codex's note field, one without choices
+  const qs = formQuestions({ type: "object", required: ["a", "b"], properties: {
+    a: { type: "string", title: "Which database?", description: "Storage", oneOf: [{ const: "SQLite", title: "SQLite" }, { const: "None of the above", title: "None of the above" }] },
+    a_note: { type: "string", title: "Additional answer or note", _meta: { codex: { questionId: "a", role: "user_note" } } },
+    b: { type: "string", title: "Name?" },
+    c: { type: "boolean", title: "Sure?" },
+    d: { type: "integer", title: "How many?" },
+    e: { type: "string", enum: ["x", "y"] },
+  } });
+  expect(qs.map((q) => [q.id, q.choices.map((c) => c[0])])).toEqual([["a", ["SQLite", "None of the above"]], ["b", []], ["c", ["true", "false"]], ["d", []], ["e", ["x", "y"]]]);
+  expect(qs[0]).toMatchObject({ title: "Which database?", description: "Storage" });
+  const [, b, c, d, e] = qs as [FormQuestion, FormQuestion, FormQuestion, FormQuestion, FormQuestion];
+  expect(e.title).toBe("e");
+  expect(formValue(c, "true")).toBe(true);
+  expect(formValue(c, "No")).toBe(false);
+  expect(formValue(c, "maybe")).toBe("maybe");
+  expect(formValue(d, "3")).toBe(3);
+  expect(formValue(d, "a few")).toBe("a few");
+  expect(formValue(b, "42")).toBe("42");
+  expect(formQuestions(null)).toEqual([]);
+});
+
+test("codexError: Codex's failed turn ends with its error as text", () => {
+  expect(codexError("Looking at the repo.\n\nstream disconnected before completion: Incomplete response returned, reason: max_output_tokens\n\n"))
+    .toBe("stream disconnected before completion: Incomplete response returned, reason: max_output_tokens");
+  expect(codexError("Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying."))
+    .toMatch(/^Codex ran out of room/);
+  expect(codexError("exceeded retry limit, last status: 429 Too Many Requests")).toBe("exceeded retry limit, last status: 429 Too Many Requests");
+  expect(codexError("Done. The stream disconnected before completion once, I retried.")).toBe(null);
+  expect(codexError("All tests pass.")).toBe(null);
+  expect(codexError("Added detection for 'ran out of room in the model's context window'.")).toBe(null);
+  expect(cutReason("stream disconnected before completion: x")).toBe("the connection dropped");
+  expect(cutReason("exceeded retry limit, last status: 502 Bad Gateway")).toBe("an API server error");
+  expect(cutReason("exceeded retry limit, last status: 429 Too Many Requests")).toBe("a rate limit");
+  expect(cutReason("unexpected status 503 Service Unavailable")).toBe("an API server error");
+  expect(cutReason("Codex ran out of room in the model's context window.")).toBe(null);
+});
+
+test("attachedImages: the images among a prompt's attachment lists", () => {
+  const text = [withAttachments("look", ["/u/1-1-a.png", "/u/1-2-b.pdf"]), withAttachments("and", ["/u/2-1-c.JPG"])].join("\n\n");
+  expect(attachedImages(text)).toEqual(["/u/1-1-a.png", "/u/2-1-c.JPG"]);
+  expect(attachedImages("no files /x/a.png")).toEqual([]);
+});
+
+test("answerForm: a pick, a chat answer and Skip; a cancel ends the form", async () => {
+  const qs = formQuestions({ properties: { db: { type: "string", title: "Which database?", oneOf: [{ const: "SQLite" }, { const: "Postgres" }] },
+    name: { type: "string", title: "Table name?" }, sure: { type: "boolean", title: "Sure?" } } });
+  const answers: Record<string, any> = { db: { value: "Postgres" }, name: { text: "cache_entries" }, sure: "skip" };
+  expect(await answerForm(qs, async (q) => answers[q.id])).toEqual({ action: "accept", content: { db: "Postgres", name: "cache_entries" } });
+  expect(await answerForm(qs, async () => "skip")).toEqual({ action: "decline" });
+  const asked: string[] = [];
+  expect(await answerForm(qs, async (q) => { asked.push(q.id); return q.id === "name" ? null : { value: "x" }; })).toEqual({ action: "cancel" });
+  expect(asked).toEqual(["db", "name"]);
+  expect(await answerForm(qs, async (q) => (q.id === "sure" ? { text: "yes" } : "skip"))).toEqual({ action: "accept", content: { sure: true } });
 });
