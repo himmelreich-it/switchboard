@@ -88,9 +88,8 @@ export function designStep(todoId: number) {
   const of = reviewerOf(t);
   if (of) return reviewed(of, t);
   const d = authorDesign(t);
-  if (!d || d.phase !== "design") return;
-  if (d.request) return sendForReview(t, d);
-  if (d.waiting === "author") nudge(t, d, todoId, "The design review waits for you: call request_review with your design file, then end your turn.");
+  if (d?.request) return sendForReview(t, d);   // also after agreed or stuck: one more round
+  if (d?.phase === "design" && d.waiting === "author") nudge(t, d, todoId, "The design review waits for you: call request_review with your design file, then end your turn.");
 }
 
 // A turn of the side the loop waits for ended without its tool call: the app asks once, then raises attention once.

@@ -1430,6 +1430,15 @@ pre.cmd > .dollar { color: var(--accent-lime); }
             </div>
             <span id="pConfigHint" class="mb-field__hint"></span>
           </div>
+          <div id="pDesign" class="scard">
+            <div class="tt"><span class="t">Design review</span><span>For a TODO started with "Design review first": the author writes a design, the reviewer reviews it in a TODO of its own, and the app passes it back and forth until they agree.</span></div>
+            <div class="fgrid">
+              <div class="mb-field"><label class="mb-field__label" for="pdAuthor">Author</label><span class="mb-select-wrap"><select id="pdAuthor" class="mb-select"></select></span><span class="mb-field__hint">Unless you picked an agent for the TODO.</span></div>
+              <div class="mb-field"><label class="mb-field__label" for="pdReviewer">Reviewer</label><span class="mb-select-wrap"><select id="pdReviewer" class="mb-select"></select></span></div>
+              <div class="mb-field"><label class="mb-field__label" for="pdMax">Max rounds</label><input id="pdMax" class="mb-input" type="number" min="1" max="10" step="1"><span class="mb-field__hint">Then the TODO waits for you with the open findings.</span></div>
+              <div class="mb-field"><label class="mb-field__label" for="pdAfter">After agreement</label><span class="mb-select-wrap"><select id="pdAfter" class="mb-select"><option value="wait">Wait for me</option><option value="implement">Start implementing</option></select></span></div>
+            </div>
+          </div>
           <span id="projErr" class="mb-field__error" role="alert"></span>
           <div style="display:flex; justify-content:flex-end;"><button type="submit" id="projSave" class="mb-btn mb-btn--primary mb-btn--md" disabled>Save changes</button></div>
           <div class="scard">
@@ -1651,6 +1660,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
     <div id="newRepeat"></div>
     <div class="foot">
       <div id="newAgentField" class="mb-field" style="width:180px" hidden><label class="mb-field__label" for="newAgent">Agent</label><span class="mb-select-wrap"><select id="newAgent" class="mb-select"></select></span></div>
+      <label id="newDesignField" class="mb-switch" style="margin-bottom:8px" hidden title="The agent writes a design first; another agent reviews it until they agree. The topic's settings pick the reviewer."><input type="checkbox" id="newDesign"><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Design review first</span></label>
       <button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="pick-files" data-id="new" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)" style="margin-bottom:4px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
       <span class="right"><span class="kbd">⌘⇧↵</span><button type="button" id="addStartBtn" class="mb-btn mb-btn--secondary mb-btn--md" data-act="add-start" disabled>Add &amp; start</button>
         <span class="kbd" style="margin-left:4px">⌘↵</span><button type="button" id="addBtn" class="mb-btn mb-btn--primary mb-btn--md" data-act="add" disabled>Add</button></span>
@@ -1933,7 +1943,8 @@ S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // te
 S.termFocus = false;   // the Terminal tab was just opened: the selected terminal takes the keys once it has loaded
 try { S.termSel = JSON.parse(localStorage.getItem("switchboard-term-sel") || "{}"); } catch (e) {}   // TODO id -> selected terminal id; terminals outlive a reload
 try { S.filter = localStorage.getItem("switchboard-project-filter") ?? "all"; } catch (e) {}
-try { S.newAgent = localStorage.getItem("switchboard-new-agent"); } catch (e) {}   // New TODO preselects the last agent picked there
+try { S.newAgent = localStorage.getItem("switchboard-new-agent"); } catch (e) {}
+try { $("newDesign").checked = localStorage.getItem("switchboard-new-design") === "1"; } catch (e) {}   // item 151: kept like the agent pick   // New TODO preselects the last agent picked there
 const drafts = {};  // 'todo:<id>' | 'operator' -> text in this browser, seeded once from the server
 const edits = {};   // file id -> {text, mtime}: unsaved file edits survive closing the file and the TODO starting to run (R25)
 // ponytail: unsent attachments live only in this tab, so a reload drops them and Restore never sends them.
@@ -2305,7 +2316,8 @@ async function addTodo(start = false) {
   try {
     const agent = agentsFound().length > 1 ? newAgent.value : null;   // "": the topic's default, once routing picks it
     const schedule = S.rep?.on ? schedOut(S.rep) : null;   // item 144: Repeat
-    const t = await call("POST", "/api/todos", { instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}), ...(schedule ? { schedule } : {}) });
+    const design = agentsFound().length > 1 && $("newDesign").checked;   // item 151
+    const t = await call("POST", "/api/todos", { instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}), ...(schedule ? { schedule } : {}), ...(design ? { design_review: true } : {}) });
     newText.value = "";
     S.newOpen = false;
     S.rep = null;
@@ -2572,8 +2584,11 @@ function projDirty() {
   if (!p) return !!(pName.value || pPath.value || pPrompt.value || $("pIndependent").checked);
   harvestDefaults();
   return pName.value !== p.name || pPath.value !== p.local_path || pPrompt.value !== p.agent_prompt || pProfile.value !== (p.profile ?? "") || (pAgent.value || "claude") !== (p.default_agent ?? "claude")
-    || $("pIndependent").checked !== !!p.independent || normDefaults(S.projDefs) !== normDefaults(p.defaults);
+    || $("pIndependent").checked !== !!p.independent || normDefaults(S.projDefs) !== normDefaults(p.defaults) || designDirty(p);
 }
+// Item 151: the topic's design review settings as the form holds them; empty values are the defaults.
+const designForm = () => ({ author: $("pdAuthor").value, reviewer: $("pdReviewer").value, max: Number($("pdMax").value) || 3, after: $("pdAfter").value });
+const designDirty = (p) => { const f = designForm(), d = p?.design ?? {}; return f.author !== (d.author ?? "") || f.reviewer !== (d.reviewer ?? "") || f.max !== (d.max ?? 3) || f.after !== (d.after ?? "wait"); };
 function fillProjForm() {
   const p = selProject();
   pName.value = p?.name ?? "";
@@ -2588,6 +2603,14 @@ function fillProjForm() {
   pAgent.innerHTML = pDefAgent.innerHTML = opts;
   pAgent.value = p?.default_agent ?? "claude";
   S.projDefAgent = pDefAgent.value = pAgent.value;
+  $("pDesign").hidden = found.length < 2;   // a review needs a second agent
+  $("pdAuthor").innerHTML = '<option value="">Topic\'s default agent</option>' + opts;
+  $("pdReviewer").innerHTML = '<option value="">Another agent than the author</option>' + opts;
+  const d = p?.design ?? {};
+  $("pdAuthor").value = found.some((a) => a.id === d.author) ? d.author : "";
+  $("pdReviewer").value = found.some((a) => a.id === d.reviewer) ? d.reviewer : "";
+  $("pdMax").value = d.max ?? 3;
+  $("pdAfter").value = d.after ?? "wait";
   fillDefaults();
   S.projErr = "";
 }
@@ -2619,7 +2642,7 @@ $("projForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const p = selProject();
   harvestDefaults();
-  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, default_agent: pAgent.value || "claude", independent: $("pIndependent").checked, defaults: S.projDefs, ...(p ? { profile: pProfile.value } : {}) };
+  const body = { name: pName.value.trim(), local_path: pPath.value.trim(), agent_prompt: pPrompt.value, default_agent: pAgent.value || "claude", independent: $("pIndependent").checked, defaults: S.projDefs, design: designForm(), ...(p ? { profile: pProfile.value } : {}) };
   try {
     const saved = await call(p ? "PUT" : "POST", p ? `/api/projects/${p.id}` : "/api/projects", body);
     S.projects = [...S.projects.filter((x) => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name));
@@ -2687,9 +2710,9 @@ function render() {
 function renderHeader() {
   const lv = live();
   const n = lv.filter((t) => laneOf(t) === "waiting").length;   // R41: only "waiting on you" counts, not unread
-  const ideas = lv.filter(isIdea).length;   // all projects, whatever the filter (item 63)
+  const shown = lv.filter((t) => !hiddenReviewer(t)), ideas = shown.filter(isIdea).length;   // all projects, whatever the filter (item 63)
   $("cBacklog").textContent = ideas;
-  $("cBoard").textContent = lv.length - ideas;
+  $("cBoard").textContent = shown.length - ideas;
   $("cRunning").textContent = lv.reduce((n, t) => n + (t.background ?? 0), 0);
   $("waitTodos").hidden = !n;
   $("waitTodos").title = `${n} waiting on you`;
@@ -2725,6 +2748,16 @@ function prChip(t) {
   return { tone, html: `<a class="tchip ${tone}" href="${esc(pr.url)}" target="_blank" rel="noopener" data-act="link" title="${esc(prFactsOf(pr, true).map((f) => f.text).join("\n"))}${t.gh_error ? "\nas of " + esc(ago(t.pr_checked_at)) : ""}">${esc(text)}</a>` };
 }
 const branchHtml = (t) => (t.branch ? `<span class="branch">${SVG(BRANCH, 12)}<span class="ellipsis">${esc(t.branch)}</span></span>` : "");
+// Item 151: design review on the author's card, row and header: its phase and round.
+const designBadge = (t) => {
+  const d = t.design;
+  if (!d || d.of) return "";
+  if (d.phase === "agreed") return badge("Design agreed", "success");
+  if (d.phase === "stuck") return badge(`Design stuck · round ${d.round}/${d.max}`, "amber");
+  return badge(d.round ? `Design · round ${d.round}/${d.max}` : "Design review", "blue");
+};
+// A reviewer TODO stays off the board while its author TODO shows the loop; it shows when it needs the user.
+const hiddenReviewer = (t) => !!t.design?.of && !t.attention;
 const agentBadge = (t) => (agentsFound().length > 1 || (t.agent && t.agent !== "claude") ? badge(agentLabel(t.agent)) : "");
 const lastWord = (t) => {
   // an app message (denial, failed run, login) is usually why the TODO needs you, so it wins over the last agent line
@@ -2738,7 +2771,7 @@ function renderOverview() {
   if (S.board === "running") return setHtml($("ov"), runningHtml());
   // Not-started TODOs have no topic yet (801), so the backlog shows them all, without the filter.
   const lv = live(), fp = backlog ? null : filterProject();
-  const inView = (t) => isIdea(t) === backlog;   // the board holds started work, the backlog everything not started
+  const inView = (t) => isIdea(t) === backlog && !hiddenReviewer(t);   // the board holds started work, the backlog everything not started
   const view = lv.filter(inView), rows = view.filter((t) => backlog || inFilter(t)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));   // R40: newest first
   // Item 63, 90: one select; its counts are the board's. While a topic is picked, the rest is "hidden by the filter".
   const options = [["all", `All topics · ${view.length}`], ...S.projects.map((p) => [String(p.id), `${p.name || "untitled"} · ${view.filter((t) => t.project_id === p.id).length}`]),
@@ -2833,7 +2866,7 @@ function waitCard(t) {
   }
   const chips = (pr && (pr.tone === "red" || pr.tone === "amber")) || t.schedule ? `<span class="chips">${schedChip(t)}${pr && (pr.tone === "red" || pr.tone === "amber") ? pr.html : ""}</span>` : "";
   return `<div class="card" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo">${esc(repoName(t))}</span>${branchHtml(t)}${fromBadge(t)}${agentBadge(t)}<span class="time">${hm(t.updated_at)}</span></div>
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo">${esc(repoName(t))}</span>${branchHtml(t)}${fromBadge(t)}${agentBadge(t)}${designBadge(t)}<span class="time">${hm(t.updated_at)}</span></div>
     <div class="card-title">${esc(t.title)}</div>
     ${box}
     <div class="card-acts">${acts}${chips}</div>
@@ -2863,7 +2896,7 @@ function planSegs(t) {
 function runCard(t) {
   const [kind, text] = activityOf(t);
   return `<div class="card run" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${fromBadge(t)}${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Goes to the agent after its current step">${t.queued_count} queued</span>` : ""}
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${fromBadge(t)}${agentBadge(t)}${designBadge(t)}${t.queued_count ? `<span class="queued" title="Goes to the agent after its current step">${t.queued_count} queued</span>` : ""}
       <span class="right"><span class="ticker"><span class="live-dot"></span>${t.run_started_at ? `<span class="timer" data-since="${esc(t.run_started_at)}"></span>` : ""}</span>
         <span class="stop" title="Stop · interrupts the agent, like Esc in its own CLI">${btn("Stop", "stop", { id: t.id })}</span></span></div>
     <div class="card-title clamp2">${esc(t.title)}</div>
@@ -2877,7 +2910,7 @@ function idleCard(t) {
   const sub = [repoName(t), t.branch, agentsFound().length > 1 ? agentLabel(t.agent) : ""].filter(Boolean).join(" · ");
   const when = fmtTime(last?.at ?? t.updated_at);
   return `<div class="card idle" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
-    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="sub" title="${esc(sub)}">${esc(sub)}</span>${fromBadge(t)}
+    <div class="card-meta"><span class="num">${tNum(t)}</span><span class="sub" title="${esc(sub)}">${esc(sub)}</span>${fromBadge(t)}${designBadge(t)}
       <span class="right"><span class="when">${esc(when)}</span><span title="Remove · restore it from the backlog" style="display:contents"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove TODO">${SVG(TRASH, 15)}</button></span></span></div>
     <div class="tline">${t.unread ? '<span class="sq" title="Unread"></span>' : ""}<span class="card-title clamp2">${esc(t.title)}</span></div>
     ${last ? `<div class="last clamp2" title="${esc(last.body)}">${esc(last.body || last.files)}</div>` : ""}
@@ -2986,7 +3019,7 @@ function backlogHtml(rows) {
       return `<div class="bl-row" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
         <span class="num">${tNum(t)}</span>
         <div style="display:flex; flex-direction:column; gap:2px; min-width:0"><span class="t clamp2">${esc(t.title)}</span><span class="mono muted" style="font-size:11px" title="${esc(new Date(t.created_at).toLocaleString())}">${esc(meta)}</span></div>
-        <div class="acts">${agentBadge(t)}${t.parent_id ? fromBadge(t) : t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
+        <div class="acts">${agentBadge(t)}${designBadge(t)}${t.parent_id ? fromBadge(t) : t.creator === "user via operator" ? badge("Operator", "violet") : ""}${t.has_draft ? badge("Draft") : ""}${btn("Start", "start-backlog", { id: t.id })}
           <span title="Remove · no confirmation, nothing is running" style="display:flex"><button type="button" class="mb-iconbtn" data-act="remove" data-id="${t.id}" data-fk="remove:${t.id}" aria-label="Remove">${SVG(CLOSE, 15)}</button></span></div>
       </div>`;
     }).join("")}</div>`;
@@ -3080,6 +3113,7 @@ function renderNew() {
   // is not reset by a live update. "Topic's default" leaves the pick to the topic routing chooses (801).
   const found = agentsFound();
   $("newAgentField").hidden = found.length < 2;
+  $("newDesignField").hidden = found.length < 2;   // item 151: a review needs a second agent
   const akey = found.map((a) => a.id + (a.needsLogin ? "?" : "")).join("|");
   if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(agentOption(a))}</option>`).join(""); newAgent.dataset.key = akey; }
   newAgent.value = found.some((a) => a.id === S.newAgent) ? S.newAgent : "";   // an agent no longer found falls back to the topic's
@@ -3233,6 +3267,7 @@ function renderFocusHead(t, d) {
   // Item 144: the schedule chip opens the schedule popover.
   if (t.schedule) chips += `<span class="hwrap">${schedChip(t, false, true)}${S.pop === "sched" ? schedPop(t, d) : ""}</span>`;
   if (t.parent_id) chips += fromBadge(t).replace('class="fromb"', 'class="hchip"');
+  if (t.design && !t.design.of) chips += designBadge(t) + (t.design.reviewer ? `<button type="button" class="hchip" data-act="open" data-id="${t.design.reviewer}" title="The design reviewer's TODO · open T-${t.design.reviewer}">reviewer&nbsp;T-${t.design.reviewer}</button>` : "");
   // P5: the agent, editable until the start
   if (t.status === "not_started" && !t.removed_at && agentsFound().length > 1) chips += `<span class="mb-select-wrap" style="width:150px">${agentSelect(t.agent, `class="mb-select" style="height:26px; font-size:12px" aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}</span>`;
   const pr = t.pr;
@@ -5093,10 +5128,13 @@ acceptFiles(newText.closest(".new-dlg"), () => "new");
 addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
+$("newDesign").addEventListener("change", (e) => { try { localStorage.setItem("switchboard-new-design", e.target.checked ? "1" : ""); } catch (x) {} });
 newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; try { localStorage.setItem("switchboard-new-agent", newAgent.value); } catch (e) {} });
 [pName, pPath, pPrompt, pProfile, pMode].forEach((el) => el.addEventListener("input", renderProjects));
 pMode.addEventListener("change", renderProjects);
 pAgent.addEventListener("change", renderProjects);
+$("pDesign").addEventListener("input", renderProjects);
+$("pDesign").addEventListener("change", renderProjects);
 pDefAgent.addEventListener("change", () => { harvestDefaults(); S.projDefAgent = pDefAgent.value; fillDefaults(); renderProjects(); });
 $("pConfig").addEventListener("change", renderProjects);
 

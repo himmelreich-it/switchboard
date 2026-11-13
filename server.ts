@@ -547,6 +547,7 @@ export async function summaries(where = "1", args: any[] = []) {
       permission: permission ? JSON.parse(permission) : null,
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {}, auto_effort: auto_effort ? JSON.parse(auto_effort) : null,
       suggestions: suggestions ? JSON.parse(suggestions) : null, routing: routing ? JSON.parse(routing) : null,
+      design: r.design ? JSON.parse(r.design) : null,   // item 151: Design on the author, {of} on the reviewer
       // Change topic: the worktree, branch and PR each other topic keeps for this TODO.
       places: Object.entries(places ? JSON.parse(places) : {}).map(([k, v]: [string, any]) => ({ project_id: k === "none" ? null : Number(k), ...v })),
       // Item 144: the schedule, its chip text, and its last firing (run or skipped) for the chip's amber state.
