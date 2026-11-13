@@ -217,6 +217,15 @@ export function matchAgent(found: { id: string; name: string }[], name: string):
   return { id: found.find((a) => a.id === key || a.name.toLowerCase() === key)?.id ?? null, names: found.map((a) => a.name).join(", ") };
 }
 
+// Codex's config.toml when there is no auth.json: the login is in the keychain (cli_auth_credentials_store "keyring"
+// or "auto"), or a model_provider other than OpenAI may need none. Top-level keys only: a [profiles.x] table is not
+// the active config. shortcut: a line regex, not a TOML parser; enough for the two keys, upgrade if Codex adds forms.
+export function codexConfigLogin(toml: string): boolean {
+  const top = toml.split(/^\s*\[/m)[0]!;
+  return /^\s*cli_auth_credentials_store\s*=\s*["'](keyring|auto)["']/m.test(top)
+    || /^\s*model_provider\s*=\s*["'](?!openai["'])[^"']+["']/m.test(top);
+}
+
 // Codex's auto review ("Guardian Review", codex-acp's GuardianReporter): a tool call of its own, id
 // `guardian_assessment:<id>`, that reviews another tool call. null for any other update. `denied` once it ends as
 // denied or timed out (the action did not run); aborted (an interrupt) is not a denial. `name` is the action as Codex

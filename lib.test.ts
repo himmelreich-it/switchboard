@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -734,4 +734,15 @@ test("matchAgent: an agent named by id or name, any case, among the found ones",
   expect(matchAgent(found, "open-code").id).toBe("open-code");  // by id
   expect(matchAgent(found, "gemini").id).toBeNull();
   expect(matchAgent([], "codex")).toEqual({ id: null, names: "" });
+});
+
+test("codexConfigLogin: a Codex login outside auth.json, from config.toml's top-level keys", () => {
+  expect(codexConfigLogin("")).toBe(false);
+  expect(codexConfigLogin('model = "gpt-6"\nsandbox_mode = "workspace-write"')).toBe(false);
+  expect(codexConfigLogin('cli_auth_credentials_store = "keyring"')).toBe(true);
+  expect(codexConfigLogin("cli_auth_credentials_store = 'auto'")).toBe(true);
+  expect(codexConfigLogin('cli_auth_credentials_store = "file"')).toBe(false);
+  expect(codexConfigLogin('model_provider = "bedrock"')).toBe(true);
+  expect(codexConfigLogin('model_provider = "openai"')).toBe(false);   // OpenAI still needs a login
+  expect(codexConfigLogin('model = "x"\n\n[profiles.local]\nmodel_provider = "ollama"')).toBe(false);   // not the active config
 });

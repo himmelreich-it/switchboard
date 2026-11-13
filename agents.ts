@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Spec } from "./acp";
-import { matchAgent } from "./lib";
+import { codexConfigLogin, matchAgent } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import { db } from "./server";
 
@@ -35,15 +35,14 @@ const BUILTINS: { id: string; name: string; command: () => string[] | null; show
     loggedIn: codexLoggedIn },
 ];
 
-// Codex keeps its login, ChatGPT or API key, in $CODEX_HOME/auth.json, unless config.toml stores it in the keychain
-// (cli_auth_credentials_store "keyring" or "auto") or sets a model_provider, which may need no login: then it counts
-// as logged in. A login that expired shows when a run starts (AuthRequired).
+// Codex keeps its login, ChatGPT or API key, in $CODEX_HOME/auth.json, or config.toml says it needs none there
+// (codexConfigLogin). A login that expired shows when a run starts (AuthRequired).
 function codexLoggedIn() {
   const home = process.env.CODEX_HOME || join(homedir(), ".codex");
   if (existsSync(join(home, "auth.json"))) return true;
   let config = "";
   try { config = readFileSync(join(home, "config.toml"), "utf8"); } catch {}
-  return /^\s*(model_provider\s*=|cli_auth_credentials_store\s*=\s*"(keyring|auto)")/m.test(config);
+  return codexConfigLogin(config);
 }
 export const DEFAULT_AGENT = "claude";
 
