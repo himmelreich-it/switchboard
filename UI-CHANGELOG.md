@@ -6,6 +6,36 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-13 · Codex asks a question
+- Where: Focus › chat, the request card above the composer; the TODO's card in Waiting on you; the Focus header badge.
+- Now: when Codex asks the user a question with choices, the card above the composer reads "Codex asks · <question>", with the question's note under it, one numbered button per choice plus "Skip", and the line "Or answer in your own words: send a message." The composer hint reads "Sends as your answer to the question above." and its button "Answer". The work group line reads "Waiting for your answer". The board card shows "Codex asks" with the question and the first two choices as buttons, then "Reply →". The Focus header badge reads "Question" (cyan) instead of "Needs approval". Several questions come one card after the other.
+- Why: Codex asks questions with choices in plan mode; before, it got no answer and went on guessing.
+- Design question: should a question have its own icon instead of the shield of a permission request, and should several questions show at once as a form?
+
+### 2026-11-13 · Codex plan mode in the session settings
+- Where: Focus header › session popover, and the session chip.
+- Now: a Codex TODO has a row "Collaboration mode" (Default, Plan) next to model and effort. When Plan is on, the chip reads "… · Plan · …".
+- Why: Codex's plan mode was only reachable by typing /plan.
+- Design question: should plan mode sit with the permission mode instead, as Claude's plan mode does?
+
+### 2026-11-13 · Codex terminal
+- Where: Focus › Terminal tab, the buttons under the terminal list, and the new-terminal form.
+- Now: next to Shell and Claude a "Codex" button opens the same form as Claude's, headed "New Codex terminal", with the Codex command line under "Runs". The tab reads "Codex 1". The help line reads "A Claude or Codex terminal is its own session with your settings."; the empty panel "Open a shell or an agent terminal."
+- Why: the user wanted the Codex CLI with the TODO's context and the app tools, as the Claude terminal has.
+- Design question: with three buttons, should the agent terminals move into one "Agent" button with a choice?
+
+### 2026-11-13 · API key login for Codex
+- Where: Settings › Agents, the Codex row.
+- Now: a password field "API key" sits before the "API Key" button. The button logs in with the key in the field; an empty field shows the toast "No API key · Paste the key into the field next to Codex's button first."
+- Why: the API key login worked only with a key in the app's environment.
+- Design question: should the field show only after a click on "API Key"?
+
+### 2026-11-13 · Texts for Codex
+- Where: Settings › Agents, Settings › Topics, Focus header, chat.
+- Now: the Codex row in Settings › Agents reads "Uses your Codex login and ~/.codex config: skills, plugins, MCP servers and hooks." The topic folder hint reads "Agents launch here, so the folder's agent files apply: CLAUDE.md, CLAUDE.local.md and .claude/ for Claude, AGENTS.md and .codex/ for Codex." The Stop tooltip reads "like Esc in its own CLI". A Codex denial reads "Auto review blocked …". A Codex command that outlives its turn ends with the app message "Background command ended: <command>".
+- Why: these texts named Claude where the agent can now be Codex.
+- Design question: none.
+
 ### 2026-11-12 · Messages from another TODO's agent
 - Where: Focus › chat, a message in the user's column.
 - Now: an agent can send a message to another TODO when the user asks it to. The message shows in the receiving TODO's chat as the user's messages do, with the badge "From T-12" (click opens T-12), the same badge a TODO created by another TODO's agent has on its first message. Before, that badge only appeared on a first message.
