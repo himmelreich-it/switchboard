@@ -5,7 +5,7 @@ import {
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
   DEFAULT_ALLOW, DEFAULT_LAN_PORT, Throttle, typedLine, accessOf, hostOk, inCidrs, ipNum, lanConfigIn, parseCidr, rpIdOf,
-  markFromTodo,
+  markFromTodo, answersError, designConfigIn, newDesign, pickReviewer, reviewOutcome, type Design, type Finding,
 } from "./lib";
 
 test("slugify and uniqueSlug", () => {
@@ -816,4 +816,41 @@ test("answerForm: a pick, a chat answer and Skip; a cancel ends the form", async
   expect(await answerForm(qs, async (q) => { asked.push(q.id); return q.id === "name" ? null : { value: "x" }; })).toEqual({ action: "cancel" });
   expect(asked).toEqual(["db", "name"]);
   expect(await answerForm(qs, async (q) => (q.id === "sure" ? { text: "yes" } : "skip"))).toEqual({ action: "accept", content: { sure: true } });
+});
+
+test("design review: reviewOutcome agrees, revises, and stops at the cap or on a bouncing finding", () => {
+  const F = (id: string, severity: Finding["severity"] = "blocking"): Finding => ({ id, severity, text: id });
+  const d = (o: Partial<Design>): Design => ({ ...newDesign(), round: 1, ...o });
+  // approve with nits only: agreed; approve with a blocking finding counts as changes
+  expect(reviewOutcome(d({}), { verdict: "approve", findings: [F("F1", "nit")], file: null }).outcome).toBe("agreed");
+  expect(reviewOutcome(d({}), { verdict: "approve", findings: [F("F1")], file: null }).outcome).toBe("revise");
+  // changes with nits only is not agreement
+  expect(reviewOutcome(d({}), { verdict: "changes", findings: [F("F1", "nit")], file: null }).outcome).toBe("revise");
+  // the round cap
+  expect(reviewOutcome(d({ round: 3, max: 3 }), { verdict: "changes", findings: [F("F1")], file: null }).outcome).toBe("stuck");
+  expect(reviewOutcome(d({ round: 3, max: 3 }), { verdict: "approve", findings: [], file: null }).outcome).toBe("agreed");
+  // a rejected finding back once: revise; back a second time: stuck
+  const once = reviewOutcome(d({ round: 2, max: 5, rejected: ["F1"] }), { verdict: "changes", findings: [F("F1"), F("F2")], file: null });
+  expect(once).toEqual({ outcome: "revise", open: [F("F1"), F("F2")], bounces: { F1: 1 } });
+  expect(reviewOutcome(d({ round: 3, max: 5, rejected: ["F1"], bounces: once.bounces }), { verdict: "changes", findings: [F("F1")], file: null }).outcome).toBe("stuck");
+});
+
+test("design review: answersError, pickReviewer, designConfigIn", () => {
+  const open: Finding[] = [{ id: "F1", severity: "blocking", text: "" }, { id: "F2", severity: "blocking", text: "" }];
+  expect(answersError(open, [{ id: "F1", answer: "fixed" }])).toContain("F2");
+  expect(answersError(open, [{ id: "F1", answer: "fixed" }, { id: "F2", answer: "rejected" }])).toContain("needs a reason");
+  expect(answersError(open, [{ id: "F1", answer: "fixed" }, { id: "F2", answer: "rejected", reason: "out of scope" }])).toBeNull();
+  expect(answersError([], [])).toBeNull();
+  expect(pickReviewer(null, "claude", ["claude", "codex"])).toBe("codex");
+  expect(pickReviewer(null, "codex", ["claude", "codex"])).toBe("claude");
+  expect(pickReviewer({ reviewer: "mine" }, "claude", ["claude", "codex"])).toBe("codex");   // not found: the default
+  expect(pickReviewer({ reviewer: "claude" }, "claude", ["claude", "codex"])).toBe("claude");
+  expect(pickReviewer(null, "claude", ["claude"])).toBeNull();
+  const known = (id: string) => ["claude", "codex"].includes(id);
+  expect(designConfigIn(null, known)).toBeNull();
+  expect(designConfigIn({ author: "", reviewer: "codex", max: "3", after: "wait" }, known)).toEqual({ reviewer: "codex" });
+  expect(designConfigIn({ max: 5, after: "implement" }, known)).toEqual({ max: 5, after: "implement" });
+  expect(designConfigIn({ reviewer: "gemini" }, known)).toBe("no agent gemini");
+  expect(designConfigIn({ max: 11 }, known)).toBe("max rounds must be 1 to 10");
+  expect(designConfigIn({ after: "later" }, known)).toBe("after must be wait or implement");
 });

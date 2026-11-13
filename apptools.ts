@@ -8,6 +8,7 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
 import { hasAutoEffort, namedAgent } from "./agents";
+import { requestReview, startDesign, submitReview } from "./design";
 import { AUTO_EFFORTS, addTurn, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
 import { DEFAULT_STARTED_PER_TURN, commitMessage, hasOpenQuestion, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
@@ -15,8 +16,8 @@ import {
   HOST, PORT, addEvent, addMessage, attachmentsOf, changed, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, noteTodo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
-export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "send_message", "remove_todo", "set_schedule", "set_effort"].map((n) => `mcp__app__${n}`);
-export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "remove_todo"].map((n) => `mcp__app__${n}`);
+export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "send_message", "remove_todo", "set_schedule", "set_effort", "start_design_review", "request_review", "submit_review"].map((n) => `mcp__app__${n}`);
+export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "remove_todo", "start_design_review"].map((n) => `mcp__app__${n}`);
 // The operator's routing run for one TODO (801): read other TODOs, then decide.
 export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"].map((n) => `mcp__app__${n}`);
 
@@ -182,6 +183,34 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     const user = setAutoEffort(todoId, level, reason.trim() || "no reason given", "agent");
     return user ? err(`The user set the effort to ${user}. Keep it.`) : ok(`Effort ${level}.`);
   });
+  // Item 151: design review. A Claude terminal has no turns for the app to relay, so it gets none of these.
+  if (!g.via) {
+    s.registerTool("start_design_review", {
+      description: "Turn design review on for this TODO, only when the user's words ask for it: you write a design, another agent reviews it, and the app relays between you until you agree. The app sends you the instructions when your turn ends.",
+      inputSchema: {},
+    }, async () => {
+      const e = startDesign(todoId, "agent");
+      return e ? err(e) : ok("Design review is on. End your turn; the app sends you its instructions.");
+    });
+    s.registerTool("request_review", {
+      description: "Design review only: send your design file (registered with attach_file) to the reviewer. From the second round on, answer every blocking finding of the last review: {id, answer: \"fixed\" | \"rejected\", reason} (a rejection needs its reason). End your turn after this call.",
+      inputSchema: { file_name: z.string(), answers: z.array(z.object({ id: z.string(), answer: z.enum(["fixed", "rejected"]), reason: z.string().optional() })).optional() },
+    }, async ({ file_name, answers }) => {
+      const r = requestReview(todoId, file_name, answers ?? []);
+      return typeof r === "string" ? ok(r) : err(r.error);
+    });
+    s.registerTool("submit_review", {
+      description: "Design reviewer only: your verdict on the design (approve or changes) and your findings, each {id, severity: \"blocking\" | \"nit\", text}. Keep a finding's id across rounds. file_name: a longer review you registered with attach_file. End your turn after this call.",
+      inputSchema: {
+        verdict: z.enum(["approve", "changes"]),
+        findings: z.array(z.object({ id: z.string(), severity: z.enum(["blocking", "nit"]), text: z.string() })),
+        file_name: z.string().optional(),
+      },
+    }, async ({ verdict, findings, file_name }) => {
+      const r = submitReview(todoId, verdict, findings, file_name);
+      return typeof r === "string" ? ok(r) : err(r.error);
+    });
+  }
   // Item 146: the user's comments on selected text in the Files tab.
   s.registerTool("list_comments", {
     description: "List the user's open comments on files of this TODO: each has the file's path, the line where the selected text started (when known), the selected text (quote), the comment, and the thread after it when there is one: your earlier replies and the user's answers, oldest first. The last user text is what to answer now. Answer each with reply_comment.",
@@ -226,6 +255,15 @@ type Used = (name: string, detail: string | null) => void;
 const topicOf = (s: { project_name: string | null; routed_at: string | null }) => s.project_name ?? (s.routed_at ? "none" : null);
 
 function operatorTools(s: McpServer, used: Used) {
+  s.registerTool("start_design_review", {
+    description: "Turn design review on for a TODO, only when the user asks: its agent writes a design, another agent reviews it in a TODO of its own, and the app relays between them until they agree. A running TODO gets it when its current turn ends.",
+    inputSchema: { todo_id: z.number().int() },
+  }, async ({ todo_id }) => {
+    const e = startDesign(todo_id, "operator");
+    if (e) return err(e);
+    used("start_design_review", `T-${todo_id}`);
+    return ok(`Design review is on for T-${todo_id}.`);
+  });
   s.registerTool("list_todos", {
     description: "List the TODOs: number (T-<id>), title, topic (null: not picked yet; \"none\": thinking only), status (not_started = in the backlog, or the Scheduled lane with a schedule), attention, branch, git state, pull request, session count, files, schedule and next run, the TODO that created it, and the latest messages. Removed TODOs only with include_removed.",
     inputSchema: { include_removed: z.boolean().optional() },
@@ -376,9 +414,9 @@ function routerTools(s: McpServer, todoId: number) {
   const agentHelp = ` agent: ${namedAgent("").names}, only when the TODO's text names the agent to run it; leave it out and the topic's default agent runs it.`;
   s.registerTool("route_todo", {
     description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium."
-      + agentHelp + " Stop after this call.",
-    inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional(), agent: z.string().optional() },
-  }, async ({ topic, reason, effort, agent }) => {
+      + agentHelp + " design_review: true only when the TODO's text asks for a design review first (\"with design review\"). Stop after this call.",
+    inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional(), agent: z.string().optional(), design_review: z.boolean().optional() },
+  }, async ({ topic, reason, effort, agent, design_review }) => {
     if (decided()) return err("This TODO's routing is decided already. Stop now.");
     const none = topic.trim().toLowerCase() === "none";
     const p = none ? null : find(topic);
@@ -388,6 +426,7 @@ function routerTools(s: McpServer, todoId: number) {
     const { pick } = a;
     addEvent(todoId, "route_todo", "operator", [`topic: "${p?.name ?? "none"}"`, pick && `agent: ${pick}`].filter(Boolean).join(" · "));
     if (pick) setTodo(todoId, { agent: pick });
+    if (design_review) startDesign(todoId, "operator");   // before routeTo, which then picks the topic's design author
     routeTo(todoId, p?.id ?? null, reason);
     if (effort && hasAutoEffort(todoRow(todoId)!.agent)) setAutoEffort(todoId, effort, "picked at the start", "operator");
     return ok(`Routed to ${p?.name ?? "no topic"}. The app starts session 1 there when you stop.`);
