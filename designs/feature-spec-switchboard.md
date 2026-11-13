@@ -126,7 +126,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
     Your worktree: /Users/me/code/worktrees/ai-1234-mcp. Work there.
     Pull request: #512.
     Last message of session 2: Server done, client stubs left.
-    Files from earlier sessions (open with Read what you need):
+    Files from earlier sessions (open what you need):
     /Users/me/.switchboard/data/41/plan.md (session 1)
     /Users/me/.switchboard/data/41/impl-notes.md (session 2)
     ```

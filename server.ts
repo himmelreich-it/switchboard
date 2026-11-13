@@ -1062,7 +1062,7 @@ const termWs = {
   close(ws: ServerWebSocket<WsData>) { terms.get(ws.data.tid)?.sockets.delete(ws); if (ws.data.drop) lanConns.delete(ws.data.drop); },
 };
 
-const RESTORE_DETAIL = "Nothing was started and the TODO stays removed. Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json).";
+const RESTORE_DETAIL = (agent: string | null) => "Nothing was started and the TODO stays removed." + ((agent || DEFAULT_AGENT) === "claude" ? " Claude Code deletes session transcripts after 30 days by default (cleanupPeriodDays in ~/.claude/settings.json)." : "");
 
 async function api(req: Request, path: string): Promise<Response> {
   const method = req.method;
@@ -1595,10 +1595,10 @@ async function api(req: Request, path: string): Promise<Response> {
         const folder = projectRow(t.project_id)?.local_path ?? artifactDir(id);
         const spec = specOf(t.agent || DEFAULT_AGENT);
         if (spec && existsSync(folder) && !(await sessionExists(spec, folder, t.session_id).catch(() => true)))
-          return json({ warning: `The ${agentName(t.agent)} session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+          return json({ warning: `The ${agentName(t.agent)} session ${t.session_id} no longer exists.`, detail: RESTORE_DETAIL(t.agent) }, 409);
         if (t.worktree_path && !existsSync(t.worktree_path))
-          return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL }, 409);
-        if (!existsSync(folder)) return json({ warning: `The topic's folder ${folder} no longer exists.`, detail: RESTORE_DETAIL }, 409);
+          return json({ warning: `The worktree ${t.worktree_path} no longer exists.`, detail: RESTORE_DETAIL(t.agent) }, 409);
+        if (!existsSync(folder)) return json({ warning: `The topic's folder ${folder} no longer exists.`, detail: RESTORE_DETAIL(t.agent) }, 409);
       }
       // A scheduled TODO gets its next slot from now (item 144); the slots missed while removed are skipped.
       const s = t.schedule ? (JSON.parse(t.schedule) as Schedule) : null;

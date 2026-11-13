@@ -1,6 +1,6 @@
 # switchboard
 
-Local web app where every TODO runs as one or more Claude Code sessions: capture TODOs across topics in a backlog,
+Local web app where every TODO runs as one or more agent sessions (Claude Code or Codex): capture TODOs across topics in a backlog,
 start each one when ready, steer it with short chat messages, start a fresh session when a step is done, browse and
 edit the files of its worktree, and open terminals in it. A pinned operator session answers questions about all
 TODOs and acts only when told. Spec: `designs/feature-spec-switchboard.md`.

@@ -2864,7 +2864,7 @@ function runCard(t) {
   return `<div class="card run" role="button" tabindex="0" data-act="open" data-id="${t.id}" data-fk="open:${t.id}">
     <div class="card-meta"><span class="num">${tNum(t)}</span><span class="repo ellipsis">${esc(repoName(t))}</span>${fromBadge(t)}${agentBadge(t)}${t.queued_count ? `<span class="queued" title="Goes to the agent after its current step">${t.queued_count} queued</span>` : ""}
       <span class="right"><span class="ticker"><span class="live-dot"></span>${t.run_started_at ? `<span class="timer" data-since="${esc(t.run_started_at)}"></span>` : ""}</span>
-        <span class="stop" title="Stop · interrupts the agent, like Esc in Claude Code">${btn("Stop", "stop", { id: t.id })}</span></span></div>
+        <span class="stop" title="Stop · interrupts the agent, like Esc in its own CLI">${btn("Stop", "stop", { id: t.id })}</span></span></div>
     <div class="card-title clamp2">${esc(t.title)}</div>
     <div class="activity" title="${esc(text)}">${ico(kind, 13, "var(--accent-cyan)")}<span class="ellipsis">${esc(text)}</span></div>
     ${planSegs(t)}
@@ -3184,7 +3184,7 @@ function renderFocusHead(t, d) {
   if (t.routing?.state === "asking" && !running) status += `<span title="Back to the backlog, not started" style="display:flex">${btn("Don't start", "stop", { id: t.id })}</span>`;
   if (running) {
     const since = t.run_started_at ? `<span data-since="${esc(t.run_started_at)}"></span>` : "";
-    const tip = t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : keys("Stop · interrupts the agent, like Esc in Claude Code. Queued messages wait for the next turn. ⌘.");
+    const tip = t.background_wait ? `Stop the ${plural(t.background, "background task")} the agent waits for: its process is closed. The session stays.` : keys("Stop · interrupts the agent, like Esc in its own CLI. Queued messages wait for the next turn. ⌘.");
     status += `<span class="runseg"><span class="l"><span class="live-dot"></span>${t.routing ? "Picking a topic" : t.background_wait ? "Background" : "Running"} ${since}</span><button type="button" data-act="stop" data-id="${t.id}" data-fk="stop:${t.id}" title="${esc(tip)}"><i></i>Stop</button></span>`;
   }
   if (!running && t.session_id) status += S.nsMode[t.id] ? `<span title="Stay in session ${n || 1} · Esc" style="display:flex">${btn(`Keep session ${n || 1}`, "cancel-ns", { id: t.id })}</span>`
@@ -4265,7 +4265,7 @@ function renderAgents() {
   setHtml($("agentList"), agentsAll().map((a) => {
     const info = S.agentInfo[a.id], busy = S.loggingIn === a.id;
     const state = !a.found ? badge("Not found", "red", true) : a.needsLogin ? badge("Needs login", "amber", true) : badge("Found", "success", true);
-    const note = a.id === "claude" ? "Uses your Claude Code login, settings, skills and hooks." : !a.found ? a.hint || "Not found on your login-shell PATH." : info?.error ?? "";
+    const note = a.id === "claude" ? "Uses your Claude Code login, settings, skills and hooks." : a.id === "codex" && a.found && !a.needsLogin ? "Uses your Codex login and ~/.codex config: skills, plugins, MCP servers and hooks." : !a.found ? a.hint || "Not found on your login-shell PATH." : info?.error ?? "";
     const login = a.found && a.id !== "claude" && info?.authMethods?.length
       ? info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex">${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { v: "primary", id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("") : "";
     return `<div class="ag-row"><div class="l">
@@ -4325,7 +4325,7 @@ function renderProjects() {
   pPath.disabled = !!p?.locked;   // R44
   $("pPathHint").textContent = p?.locked
     ? "Read-only: a TODO in this topic has started. Claude Code keeps session transcripts under this folder, so a new path would make those TODOs impossible to resume."
-    : "Agents launch here, so CLAUDE.md, CLAUDE.local.md and .claude/ apply. Any folder; a git repository adds worktrees, branches and pull requests.";
+    : "Agents launch here, so the folder's agent files apply: CLAUDE.md, CLAUDE.local.md and .claude/ for Claude, AGENTS.md and .codex/ for Codex. Any folder; a git repository adds worktrees, branches and pull requests.";
   $("projErr").textContent = S.projErr;
   $("projSave").textContent = p ? "Save changes" : "Create topic";
   $("projSave").disabled = !projDirty() || !pName.value.trim() || !pPath.value.trim();

@@ -117,3 +117,10 @@ export function resumeHint(agent: string | null, sessionId: string): string | nu
 // The MCP secret header: Claude Code expands ${VAR} from the agent process's environment, so the secret stays out of
 // the CLI's argv (readable by every user in /proc). Other agents get it as is: they take the MCP config over ACP.
 export const secretHeader = (agent: string | null, secret: string) => isClaude(agent) ? "${SWITCHBOARD_MCP_SECRET}" : secret;
+
+// Codex gets the app's MCP server from its own config (codex-acp reads CODEX_CONFIG), not over ACP: only a configured
+// server takes `default_tools_approval_mode`, which runs the app tools without an approval round (the counterpart of
+// Claude's allowedTools; in Auto review each call went to a second model). The header comes from the process's
+// SWITCHBOARD_MCP_SECRET, so the secret stays out of the config text.
+export const codexAppConfig = (url: string) =>
+  JSON.stringify({ mcp_servers: { app: { url, env_http_headers: { "X-Switchboard-Session": "SWITCHBOARD_MCP_SECRET" }, default_tools_approval_mode: "approve" } } });

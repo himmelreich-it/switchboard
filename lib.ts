@@ -82,7 +82,7 @@ export function handOver(o: {
     o.worktree && `Your worktree: ${o.worktree}. Work there.`,
     o.pr && `Pull request: #${o.pr}.`,
     o.last && `Last message of session ${o.last.no}: ${o.last.body.replace(/\s*\n\s*/g, " ")}`,
-    o.files.length && "Files from earlier sessions (open with Read what you need):\n"
+    o.files.length && "Files from earlier sessions (open what you need):\n"
       + o.files.map((f) => `${f.path} (${f.by_user ? "the user's notes" : f.session_no ? `session ${f.session_no}` : "added outside a session"})`).join("\n"),
     o.work && `Earlier output for the agent itself (logs, raw results, scripts) is in ${o.work}.`,
   ].filter(Boolean).join("\n");
@@ -299,7 +299,7 @@ export const planCount = (entries: PlanEntry[] | null) =>
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
 export function withAttachments(body: string, paths: string[]): string {
   if (!paths.length) return body;
-  return [body.trim(), `Attached files (open with Read):\n${paths.join("\n")}`].filter(Boolean).join("\n\n");
+  return [body.trim(), `Attached files (open them to read):\n${paths.join("\n")}`].filter(Boolean).join("\n\n");
 }
 
 // "../My Shot (1).png" -> "My-Shot-1-.png": an uploaded file's name as one safe path segment, at most 120 characters
@@ -880,7 +880,7 @@ const independentText = (git: boolean) => [
 // Item 114: what a Claude terminal reads first, written to <artifact folder>/terminal/context.md at each launch.
 export function contextFile(c: {
   title: string; project: string; status: string; first: string; worktree: string | null; branch: string | null;
-  git: string | null; pr: string | null; sessions: { no: number; session_id: string; started_at: string; ended_at: string | null }[];
+  git: string | null; pr: string | null; sessions: { no: number; session_id: string; started_at: string; ended_at: string | null; agent?: string | null }[];
   messages: { author: string; body: string; at: string; session_no: number | null }[]; files: string[];
 }): string {
   const out: string[] = [
@@ -892,7 +892,7 @@ export function contextFile(c: {
     "The TODO's own agent may be working in the same folder or worktree at the same time. Check with the user before you commit, switch branches or rewrite history.", "",
   ];
   if (c.files.length) out.push("## Files", "", ...c.files.map((f) => `- ${f}`), "");
-  if (c.sessions.length) out.push("## Sessions", "", ...c.sessions.map((s) => `- Session ${s.no}: ${s.session_id} (${s.started_at}${s.ended_at ? ` to ${s.ended_at}` : ", live"}). Its full transcript is under ~/.claude/projects/.`), "");
+  if (c.sessions.length) out.push("## Sessions", "", ...c.sessions.map((s) => `- Session ${s.no}: ${s.session_id} (${s.started_at}${s.ended_at ? ` to ${s.ended_at}` : ", live"}). Its full transcript is under ${s.agent === "codex" ? "~/.codex/sessions/" : "~/.claude/projects/"}.`), "");
   out.push("## Chat", "");
   const groups = c.sessions.length ? c.sessions.map((s) => s.no) : [null];
   for (const no of groups) {

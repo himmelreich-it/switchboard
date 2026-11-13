@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue, type FormQuestion,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -45,8 +45,8 @@ test("deliveryPrompt", () => {
 
 test("withAttachments and safeFileName", () => {
   expect(withAttachments("fix it", [])).toBe("fix it");
-  expect(withAttachments(" cut off ", ["/u/1-1-a.png", "/u/1-2-b.pdf"])).toBe("cut off\n\nAttached files (open with Read):\n/u/1-1-a.png\n/u/1-2-b.pdf");
-  expect(withAttachments("", ["/u/1-1-a.png"])).toBe("Attached files (open with Read):\n/u/1-1-a.png");
+  expect(withAttachments(" cut off ", ["/u/1-1-a.png", "/u/1-2-b.pdf"])).toBe("cut off\n\nAttached files (open them to read):\n/u/1-1-a.png\n/u/1-2-b.pdf");
+  expect(withAttachments("", ["/u/1-1-a.png"])).toBe("Attached files (open them to read):\n/u/1-1-a.png");
   expect(safeFileName("../My Shot (1).png")).toBe("My-Shot-1-.png");
   expect(safeFileName("..")).toBe("file");
   expect(safeFileName(".env")).toBe("env");
@@ -160,7 +160,7 @@ test("handOver leaves out lines without a value", () => {
     "Your worktree: /w/ai-1234. Work there.",
     "Pull request: #512.",
     "Last message of session 2: Server done, client stubs left.",
-    "Files from earlier sessions (open with Read what you need):",
+    "Files from earlier sessions (open what you need):",
     "/d/plan.md (session 1)",
     "/d/notes.md (added outside a session)",
     "/d/notes-2.md (the user's notes)",
@@ -770,12 +770,13 @@ test("formQuestions and formValue: an agent's form as questions, answers in the 
   } });
   expect(qs.map((q) => [q.id, q.choices.map((c) => c[0])])).toEqual([["a", ["SQLite", "None of the above"]], ["b", []], ["c", ["true", "false"]], ["d", []], ["e", ["x", "y"]]]);
   expect(qs[0]).toMatchObject({ title: "Which database?", description: "Storage" });
-  expect(qs[4].title).toBe("e");
-  expect(formValue(qs[2], "true")).toBe(true);
-  expect(formValue(qs[2], "No")).toBe(false);
-  expect(formValue(qs[2], "maybe")).toBe("maybe");
-  expect(formValue(qs[3], "3")).toBe(3);
-  expect(formValue(qs[3], "a few")).toBe("a few");
-  expect(formValue(qs[1], "42")).toBe("42");
+  const [, b, c, d, e] = qs as [FormQuestion, FormQuestion, FormQuestion, FormQuestion, FormQuestion];
+  expect(e.title).toBe("e");
+  expect(formValue(c, "true")).toBe(true);
+  expect(formValue(c, "No")).toBe(false);
+  expect(formValue(c, "maybe")).toBe("maybe");
+  expect(formValue(d, "3")).toBe(3);
+  expect(formValue(d, "a few")).toBe("a few");
+  expect(formValue(b, "42")).toBe("42");
   expect(formQuestions(null)).toEqual([]);
 });

@@ -35,6 +35,9 @@ export type SessionOpts = {
   meta?: Record<string, unknown>; // the agent's own `_meta` for session/new and session/resume
   // Appended to the agent's system prompt, for an agent that declares `sessionCapabilities.systemPrompt` (Codex).
   systemPrompt?: string;
+  // The new session's title, for an agent that takes one (`sessionCapabilities.title`, Codex): Codex lists it in
+  // `codex resume`, and skips the extra model turn it runs to make a title of its own.
+  title?: string;
   env?: Record<string, string>; // added to the agent process's environment
 };
 
@@ -205,6 +208,8 @@ export async function openSession(spec: Spec, o: SessionOpts, h: Handlers): Prom
     const s = await a.conn.agent.request(acp.methods.agent.session.new, {
       cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta, ...sp,
     } as acp.NewSessionRequest);
+    if (o.title && (a.init.agentCapabilities as any)?.sessionCapabilities?.title)
+      await a.conn.agent.request("session/set_title" as any, { sessionId: s.sessionId, title: o.title }).catch(() => {});   // a name only
     return live(a, s.sessionId, s.configOptions, !!sp.systemPrompt);
   } catch (e: any) {
     a.proc.kill();

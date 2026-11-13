@@ -4,7 +4,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Handlers, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
-import { DEFAULT_AGENT, agentList, agentName, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
+import { DEFAULT_AGENT, agentList, agentName, codexAppConfig, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
   agentActivity, attentionAfterAnswer, autoEffort, formQuestions, formValue, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
@@ -65,7 +65,8 @@ const EFFORT_RULES = `
 
 // The contract for one agent's session: the TODO's folder filled in, and the app tools named the way that agent sees them.
 export const contractFor = (agent: string, dir: string) =>
-  (CONTRACT + (hasAutoEffort(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
+  (CONTRACT + (hasAutoEffort(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool))
+    .replace("When auto mode blocks", agent === "codex" ? "When auto review blocks" : "When auto mode blocks");
 
 // What an agent without a system-prompt append (neither Claude's `_meta` nor ACP's `systemPrompt`) gets in front of the
 // first prompt of each session (design §9). A resumed session still has it in its context; an edited topic prompt
@@ -73,7 +74,7 @@ export const contractFor = (agent: string, dir: string) =>
 const instructionsText = (contract: string, prompt: string) =>
   `# Switchboard instructions\n\n${[contract, prompt.trim()].filter(Boolean).join("\n\n")}\n\n# Your task\n\n`;
 
-const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is a Claude Code session the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
+const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, a local app where each TODO is an agent session (Claude Code or Codex) the user starts and steers. You are the user's chief of staff for those sessions, not their manager.
 
 - Act only on the user's explicit instruction in this chat. Never poll, never answer a worker's question on your own, never remove a TODO on your own, and never start a TODO on your own: start one with mcp__app__create_todo(start: true) only when the user says so. When the user presses Start, a separate routing run of yours decides which topic the TODO belongs to.
 - Get the state of the TODOs from your tools every time (mcp__app__list_todos, mcp__app__read_todo, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh operator session at any time.
@@ -439,7 +440,7 @@ async function steerQueued(todoId: number, agent: Agent) {
 
 // The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
 // session/resume in a new process. The config options and the permission mode are set afterwards, by applyConfig().
-async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; systemPrompt?: string; grant: Parameters<typeof grant>[0] }) {
+async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; systemPrompt?: string; title?: string; grant: Parameters<typeof grant>[0] }) {
   const fingerprint = JSON.stringify([o.agent, o.cwd, o.dirs, o.meta, o.systemPrompt]);
   const had = agents.get(key);
   if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === fingerprint) {
@@ -484,7 +485,11 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
   const g = grant(o.grant, (secret) => secretHeader(o.agent, secret));
   // Claude forwards the SDK's level of live background tasks, which tells when one ends (backgroundLevel).
   const meta = isClaude(o.agent) ? { ...o.meta, claudeCode: { ...(o.meta.claudeCode as object), emitRawSDKMessages: [{ type: "system", subtype: "background_tasks_changed" }] } } : o.meta;
-  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta, systemPrompt: o.systemPrompt, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
+  const codex = o.agent === "codex";
+  const opts = {
+    cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: codex ? [] : [g.server], meta, systemPrompt: o.systemPrompt, title: o.title,
+    env: { SWITCHBOARD_MCP_SECRET: g.secret, ...(codex ? { CODEX_CONFIG: codexAppConfig((g.server as any).url) } : {}) },
+  };
   let live: Live;
   try {
     live = sessionId ? await reopenSession(spec, sessionId, opts, handlers as any) : await acpOpen(spec, opts, handlers as any);
@@ -780,6 +785,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
         } : {},
         // The others get it through ACP's systemPrompt when they take it (Codex), else in front of the first prompt.
         systemPrompt: isClaude(agentId) ? undefined : [contract, prompt].filter(Boolean).join("\n\n"),
+        title: `T-${todoId} ${t.title}`,
         grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId), agent: agentId },
       });
       await applyConfig(todoId, agent, undefined, true);
@@ -879,7 +885,7 @@ function workerTurn(todoId: number, agent: Agent) {
     const what = toolArg(input) || why;
     if (denied.has(name + what)) return;
     denied.add(name + what);
-    addMessage(todoId, "app", `Auto mode blocked ${name}: ${what}`);
+    addMessage(todoId, "app", `${agent.agent === "codex" ? "Auto review" : "Auto mode"} blocked ${name}: ${what}`);
     const was = todoRow(todoId)!;
     setTodo(todoId, { attention: 1, attention_by: was.attention ? was.attention_by : "app" });
     addEvent(todoId, "attention raised", "app", `${name} denied`);
