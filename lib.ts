@@ -311,8 +311,13 @@ export const planCount = (entries: PlanEntry[] | null) =>
 // One message as the agent gets it: the text, then the absolute paths of the files the user attached to it.
 export function withAttachments(body: string, paths: string[]): string {
   if (!paths.length) return body;
-  return [body.trim(), `Attached files (open them to read):\n${paths.join("\n")}`].filter(Boolean).join("\n\n");
+  return [body.trim(), `${ATTACHED}\n${paths.join("\n")}`].filter(Boolean).join("\n\n");
 }
+const ATTACHED = "Attached files (open them to read):";
+// The attached images of a prompt (withAttachments' lists), for an agent that takes image blocks (acp.ts prompt).
+export const attachedImages = (text: string) =>
+  text.split(ATTACHED).slice(1).flatMap((part) => part.split("\n\n")[0]!.split("\n").map((l) => l.trim()))
+    .filter((p) => /^\/.*\.(png|jpe?g|gif|webp)$/i.test(p));
 
 // "../My Shot (1).png" -> "My-Shot-1-.png": an uploaded file's name as one safe path segment, at most 120 characters
 // (the end is kept, so the extension stays).

@@ -13,7 +13,7 @@ import { authenticate, describe, killNow, killTree, sessionExists } from "./acp"
 import { DEFAULT_AGENT, agentList, codexAppConfig, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
-  contractFor, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
+  contractFor, releaseAgent, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
@@ -1548,9 +1548,12 @@ async function api(req: Request, path: string): Promise<Response> {
     return json({});
   }
 
-  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session|stop)$/)) && method === "POST") {
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/(start|messages|read|clear-attention|remove|restore|deliver|new-session|stop|release)$/)) && method === "POST") {
     const id = Number(m[1]);
     const action = m[2];
+
+    // The user copied the resume command: Codex opens a session in one process only, so the idle agent process lets go.
+    if (action === "release") return json({ released: releaseAgent(todoOr404(id).id) });
 
     // Item 72: ends the live session and starts the next with the hand-over header, the queued messages and this one.
     if (action === "new-session") {

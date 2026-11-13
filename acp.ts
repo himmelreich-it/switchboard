@@ -1,7 +1,7 @@
 // The agent driver: Agent Client Protocol (ACP) over stdio, one agent process per live session.
 // Nothing about TODOs here; runner.ts decides what a session is for. See designs/acp/ (investigation, design, spike).
 import * as acp from "@agentclientprotocol/sdk";
-import { descendants } from "./lib";
+import { attachedImages, descendants } from "./lib";
 
 export type Update = acp.SessionUpdate & { _meta?: Record<string, any> };
 export type PermissionRequest = acp.RequestPermissionRequest;
@@ -159,7 +159,7 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     get commands() { return a.state.commands; },
     async prompt(text) {
       try {
-        const r = await a.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: "text", text }] });
+        const r = await a.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: "text", text }, ...(await imageBlocks(a.init, text))] });
         return r.stopReason;
       } catch (e) {
         // The connection can close on the agent's stdout ending before the exit is seen: name the exit, not the closed connection.
@@ -193,6 +193,18 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     exited: a.proc.exited,
     stderr: a.log,
   };
+}
+
+// The attached images as image blocks, for an agent that takes them (Codex); their paths stay in the text. Claude reads
+// them with its Read tool as before. An image that cannot be read is left to the path.
+async function imageBlocks(init: any, text: string): Promise<acp.ContentBlock[]> {
+  if (!init.agentCapabilities?.promptCapabilities?.image || init.agentInfo?.name === "@agentclientprotocol/claude-agent-acp") return [];
+  const blocks: acp.ContentBlock[] = [];
+  for (const path of attachedImages(text)) {
+    const f = Bun.file(path);
+    if (f.size > 0 && f.size <= 20 * 1024 * 1024) blocks.push({ type: "image", mimeType: f.type, data: Buffer.from(await f.arrayBuffer()).toString("base64"), uri: `file://${path}` });
+  }
+  return blocks;
 }
 
 // ACP's `systemPrompt` (append) for session/new and session/resume, when the caller has one and the agent takes it.

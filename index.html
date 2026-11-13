@@ -4417,7 +4417,12 @@ const ACTIONS = {
   },
   "ev-toggle": (id) => { const k = Number(id); S.openEv.has(k) ? S.openEv.delete(k) : S.openEv.add(k); render(); },
   "sess-toggle": (id) => { S.openSess.has(id) ? S.openSess.delete(id) : S.openSess.add(id); render(); },
-  copy: (id) => { S.pop = null; copyText(id, "Copied", id); render(); },
+  copy: (id) => {
+    S.pop = null; copyText(id, "Copied", id); render();
+    // Codex opens a session in one process at a time: the TODO's idle agent process lets go of it (releaseAgent).
+    const t = cur();
+    if (t && t.session_id && id === `codex resume ${t.session_id}`) call("POST", `/api/todos/${t.id}/release`).catch(() => {});
+  },
   "open-ns": (id) => { S.nsMode[Number(id)] = true; S.tab = "chat"; S.pop = null; render(); composer.focus(); },
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },
   start: (id) => act(call("POST", `/api/todos/${id}/start`), "Can't start"),

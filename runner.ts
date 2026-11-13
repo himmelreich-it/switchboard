@@ -302,6 +302,10 @@ export async function applyConfig(todoId: number, a: Agent, reset?: string, open
   const wanted = wantedConfig(t, a.agent);
   const auto = (own || opening) && hasAutoEffort(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
   if (auto) wanted[auto[0]] = auto[1];
+  // Codex keeps its plan mode in the session: unless the TODO or topic picks it, it is off (a resumed session would
+  // otherwise stay in the mode it last had).
+  const collab = configView(a.live.configOptions).find((c) => c.category === "collaboration_mode");
+  if (collab && !wanted[collab.id] && collab.options.some((x) => x.value === "default")) wanted[collab.id] = "default";
   // shortcut: a resumed Codex session reports the value it last ran with, so a reset reaches the config.toml value only
   // in a process that opened a new session; upgrade by reading Codex's config (config/read) when that matters.
   if (reset && !wanted[reset]) {
@@ -362,15 +366,17 @@ function saveConfig(todoId: number, a: Agent) {
   if (a.live.commands.length) setMeta(metaKey("agent_commands", a.agent), JSON.stringify(a.live.commands));
 }
 
-// Codex leaves its plan mode itself once the user approves the plan ("Implement this plan?"): the TODO's own plan pick
-// is dropped, else the next turn would switch back to planning.
-function leftPlan(todoId: number, a: Agent) {
+// Codex switches its plan mode itself on /plan, and leaves it once the user approves the plan ("Implement this plan?"):
+// the TODO's pick follows, else the next turn would switch back (applyConfig).
+function followPlan(todoId: number, a: Agent) {
   const t = todoRow(todoId)!, own = t.overrides ? JSON.parse(t.overrides) : {};
   const o = configView(a.live.configOptions).find((x) => x.category === "collaboration_mode");
-  if (!o || own[o.id] !== "plan" || o.value === "plan") return;
-  delete own[o.id];
+  if (!o || o.value === (wantedConfig(t, a.agent)[o.id] ?? "default")) return;
+  const topic = defaultsFor((projectRow(t.project_id) ?? { defaults: null }).defaults, a.agent).config[o.id] ?? "default";
+  if (o.value === topic) delete own[o.id];
+  else own[o.id] = o.value;
   setTodo(todoId, { overrides: Object.keys(own).length ? JSON.stringify(own) : null });
-  addEvent(todoId, "config", "agent", `${o.name}: ${o.options.find((x) => x.value === o.value)?.name ?? o.value} (plan approved)`);
+  addEvent(todoId, "config", "agent", `${o.name}: ${o.options.find((x) => x.value === o.value)?.name ?? o.value}`);
 }
 
 // Every agent's last seen config options, for /api/meta.
@@ -395,6 +401,15 @@ export const liveAgent = (todoId: number) => {
 
 // Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
 // Background tasks end with it, so a TODO that showed running only for them is idle (or waiting) again.
+// An idle worker's agent process closes now (the next turn resumes the session in a new one), so `codex resume` in a
+// terminal can open the session: Codex lets one process write a session. Not while a turn or a background task runs.
+export function releaseAgent(todoId: number) {
+  const a = agents.get(todoId);
+  if (!a || running.has(todoId) || a.bg.length) return false;
+  closeAgent(todoId);
+  return true;
+}
+
 export function closeAgent(key: Key) {
   const a = agents.get(key);
   if (!a) return;
@@ -934,7 +949,7 @@ function workerTurn(todoId: number, agent: Agent) {
       // The agent changed an option itself (plan mode left, a /model command): the Focus header follows.
       if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") {
         saveConfig(todoId, agent);
-        leftPlan(todoId, agent);
+        followPlan(todoId, agent);
       }
       turn.onUpdate(u);
     },

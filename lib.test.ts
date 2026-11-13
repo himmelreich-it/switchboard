@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue, type FormQuestion, codexError,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue, type FormQuestion, codexError, attachedImages,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -794,4 +794,10 @@ test("codexError: Codex's failed turn ends with its error as text", () => {
   expect(cutReason("exceeded retry limit, last status: 429 Too Many Requests")).toBe("a rate limit");
   expect(cutReason("unexpected status 503 Service Unavailable")).toBe("an API server error");
   expect(cutReason("Codex ran out of room in the model's context window.")).toBe(null);
+});
+
+test("attachedImages: the images among a prompt's attachment lists", () => {
+  const text = [withAttachments("look", ["/u/1-1-a.png", "/u/1-2-b.pdf"]), withAttachments("and", ["/u/2-1-c.JPG"])].join("\n\n");
+  expect(attachedImages(text)).toEqual(["/u/1-1-a.png", "/u/2-1-c.JPG"]);
+  expect(attachedImages("no files /x/a.png")).toEqual([]);
 });
