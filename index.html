@@ -3835,7 +3835,7 @@ function termTheme() {
   };
 }
 addEventListener("sb-theme", () => { const th = termTheme(); for (const v of xterms.values()) if (v.term) v.term.options.theme = th; });
-const termLabel = (x, t) => (x.title || `${x.kind === "claude" ? "Claude" : "Shell"} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · topic" : "");
+const termLabel = (x, t) => (x.title || `${x.kind === "shell" ? "Shell" : agentLabel(x.kind)} ${x.no}`) + (x.root === "project" && treeUsable(t) ? " · topic" : "");
 const claudeDefault = (t) => {
   const p = S.projects.find((x) => x.id === t.project_id);
   return `I'm working on the Switchboard TODO "${t.title}". What its agent is doing, its branch and PR, the recent chat and its files are in ${artifactPath(t)}terminal/context.md. Read it, then wait for my instructions.`;
@@ -3860,9 +3860,9 @@ async function newTerm(kind, root, message = "") {
   } catch (e) { toast("danger", "No terminal", e.message); render(); }
   need("terms");
 }
-function openClaudeForm(root) {
+function openClaudeForm(root, kind = "claude") {
   const t = cur(), dir = termDirs(t).find((d) => d[0] === root) ?? termDirs(t)[0];
-  S.cform = { todoId: t.id, root: dir[0], cwd: dir[2], message: claudeDefault(t) };
+  S.cform = { todoId: t.id, kind, root: dir[0], cwd: dir[2], message: claudeDefault(t) };
   render();
 }
 async function askCloseTerm(tid) {
@@ -3877,7 +3877,7 @@ async function askCloseTerm(tid) {
   if (!x || x.exited) return close();
   // An idle shell (no program in the foreground) closes without asking.
   if (x.kind === "shell" && !(await call("GET", `/api/todos/${t.id}/terminals/${tid}/busy`).catch(() => ({ busy: true }))).busy) return close();
-  openDialog({ title: "Close terminal", body: `${x.kind === "claude" ? "Claude" : "The shell"} in this tab is still running. Closing the tab ends its process.`, detail: x.cwd,
+  openDialog({ title: "Close terminal", body: `${x.kind === "shell" ? "The shell" : agentLabel(x.kind)} in this tab is still running. Closing the tab ends its process.`, detail: x.cwd,
     buttons: [["Cancel", "ghost"], ["Close terminal", "danger", close]] });
 }
 async function restartTerm(tid) {
@@ -3972,7 +3972,7 @@ function renderTermFoot() {
   const focused = v.host.contains(document.activeElement);
   // v10: above the terminal, which one it is and where the keys go; the frame turns lime while it has them.
   const down = v.down && !v.exit && !v.ended;
-  const kind = x.kind === "claude" ? "claude · separate session" : (S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell");
+  const kind = x.kind !== "shell" ? `${x.kind} · separate session` : (S.meta?.shell || "shell") + (S.meta?.login_shell === false ? "" : " · login shell");
   setHtml(foot, `<span class="cwd" title="${esc(kind + " · " + x.cwd)}">${esc(termLabel(x, t) === x.cwd ? x.cwd : termLabel(x, t) + " · " + x.cwd)}</span>
     <span class="right${focused && !down ? " on" : ""}">${down ? "Disconnected · reconnecting…" : focused ? "Typing goes to this terminal" : "Click to type"}</span>`);
 }
@@ -3981,26 +3981,27 @@ function renderTerminals(t, d) {
   if (S.terms[t.id] === undefined) need("terms");
   let sel = S.termSel[t.id];
   if (S.terms[t.id] && !list.some((x) => x.id === sel)) sel = S.termSel[t.id] = list.at(-1)?.id;   // not before the list loads: a reload keeps the pick
-  const dirs = termDirs(t), def = dirs[0];
+  const dirs = termDirs(t), def = dirs[0], codexTerm = agentsFound().some((a) => a.id === "codex" && !a.needsLogin);
   // Design v6: the terminals as a list on the left, Shell and Claude below it; the selected one on the right.
   const items = list.map((x) => `<div class="titem" role="tab" tabindex="0" aria-selected="${!S.cform && x.id === sel}" data-act="term-sel" data-id="${x.id}" data-fk="term:${x.id}" title="${esc(x.cwd)}">
-      ${x.kind === "claude" ? SVG(I.run, 14, "var(--accent-violet)") : SVG(I.run, 14, "var(--text-primary)")}
-      <span class="c"><span class="nm" style="color:${x.kind === "claude" ? "var(--accent-violet)" : "var(--text-primary)"}">${esc(termLabel(x, t))}</span>
-        <span class="sb"${x.busy && !x.exited ? ' style="color:var(--accent-cyan)"' : ""}>${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind === "claude" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "topic folder" : "TODO folder") : basename(x.cwd))}</span></span>
-      <span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="${x.exited ? "Close" : x.kind === "claude" ? "Close · asks first, Claude runs in it" : x.busy ? "Close · asks first, a program runs in it" : "Close"}">${SVG(CLOSE, 12)}</span></div>`).join("");
+      ${x.kind !== "shell" ? SVG(I.run, 14, "var(--accent-violet)") : SVG(I.run, 14, "var(--text-primary)")}
+      <span class="c"><span class="nm" style="color:${x.kind !== "shell" ? "var(--accent-violet)" : "var(--text-primary)"}">${esc(termLabel(x, t))}</span>
+        <span class="sb"${x.busy && !x.exited ? ' style="color:var(--accent-cyan)"' : ""}>${x.exited ? (x.signal ? esc(x.signal) : "exit " + x.code) + " · " : ""}${x.kind !== "shell" ? "app tools · posts to chat" : esc(x.root === "project" ? (t.project_id ? "topic folder" : "TODO folder") : basename(x.cwd))}</span></span>
+      <span role="button" class="x" data-act="term-close" data-id="${x.id}" aria-label="Close terminal" title="${x.exited ? "Close" : x.kind !== "shell" ? `Close · asks first, ${agentLabel(x.kind)} runs in it` : x.busy ? "Close · asks first, a program runs in it" : "Close"}">${SVG(CLOSE, 12)}</span></div>`).join("");
   const add = S.termsUnsupported ? "" : dirs.map(([root, head]) => `<div class="term-add">${dirs.length > 1 ? `<span class="ml h ellipsis" title="${esc(head)}">${esc(root === "worktree" ? "Worktree" : "Project folder")}</span>` : ""}
       <span title="A shell in ${esc(head)}: git, docker, tests, a dev server" style="display:flex">${btn("Shell", "term-new", { id: "shell:" + root })}</span>
-      <span title="Claude in ${esc(head)}, starting with this TODO's context" style="display:flex">${btn("Claude", "term-new", { id: "claude:" + root })}</span></div>`).join("");
+      <span title="Claude in ${esc(head)}, starting with this TODO's context" style="display:flex">${btn("Claude", "term-new", { id: "claude:" + root })}</span>${codexTerm ? `
+      <span title="Codex in ${esc(head)}, starting with this TODO's context" style="display:flex">${btn("Codex", "term-new", { id: "codex:" + root })}</span>` : ""}</div>`).join("");
   setHtml($("termStrip"), `<div role="tablist" aria-label="Terminals" style="display:contents">${items}</div>${add}`);
   const panel = $("termPanel");
   if (S.cform?.todoId === t.id) {
-    const f = S.cform;
+    const f = S.cform, name = agentLabel(f.kind);
     setHtml(panel, `<div class="cform">
-      <div class="tt"><span class="t">New Claude terminal</span><span class="ml">Separate session · your settings · app tools, no hooks</span></div>
+      <div class="tt"><span class="t">New ${esc(name)} terminal</span><span class="ml">Separate session · your settings · app tools${f.kind === "claude" ? ", no hooks" : ""}</span></div>
       <div style="display:flex; flex-direction:column; gap:4px"><span class="ml">Folder</span><span class="mono" style="font-size:13px">${esc(f.cwd)}</span></div>
-      <div class="mb-field"><label class="mb-field__label" for="cfMsg">First message</label><textarea id="cfMsg" class="mb-textarea" rows="3">${esc(f.message)}</textarea><span class="mb-field__hint">Add your own ask, or keep it and give instructions once Claude has read the context.</span></div>
+      <div class="mb-field"><label class="mb-field__label" for="cfMsg">First message</label><textarea id="cfMsg" class="mb-textarea" rows="3">${esc(f.message)}</textarea><span class="mb-field__hint">Add your own ask, or keep it and give instructions once ${esc(name)} has read the context.</span></div>
       <div style="display:flex; flex-direction:column; gap:4px"><span class="ml">Runs</span><pre>cd ${esc(f.cwd)}
-claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append-system-prompt-file terminal/contract.md "&lt;first message&gt;"</pre></div>
+${f.kind === "codex" ? `codex --add-dir ${esc(artifactPath(t))} -c developer_instructions=&lt;contract&gt; -c mcp_servers.app=&lt;app tools&gt; "&lt;first message&gt;"` : `claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append-system-prompt-file terminal/contract.md "&lt;first message&gt;"`}</pre></div>
       <span class="small" style="line-height:1.5">Writes ${esc(artifactPath(t))}terminal/context.md first: status, branch and PR, the whole chat of every session, the TODO's files and its session ids. Only what it posts with the app's tools shows in this chat, marked as coming from the terminal.</span>
       <div class="acts">${btn("Cancel", "cform-cancel", { v: "ghost" })}<span class="kbd">${keys("⌘↵")}</span>${btn("Open", "cform-start", { v: "primary" })}</div></div>`);
   } else if (!list.length) {
@@ -4021,8 +4022,8 @@ claude --add-dir ${esc(artifactPath(t))} --mcp-config terminal/mcp.json --append
   exitEl.hidden = !!S.cform || !(ended || exited);
   if (!exitEl.hidden) {
     const code = v.exit ?? x;
-    setHtml(exitEl, `<div class="term-exit"><span>${ended ? "Ended: the app restarted." : code.signal ? `Process ended by signal ${esc(code.signal)}.` : `Process exited with code ${code.code}.`}${x.kind === "claude" ? " Its transcript stays; claude --resume finds it." : ""}</span>
-      ${ended ? "" : `<span class="right">${x.kind === "claude" ? btn("Shell here", "term-new", { v: "ghost", id: "shell:" + x.root }) : ""}${btn("Restart", "term-restart", { id: x.id })}</span>`}</div>`);
+    setHtml(exitEl, `<div class="term-exit"><span>${ended ? "Ended: the app restarted." : code.signal ? `Process ended by signal ${esc(code.signal)}.` : `Process exited with code ${code.code}.`}${x.kind === "claude" ? " Its transcript stays; claude --resume finds it." : x.kind === "codex" ? " Its session stays; codex resume finds it." : ""}</span>
+      ${ended ? "" : `<span class="right">${x.kind !== "shell" ? btn("Shell here", "term-new", { v: "ghost", id: "shell:" + x.root }) : ""}${btn("Restart", "term-restart", { id: x.id })}</span>`}</div>`);
   }
   renderTermFoot();
 }
@@ -4480,12 +4481,12 @@ const ACTIONS = {
   "archive-file": archiveFile,
   "work-files": () => { S.workOpen[S.sel] = !S.workOpen[S.sel]; render(); },
   "md-tool": (id) => S.cm?.handle?.format(id),
-  "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" ? openClaudeForm(root) : newTerm("shell", root); },
+  "term-new": (id) => { const [kind, root] = id.split(":"); kind === "claude" || kind === "codex" ? openClaudeForm(root, kind) : newTerm("shell", root); },
   "term-sel": (id) => { const t = cur(); pickTerm(t.id, Number(id)); S.cform = null; render(); setTimeout(() => xterms.get(Number(id))?.term?.focus(), 60); },
   "term-close": (id) => askCloseTerm(Number(id)),
   "term-restart": (id) => restartTerm(Number(id)),
   "cform-cancel": () => { S.cform = null; render(); },
-  "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm("claude", f.root, msg); },
+  "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm(f.kind, f.root, msg); },
   "md-view": (id) => { S.mdView = id; render(); },
   "diff-view": (id) => { S.diffView = id; try { localStorage.setItem("switchboard-diff-view", id); } catch (e) {} render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },

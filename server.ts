@@ -10,10 +10,10 @@ import {
 } from "./lib";
 import { CLI_HELP, lanApi, lanCli, lanUrls, loginOk, machineNames, pruneLogins, readLan, tlsFiles, type Here } from "./lan";
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
-import { DEFAULT_AGENT, agentList, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
+import { DEFAULT_AGENT, agentList, codexAppConfig, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import {
-  contractFor, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, TERMINAL_CONTRACT, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
+  contractFor, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
@@ -903,9 +903,9 @@ function fileFacts(real: string) {
 
 // Kept in memory only: a terminal ends with its tab, its TODO's removal or the app (item 115).
 type Term = {
-  id: number; todoId: number; kind: "shell" | "claude"; root: "worktree" | "project"; cwd: string; no: number; message: string;
+  id: number; todoId: number; kind: "shell" | "claude" | "codex"; root: "worktree" | "project"; cwd: string; no: number; message: string;
   title: string | null; proc: Subprocess | null; exited: boolean; code: number | null; signal: string | null;
-  secret: string | null;   // a Claude terminal's grant for the app tools (P6), revoked when its process ends
+  secret: string | null;   // an agent terminal's grant for the app tools (P6), revoked when its process ends
   buf: Uint8Array[]; bufLen: number; sockets: Set<ServerWebSocket<WsData>>; cols: number; rows: number; fresh: boolean;
 };
 const terms = new Map<number, Term>();
@@ -958,11 +958,24 @@ async function spawnTerm(x: Term) {
     x.secret = secret = g.secret;
     const mcp = join(dir, "terminal", "mcp.json"), contract = join(dir, "terminal", "contract.md");
     writeFileSync(mcp, JSON.stringify({ mcpServers: { app: { type: "http", url: g.server.url, headers: { "X-Switchboard-Session": "${SWITCHBOARD_MCP_SECRET}" } } } }, null, 1));
-    writeFileSync(contract, TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir));
+    writeFileSync(contract, terminalContract("claude", dir));
     // Run directly with its arguments, not through a shell, so the first message needs no quoting.
     // `--add-dir` and the other list flags take every argument after them, so `--` ends them before the first message.
     cmd = [...claude, "--add-dir", dir, "--mcp-config", mcp, "--append-system-prompt-file", contract, "--allowedTools", WORKER_TOOLS.filter((n) => !n.endsWith("__suggest_follow_ups") && !n.endsWith("__set_effort")).join(","),
       ...(x.message ? ["--", x.message] : [])];
+  } else if (x.kind === "codex") {
+    // Codex's own CLI, else the bundled one. The app tools and the contract go in as config overrides (-c): the server
+    // in Codex's form (codexAppConfig), its header read from SWITCHBOARD_MCP_SECRET, so the secret is not in argv.
+    const codex = onPath("codex", []) ?? [process.execPath, Bun.resolveSync("@openai/codex/bin/codex.js", import.meta.dir)];
+    await writeContext(t);
+    if (terms.get(x.id) !== x || x.proc) return;
+    const g = grant({ kind: "worker", todoId: t.id, dir, onPost: () => {}, via: `Codex ${x.no}` }, () => "");
+    x.secret = secret = g.secret;
+    const app = JSON.parse(codexAppConfig((g.server as any).url)).mcp_servers.app;
+    const contract = terminalContract("codex", dir);
+    cmd = [...codex, "--add-dir", dir, "-c", `developer_instructions=${JSON.stringify(contract)}`,
+      "-c", `mcp_servers.app.url=${JSON.stringify(app.url)}`, "-c", `mcp_servers.app.env_http_headers={ "X-Switchboard-Session" = "SWITCHBOARD_MCP_SECRET" }`,
+      "-c", `mcp_servers.app.default_tools_approval_mode="approve"`, ...(x.message ? ["--", x.message] : [])];
   } else cmd = LOGIN_SHELL ? [SHELL, "-l"] : [SHELL];
   const env: Record<string, string | undefined> = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", SWITCHBOARD_TODO_ID: String(t.id), SWITCHBOARD_FILES: dir };
   if (secret) env.SWITCHBOARD_MCP_SECRET = secret;
@@ -1019,7 +1032,7 @@ function killTerm(x: Term) {
 // Background jobs (`cmd &`) do not count; closing the tab ends them with the shell. Unknown (Windows, ps fails): busy.
 async function termBusy(x: Term) {
   if (x.exited || !x.proc) return false;
-  if (x.kind === "claude" || process.platform === "win32") return true;
+  if (x.kind !== "shell" || process.platform === "win32") return true;
   const [tpgid, pgid] = (await sh(["ps", "-o", "tpgid=,pgid=", "-p", String(x.proc.pid)])).out.split(/\s+/);
   return !tpgid || tpgid !== pgid;
 }
@@ -1431,7 +1444,7 @@ async function api(req: Request, path: string): Promise<Response> {
     if (!m[2] && method === "POST") {
       const t = liveTodo(id);
       if (TERM_UNSUPPORTED) return fail(TERM_UNSUPPORTED, 409);
-      const kind = body.kind === "claude" ? "claude" : "shell";
+      const kind = body.kind === "claude" || body.kind === "codex" ? body.kind : "shell";
       const root = body.root === "worktree" && t.worktree_path && existsSync(t.worktree_path) ? "worktree" : "project";
       const key = `${id}:${kind}`, no = (termNos.get(key) ?? 0) + 1;
       termNos.set(key, no);

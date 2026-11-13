@@ -52,6 +52,10 @@ The app's MCP tools write to the TODO, which the user sees on its card and in it
 
 The TODO's own agent may be working in the same folder or worktree at the same time. Check with the user before you commit, switch branches or rewrite history.`;
 
+// The terminal contract for an agent's CLI, with the TODO's folder and the app tools named the way that agent sees them.
+export const terminalContract = (agent: string, dir: string) =>
+  TERMINAL_CONTRACT.replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
+
 // Auto effort: Claude's worker switches its effort level itself (mcp__app__set_effort), after the levels in
 // claude.dev/blog/spending-your-effort. max stays a user choice.
 const EFFORT_RULES = `
