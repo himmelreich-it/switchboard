@@ -31,7 +31,19 @@ export function cutReason(error: string): string | null {
   if (error.includes("went to sleep mid-response")) return "the computer slept";
   if (error.includes("Request timed out")) return "the request timed out";
   if (/API Error: 5\d\d\b/.test(error)) return "an API server error";
+  // Codex (codexError)
+  if (error.includes("stream disconnected before completion")) return "the connection dropped";
+  if (/(exceeded retry limit, last status:|unexpected status) 5\d\d\b/.test(error)) return "an API server error";
+  if (/exceeded retry limit, last status: 429\b/.test(error)) return "a rate limit";
+  if (error.includes("Selected model is at capacity")) return "the model was at capacity";
   return null;
+}
+
+// Codex ends a failed turn as a normal one (codex-acp, ACP v1): its error is the turn's last text. The texts are Codex's
+// own (codex 0.166): a dropped stream, a status after its retries, a full model or context window. null for any other text.
+export function codexError(text: string): string | null {
+  const m = text.match(/(?:^|\n)((?:stream disconnected before completion|exceeded retry limit, last status|unexpected status \d{3}|Selected model is at capacity|[^\n]*ran out of room in the model's context window)[\s\S]*)$/);
+  return m ? m[1]!.trim() : null;
 }
 
 export const lineCount =(text: string) => text.trim().split("\n").filter((l) => l.trim()).length;

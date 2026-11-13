@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue, type FormQuestion,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue, type FormQuestion, codexError,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -779,4 +779,19 @@ test("formQuestions and formValue: an agent's form as questions, answers in the 
   expect(formValue(d, "a few")).toBe("a few");
   expect(formValue(b, "42")).toBe("42");
   expect(formQuestions(null)).toEqual([]);
+});
+
+test("codexError: Codex's failed turn ends with its error as text", () => {
+  expect(codexError("Looking at the repo.\n\nstream disconnected before completion: Incomplete response returned, reason: max_output_tokens\n\n"))
+    .toBe("stream disconnected before completion: Incomplete response returned, reason: max_output_tokens");
+  expect(codexError("Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying."))
+    .toMatch(/^Codex ran out of room/);
+  expect(codexError("exceeded retry limit, last status: 429 Too Many Requests")).toBe("exceeded retry limit, last status: 429 Too Many Requests");
+  expect(codexError("Done. The stream disconnected before completion once, I retried.")).toBe(null);
+  expect(codexError("All tests pass.")).toBe(null);
+  expect(cutReason("stream disconnected before completion: x")).toBe("the connection dropped");
+  expect(cutReason("exceeded retry limit, last status: 502 Bad Gateway")).toBe("an API server error");
+  expect(cutReason("exceeded retry limit, last status: 429 Too Many Requests")).toBe("a rate limit");
+  expect(cutReason("unexpected status 503 Service Unavailable")).toBe("an API server error");
+  expect(cutReason("Codex ran out of room in the model's context window.")).toBe(null);
 });

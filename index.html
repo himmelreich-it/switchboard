@@ -4267,7 +4267,7 @@ function renderAgents() {
     const state = !a.found ? badge("Not found", "red", true) : a.needsLogin ? badge("Needs login", "amber", true) : badge("Found", "success", true);
     const note = a.id === "claude" ? "Uses your Claude Code login, settings, skills and hooks." : a.id === "codex" && a.found && !a.needsLogin ? "Uses your Codex login and ~/.codex config: skills, plugins, MCP servers and hooks." : !a.found ? a.hint || "Not found on your login-shell PATH." : info?.error ?? "";
     const login = a.found && a.id !== "claude" && info?.authMethods?.length
-      ? info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex">${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { v: "primary", id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("") : "";
+      ? info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex; gap:6px">${m.key ? `<input type="password" class="mb-input" id="apikey-${esc(a.id)}-${esc(m.id)}" placeholder="API key" aria-label="${esc(a.name)} API key" autocomplete="off" style="width:180px">` : ""}${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { v: "primary", id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("") : "";
     return `<div class="ag-row"><div class="l">
         <div class="line"><span class="nm">${esc(a.name)}</span><span class="ml">${a.builtin ? "Built-in" : "Custom"}</span>${state}</div>
         <span class="cmd">${esc(a.command)}<span style="color:var(--text-muted)">${/bundled/.test(a.command) ? "" : a.builtin ? " · bundled" : " · custom"}${info?.version ? ` · ${esc(info.name ?? "")} ${esc(info.version)}` : ""}</span></span>
@@ -4278,11 +4278,13 @@ function renderAgents() {
 }
 async function agentLogin(key) {
   const [id, method] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+  const keyInput = document.getElementById(`apikey-${id}-${method}`), apiKey = keyInput?.value.trim() || undefined;
+  if (keyInput && !apiKey) return toast("danger", "No API key", `Paste the key into the field next to ${agentLabel(id)}'s button first.`);
   S.loggingIn = id;
   render();
   toast("info", `Logging in to ${agentLabel(id)}`, "Finish the login where the agent opened it, usually your browser.");
   try {
-    await call("POST", `/api/agents/${id}/login`, { methodId: method });
+    await call("POST", `/api/agents/${id}/login`, { methodId: method, apiKey });
     toast("success", `Logged in to ${agentLabel(id)}`, "Start or message the TODO again.");
   } catch (e) { toast("danger", "Not logged in", e.message); }
   S.loggingIn = null;

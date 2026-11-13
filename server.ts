@@ -1679,7 +1679,8 @@ async function api(req: Request, path: string): Promise<Response> {
     const id = m[1]!, spec = specOf(id);
     if (!spec) return fail(`${agentName(id)} is not installed`, 409);
     try {
-      if (!(await authenticate(spec, String(body.methodId ?? "")))) return fail("the login did not complete", 409);
+      const apiKey = typeof body.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : undefined;
+      if (!(await authenticate(spec, String(body.methodId ?? ""), apiKey))) return fail("the login did not complete", 409);
     } catch (e: any) {
       return fail(`the login failed: ${e?.message ?? e}`, 502);
     }

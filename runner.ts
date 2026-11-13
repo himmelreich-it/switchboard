@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, codexAppConfig, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, autoEffort, formQuestions, formValue, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, autoEffort, codexError, formQuestions, formValue, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
   markFromTodo,
 } from "./lib";
@@ -110,8 +110,9 @@ type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Pro
 // The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
 // `bg` is its background tasks still running (item 136), oldest first; `bgNames` and `bgSince` their names and when the app first
-// saw each (item 148).
-type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; bgNames: Record<string, string>; bgSince: Record<string, string>; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string;
+// saw each (item 148). Codex's are its commands still running when the turn ended, kept with their rows in `bgCalls`.
+type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; bgNames: Record<string, string>; bgSince: Record<string, string>; idle?: Timer;
+  bgCalls?: Map<string, { meta: ToolMeta; eventId: number | null }>; configError?: string; skipped?: string; modeMiss?: string;
   // The options as the session reported them when the process opened it, before the app set any: the reset value of an
   // agent without a `default` value (Codex).
   initial: Record<string, string> };
@@ -128,6 +129,26 @@ let shuttingDown = false;
 export const isRunning = (key: Key) => running.has(key);
 // Item 136: how many background tasks a TODO's agent has running. With no turn running the TODO still shows running.
 export const backgroundCount = (todoId: number) => agents.get(todoId)?.bg.length ?? 0;
+// A later update of a Codex command that outlived its turn: its row follows it. Once the last one ends while no turn
+// runs, the TODO no longer waits, and the user is told, as Claude's follow-up on a finished task would.
+function codexBackground(todoId: number, a: Agent, u: any) {
+  const c = a.bgCalls!.get(u.toolCallId)!;
+  c.meta = toolMeta(c.meta, u);
+  if (c.eventId !== null) setEvent(c.eventId, todoId, toolLine(c.meta.name, c.meta.input), c.meta);
+  if (c.meta.status !== "completed" && c.meta.status !== "failed") return;
+  a.bgCalls!.delete(u.toolCallId);
+  a.bg = a.bg.filter((id) => id !== u.toolCallId);
+  emit({ type: "todo", id: todoId });
+  if (a.bg.length || running.has(todoId) || agents.get(todoId) !== a) return;
+  const t = todoRow(todoId);
+  if (!t || t.removed_at) return;
+  addMessage(todoId, "app", cutToTwoLines(`Background command ${c.meta.status === "failed" ? "failed" : "ended"}: ${toolArg(c.meta.input) || c.meta.title}`));
+  if (!t.attention) addEvent(todoId, "attention raised", "app", "background task finished");
+  setTodo(todoId, { attention: 1, attention_by: t.attention ? t.attention_by : "app", ...(t.status === "running" ? { status: statusAfterRun(1) } : {}) });
+  if (t.status === "running") addEvent(todoId, "run ended", "app", `${todoRow(todoId)!.status} · background tasks ended`);
+  parkAgent(todoId);
+}
+
 // Item 148: the same tasks with their names and start, for the Running view. The name is "" until the SDK gives one.
 export function backgroundTasks(todoId: number) {
   const a = agents.get(todoId);
@@ -457,6 +478,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
   let self: Agent | null = null; // null while session/load replays the history
   const onUpdate = (u: Update) => {
     if (!self) return;
+    if (typeof key === "number" && self.bgCalls?.has((u as any).toolCallId)) return codexBackground(key, self, u);
     const bg = backgroundStep(self.bg, u);
     if (bg !== self.bg && typeof key === "number") emit({ type: "todo", id: key });
     self.bg = bg;
@@ -607,15 +629,19 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
   };
   // The turn ended: thinking still open is written; the text is the result. The live item is cleared. A tool call
   // that never got a final status (a server tool such as advisor, or one cut off by an interrupt) is marked ended.
-  const finish = () => {
+  // `keep`: calls that go on after the turn (Codex's background commands), left open and returned.
+  const finish = (keep: (m: ToolMeta) => boolean = () => false) => {
     flush(false);
     buf = null;
-    for (const c of calls.values()) {
+    const kept = new Map<string, { meta: ToolMeta; eventId: number | null }>();
+    for (const [id, c] of calls) {
       if (c.meta.status === "completed" || c.meta.status === "failed") continue;
+      if (keep(c.meta)) { kept.set(id, c); continue; }
       c.meta = { ...c.meta, status: "ended" };
       if (c.eventId !== null) setEvent(c.eventId, todo!, toolLine(c.meta.name, c.meta.input), c.meta);
     }
     if (todo !== null) emit({ type: "stream", id: todo, item: null });
+    return kept;
   };
   return { t, hooks, onUpdate, finish };
 }
@@ -874,6 +900,11 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       }
     }
     if (stop === "refusal" || stop === "max_tokens" || stop === "max_turn_requests") error ||= `The turn ended early: ${stop.replaceAll("_", " ")}.`;
+    const failed = !error && agentId === "codex" ? codexError(turn.t.text) : null;
+    if (failed) {
+      error = failed;
+      cut = cutReason(failed);
+    }
     endRun(todoId, run, agent, turn, started, error, false, cut);
   })();
 }
@@ -917,7 +948,15 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   // From here to deliver() nothing awaits, so a message committed meanwhile is either queued and picked up below,
   // or sees the TODO idle and starts its own turn.
   cancelPermission(todoId); // a request still open when the turn ended (the agent died, or gave up waiting)
-  turn.finish();
+  // Codex goes on running a command started in the background (unified exec) after the turn: it counts as a background
+  // task until its row completes (codexBackground). Claude's come from the SDK (backgroundLevel).
+  const kept = turn.finish((m) => agent.agent === "codex" && agent.live.alive && m.status === "in_progress" && m.kind === "execute");
+  for (const [id, c] of kept) {
+    (agent.bgCalls ??= new Map()).set(id, c);
+    if (!agent.bg.includes(id)) agent.bg = [...agent.bg, id];
+    agent.bgNames = { ...agent.bgNames, [id]: toolArg(c.meta.input) };
+  }
+  seen(agent);
   saveConfig(todoId, agent);
   clearTimeout(run.kill);
   running.delete(todoId);

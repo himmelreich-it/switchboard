@@ -12,14 +12,15 @@ export type Command = { name: string; description: string; hint: string | null }
 // `questions`: the app takes the agent's questions as ACP form elicitations (Codex's request_user_input). Off for Claude,
 // whose workers ask through the app tools (the contract), not with AskUserQuestion.
 export type Spec = { command: string[]; env?: Record<string, string>; questions?: boolean };
-export type AuthMethod = { id: string; name: string; description: string | null };
+// `key`: the method takes an API key from the user (`_meta["api-key"]`, Codex's API key login).
+export type AuthMethod = { id: string; name: string; description: string | null; key?: boolean };
 
 // session/new refused for want of a login (ACP error -32000): the agent's ways to log in, from its initialize answer.
 export class AuthRequired extends Error {
   constructor(readonly methods: AuthMethod[]) { super("the agent needs a login"); }
 }
 const authMethodsOf = (init: any): AuthMethod[] =>
-  (init?.authMethods ?? []).map((m: any) => ({ id: String(m.id), name: String(m.name ?? m.id), description: m.description ?? null }));
+  (init?.authMethods ?? []).map((m: any) => ({ id: String(m.id), name: String(m.name ?? m.id), description: m.description ?? null, ...(m._meta?.["api-key"] ? { key: true } : {}) }));
 
 export type Handlers = {
   onUpdate(u: Update): void;
@@ -250,10 +251,11 @@ export async function describe(spec: Spec): Promise<{ name: string | null; versi
 
 // ACP authenticate in a short-lived agent process. The agent does the login itself (codex-acp opens the browser for
 // ChatGPT and stores the login in ~/.codex/, P5 probe); this resolves when it is done, false when the agent reports a failure.
-export async function authenticate(spec: Spec, methodId: string, timeoutMs = 5 * 60_000): Promise<boolean> {
+export async function authenticate(spec: Spec, methodId: string, apiKey?: string, timeoutMs = 5 * 60_000): Promise<boolean> {
   const a = await spawnAgent(spec, { h: null });
   try {
-    const r: any = await withTimeout(a.conn.agent.request(acp.methods.agent.authenticate, { methodId } as any), timeoutMs, "the login");
+    const params = { methodId, ...(apiKey ? { _meta: { "api-key": { apiKey } } } : {}) };
+    const r: any = await withTimeout(a.conn.agent.request(acp.methods.agent.authenticate, params as any), timeoutMs, "the login");
     return r !== false;
   } finally {
     a.proc.kill();
