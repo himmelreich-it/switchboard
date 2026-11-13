@@ -139,3 +139,8 @@ export const secretHeader = (agent: string | null, secret: string) => isClaude(a
 // SWITCHBOARD_MCP_SECRET, so the secret stays out of the config text.
 export const codexAppConfig = (url: string) =>
   JSON.stringify({ mcp_servers: { app: { url, env_http_headers: { "X-Switchboard-Session": "SWITCHBOARD_MCP_SECRET" }, default_tools_approval_mode: "approve" } } });
+
+// Mistral Vibe asks before every MCP tool call, and has no setting for a whole server: its VIBE_TOOLS (the `tools`
+// table of its config, from the environment) allows each app tool by its Vibe name, app_<tool>.
+export const vibeAppTools = (tools: string[]) =>
+  JSON.stringify(Object.fromEntries(tools.map((t) => [t.replace(/^mcp__app__/, "app_"), { permission: "always" }])));

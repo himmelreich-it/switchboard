@@ -331,6 +331,10 @@ test("permissionOf keeps what the UI shows of a request (P3)", () => {
   expect(edit.options[0]!.kind).toBe("allow_always");
   // A bare tool call still gives something to show.
   expect(permissionOf({ sessionId: "s", toolCall: { toolCallId: "t3" }, options: [] } as any, "now")).toMatchObject({ id: "t3", name: "tool", title: "", kind: "other", options: [] });
+  // Mistral Vibe asks with the call's id only (Vibe #1333): the tool call the turn already saw fills in the rest.
+  const seen = toolMeta(null, { toolCallId: "t4", title: "bash: git status", kind: "execute", status: "pending", rawInput: { command: "git status" } });
+  expect(permissionOf({ sessionId: "s", toolCall: { toolCallId: "t4" }, options: [] } as any, "now", seen))
+    .toMatchObject({ id: "t4", name: seen.name, title: "bash: git status", kind: "execute", input: { command: "git status" } });
 });
 
 test("laneOf, attentionAfterAnswer and MODES (P3)", () => {
