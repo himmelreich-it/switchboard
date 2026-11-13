@@ -35,10 +35,11 @@ const BUILTINS: { id: string; name: string; command: () => string[] | null; show
   { id: "codex", name: "Codex", command: () => [process.execPath, adapter("@agentclientprotocol/codex-acp")], shown: "codex-acp (bundled)", hint: null,
     loggedIn: codexLoggedIn },
   // Mistral Vibe's ACP agent, a Python program (3.12+) the user installs. It reads its key from MISTRAL_API_KEY, the
-  // keyring or ~/.vibe/.env; `vibe-acp --setup` asks for one in a terminal.
+  // keyring or ~/.vibe/.env; its `browser-auth` login method (Settings › Agents) signs in through Mistral AI Studio and
+  // stores one, as `vibe-acp --setup` does in a terminal.
   {
     id: "mistral", name: "Mistral Vibe", command: () => onPath("vibe-acp", []), shown: "vibe-acp",
-    hint: "Install it with uv tool install mistral-vibe, then run vibe-acp --setup once to save your Mistral API key.",
+    hint: "Install it with uv tool install mistral-vibe, then sign in with the button here.",
   },
 ];
 
