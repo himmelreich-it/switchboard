@@ -40,6 +40,9 @@ test("deliveryPrompt", () => {
   expect(deliveryPrompt(null, ["fix it", " also tests "])).toBe("fix it\n\nalso tests");
   expect(deliveryPrompt("/w/feat", ["go"])).toBe("Your worktree: /w/feat. Work there.\n\ngo");
   expect(deliveryPrompt(null, [])).toBe("continue");
+  expect(deliveryPrompt("/w/feat", ["/plan"])).toBe("/plan");
+  expect(deliveryPrompt("/w/feat", ["/review check the auth"])).toBe("/review check the auth");
+  expect(deliveryPrompt("/w/feat", ["/w/feat/a.ts looks wrong"])).toBe("Your worktree: /w/feat. Work there.\n\n/w/feat/a.ts looks wrong");
   expect(deliveryPrompt("/w/feat", ["", " "])).toBe("Your worktree: /w/feat. Work there.\n\ncontinue");
 });
 

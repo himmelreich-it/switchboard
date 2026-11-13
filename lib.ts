@@ -62,10 +62,11 @@ export function followUpError(items: string[]): string | null {
 // The prompt for one turn: the worktree line (while one is registered), then every delivered message.
 // With no messages, as on a restore with nothing queued and no draft, the prompt is "continue".
 // The first turn of a later session starts with the hand-over header instead, which names the worktree itself.
+// A slash command gets no worktree line: the agent runs it only when the prompt starts with it.
 export function deliveryPrompt(worktree: string | null, bodies: string[], header = ""): string {
   const text = bodies.map((b) => b.trim()).filter(Boolean).join("\n\n") || "continue";
   if (header) return `${header}\n\n${text}`;
-  return worktree ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
+  return worktree && !/^\/[\w$:.-]+(\s|$)/.test(text) ? `Your worktree: ${worktree}. Work there.\n\n${text}` : text;
 }
 
 // Change topic: a TODO's worktree, branch and PR per topic it left, keyed by project id ("none": no topic).

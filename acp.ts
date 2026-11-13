@@ -171,7 +171,7 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
     async steer(text) {
       if (!(a.init as any)._meta?.steering?.supported) return false;
       const r: any = await a.conn.agent.request("_session/steering" as any, {
-        sessionId, prompt: [{ type: "text", text }], _meta: { steering: { idleBehavior: "promptRequired" } },
+        sessionId, prompt: [{ type: "text", text }, ...(await imageBlocks(a.init, text))], _meta: { steering: { idleBehavior: "promptRequired" } },
       } as any);
       return r?.outcome === "injected";
     },
