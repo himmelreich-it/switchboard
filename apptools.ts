@@ -10,14 +10,14 @@ import type { McpServer as McpServerConfig } from "./acp";
 import { hasAutoEffort, namedAgent } from "./agents";
 import { requestReview, startDesign, submitReview } from "./design";
 import { AUTO_EFFORTS, addTurn, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
-import { DEFAULT_STARTED_PER_TURN, commitMessage, hasOpenQuestion, isRunning, routeTo, setAutoEffort, start } from "./runner";
+import { DEFAULT_STARTED_PER_TURN, commitMessage, hasOpenQuestion, isRunning, newSession, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOST, PORT, addEvent, addMessage, attachmentsOf, changed, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, noteTodo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
 } from "./server";
 
 export const WORKER_TOOLS = ["post_message", "set_title", "set_attention", "attach_file", "set_worktree", "set_pr", "suggest_follow_ups", "list_comments", "reply_comment", "read_todo", "read_file", "create_todo", "send_message", "remove_todo", "set_schedule", "set_effort", "start_design_review", "request_review", "submit_review"].map((n) => `mcp__app__${n}`);
-export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "remove_todo", "start_design_review"].map((n) => `mcp__app__${n}`);
+export const OPERATOR_TOOLS = ["list_todos", "read_todo", "read_file", "create_todo", "send_message", "start_todo", "new_session", "remove_todo", "start_design_review"].map((n) => `mcp__app__${n}`);
 // The operator's routing run for one TODO (801): read other TODOs, then decide.
 export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"].map((n) => `mcp__app__${n}`);
 
@@ -288,6 +288,33 @@ function operatorTools(s: McpServer, used: Used) {
     commitMessage(todo_id, "user via operator", body.trim());
     used("send_message", `T-${todo_id}`);
     return ok(`Message ${outcome}.`);
+  });
+  s.registerTool("start_todo", {
+    description: "Start a TODO from the backlog or the Scheduled lane, only when the user's words say to start it: like the user's Start, its messages sent before the start go out as its first prompt.",
+    inputSchema: { todo_id: z.number().int() },
+  }, async ({ todo_id }) => {
+    const t = todoRow(todo_id);
+    if (!t || t.removed_at) return err(`no live TODO T-${todo_id}`);
+    if (t.status !== "not_started") return err(`T-${todo_id} has already started`);
+    start(todo_id);
+    used("start_todo", `T-${todo_id}`);
+    return ok(`Started T-${todo_id}.`);
+  });
+  s.registerTool("new_session", {
+    description: "End a started TODO's live session and start a new one, only when the user asks: like the user's New session, the new session gets a hand-over header, the queued messages and body (default \"continue\")."
+      + ` agent: ${namedAgent("").names}, only when the user's words name the agent for the new session; leave it out and the TODO keeps its agent.`,
+    inputSchema: { todo_id: z.number().int(), body: z.string().optional(), agent: z.string().optional() },
+  }, async ({ todo_id, body, agent }) => {
+    const t = todoRow(todo_id);
+    if (!t || t.removed_at) return err(`no live TODO T-${todo_id}`);
+    if (!t.session_id) return err(`T-${todo_id} has not started; start it with start_todo`);
+    if (isRunning(todo_id)) return err(`T-${todo_id}'s agent is running; a new session can start once it stops`);
+    const a = agent?.trim() ? namedAgent(agent) : null;
+    if (a && !a.id) return err(`Unknown agent "${agent}". Agents: ${a.names}.`);
+    addMessage(todo_id, "user via operator", body?.trim() || "continue", "queued");
+    newSession(todo_id, a?.id ?? undefined);
+    used("new_session", [`T-${todo_id}`, a && `agent ${a.id}`].filter(Boolean).join(" · "));
+    return ok(`Started a new session of T-${todo_id}${a ? ` with ${a.id}` : ""}.`);
   });
   s.registerTool("remove_todo", {
     description: "Remove a TODO, only when the user asks: like the user's Remove, its run stops and it moves to the Removed fold, where the user can restore it.",
