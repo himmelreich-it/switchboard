@@ -172,8 +172,8 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
     if (pid) refreshPrs(pid);
     return ok();
   });
-  // Auto effort: the worker switches its own effort level as the work changes (CONTRACT's effort rules). Claude only;
-  // a Claude terminal does not get it, as the level belongs to the TODO's session.
+  // Auto effort: the worker switches its own effort level as the work changes (CONTRACT's effort rules). The built-in
+  // agents only (hasAutoEffort); a Claude terminal does not get it, as the level belongs to the TODO's session.
   if (!g.via && hasAutoEffort(todoRow(todoId)!.agent)) s.registerTool("set_effort", {
     description: "Switch your effort level: low, medium, high or xhigh. reason: a few words the user reads, such as \"verifying the fix\". Refused when the user set the effort.",
     inputSchema: { level: z.enum(AUTO_EFFORTS), reason: z.string() },
@@ -365,19 +365,25 @@ function routerTools(s: McpServer, todoId: number) {
   const find = (name: string) => topics().find((x) => x.name === name) ?? topics().find((x) => x.name.toLowerCase() === name.trim().toLowerCase());
   const names = () => topics().map((x) => x.name).join(", ") || "none";
   const decided = () => !!todoRow(todoId)!.routed_at || JSON.parse(todoRow(todoId)!.routing ?? "{}").state === "asking";
+  // The agent the TODO's text names. The user's own pick in New TODO wins over the text: no pick then.
+  const agentArg = (agent?: string): { pick: string | null } | { error: string } => {
+    const a = agent?.trim() ? namedAgent(agent) : null;
+    if (a && !a.id) return { error: `Unknown agent "${agent}". Agents: ${a.names}.` };
+    return { pick: a && !todoRow(todoId)!.agent ? a.id : null };
+  };
+  const agentHelp = ` agent: ${namedAgent("").names}, only when the TODO's text names the agent to run it; leave it out and the topic's default agent runs it.`;
   s.registerTool("route_todo", {
     description: "Decide which topic this TODO belongs to: a topic's name, or \"none\" for a thinking-only TODO without a topic. The reason is one short sentence the user reads. effort: the level the TODO's agent starts at (low, medium, high, xhigh); leave it out for medium."
-      + ` agent: ${namedAgent("").names}, only when the TODO's text names the agent to run it; leave it out and the topic's default agent runs it. Stop after this call.`,
+      + agentHelp + " Stop after this call.",
     inputSchema: { topic: z.string(), reason: z.string(), effort: z.enum(AUTO_EFFORTS).optional(), agent: z.string().optional() },
   }, async ({ topic, reason, effort, agent }) => {
     if (decided()) return err("This TODO's routing is decided already. Stop now.");
     const none = topic.trim().toLowerCase() === "none";
     const p = none ? null : find(topic);
     if (!none && !p) return err(`Unknown topic "${topic}". Topics: ${names()}, or "none".`);
-    const a = agent?.trim() ? namedAgent(agent) : null;
-    if (a && !a.id) return err(`Unknown agent "${agent}". Agents: ${a.names}.`);
-    // The user's own pick in New TODO wins over the text; routeTo keeps an agent already set.
-    const pick = a && !todoRow(todoId)!.agent ? a.id : null;
+    const a = agentArg(agent);
+    if ("error" in a) return err(a.error);
+    const { pick } = a;
     addEvent(todoId, "route_todo", "operator", [`topic: "${p?.name ?? "none"}"`, pick && `agent: ${pick}`].filter(Boolean).join(" · "));
     if (pick) setTodo(todoId, { agent: pick });
     routeTo(todoId, p?.id ?? null, reason);
@@ -385,18 +391,21 @@ function routerTools(s: McpServer, todoId: number) {
     return ok(`Routed to ${p?.name ?? "no topic"}. The app starts session 1 there when you stop.`);
   });
   s.registerTool("ask_topic", {
-    description: "Ask the user which topic this TODO belongs to, when you cannot tell: a short question and the 2 or 3 likely topics by name. The user also gets a \"No topic\" choice. Stop after this call.",
-    inputSchema: { question: z.string(), options: z.array(z.string()) },
-  }, async ({ question, options }) => {
+    description: "Ask the user which topic this TODO belongs to, when you cannot tell: a short question and the 2 or 3 likely topics by name. The user also gets a \"No topic\" choice." + agentHelp + " Stop after this call.",
+    inputSchema: { question: z.string(), options: z.array(z.string()), agent: z.string().optional() },
+  }, async ({ question, options, agent }) => {
     if (decided()) return err("This TODO's routing is decided already. Stop now.");
     if (!question.trim()) return err("question is empty");
+    const a = agentArg(agent);
+    if ("error" in a) return err(a.error);
     const picked = options.map(find);
     if (picked.some((p) => !p)) return err(`Unknown topic in ${JSON.stringify(options)}. Topics: ${names()}.`);
     const opts = [...new Map(picked.map((p) => [p!.id, { id: p!.id, name: p!.name }])).values()];
     if (opts.length < 1 || opts.length > 3) return err("Give one to three topics.");
-    addEvent(todoId, "ask_topic", "operator", opts.map((o) => o.name).join(", "));
+    addEvent(todoId, "ask_topic", "operator", [opts.map((o) => o.name).join(", "), a.pick && `agent: ${a.pick}`].filter(Boolean).join(" · "));
     addMessage(todoId, "operator", question.trim());
-    setTodo(todoId, { routing: JSON.stringify({ state: "asking", question: question.trim(), options: opts }) });
+    // A click on an option applies the agent (changeRepo); a typed reply runs routing again, which names it again.
+    setTodo(todoId, { routing: JSON.stringify({ state: "asking", question: question.trim(), options: opts, ...(a.pick ? { agent: a.pick } : {}) }) });
     return ok("Asked. The user's click or reply decides; stop now.");
   });
 }

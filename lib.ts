@@ -211,6 +211,12 @@ export function cycleEnd(u: any) {
 
 const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) + `\n… ${text.length - max} more characters` : text);
 
+// An agent named in route_todo or create_todo, among the found ones: its id or name, any case. `names` lists them.
+export function matchAgent(found: { id: string; name: string }[], name: string): { id: string | null; names: string } {
+  const key = name.trim().toLowerCase();
+  return { id: found.find((a) => a.id === key || a.name.toLowerCase() === key)?.id ?? null, names: found.map((a) => a.name).join(", ") };
+}
+
 // Codex's auto review ("Guardian Review", codex-acp's GuardianReporter): a tool call of its own, id
 // `guardian_assessment:<id>`, that reviews another tool call. null for any other update. `denied` once it ends as
 // denied or timed out (the action did not run); aborted (an interrupt) is not a denial. `name` is the action as Codex

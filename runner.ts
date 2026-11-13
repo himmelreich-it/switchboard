@@ -240,11 +240,13 @@ async function applyMode(a: Agent, mode: string | null) {
 // back to the agent's default (no value of the TODO's or the project's): the agent's `default` value is set where it
 // offers one (Claude's model and effort), since an unset option would otherwise keep its last value.
 // Effort the user did not set comes from auto effort (setAutoEffort), medium until the router or the worker picks one.
-export async function applyConfig(todoId: number, a: Agent, reset?: string) {
+// `opening`: the TODO's worker session that opens now, also on another agent (New session), whose agent becomes the
+// TODO's only once it opened: its first turn gets auto effort too.
+export async function applyConfig(todoId: number, a: Agent, reset?: string, opening = false) {
   const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a TODO without a topic has no defaults
   const own = (t.agent || DEFAULT_AGENT) === a.agent;
   const wanted = wantedConfig(t, a.agent);
-  const auto = own && hasAutoEffort(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
+  const auto = (own || opening) && hasAutoEffort(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
   if (auto) wanted[auto[0]] = auto[1];
   if (reset && !wanted[reset] && configView(a.live.configOptions).find((o) => o.id === reset)?.options.some((x) => x.value === "default")) wanted[reset] = "default";
   const errors: string[] = [];
@@ -282,8 +284,9 @@ export function setAutoEffort(todoId: number, value: string, reason: string, by:
   if (user) return user;
   setTodo(todoId, { auto_effort: JSON.stringify({ value, reason }) });
   addEvent(todoId, "effort", by, `${value} · ${reason}`);
+  // Only the TODO's own session: while routing runs, the live agent under the TODO's key is the router.
   const a = liveAgent(todoId);
-  if (a) void applyConfig(todoId, a).catch((e) => addEvent(todoId, "error", "app", `Could not set effort ${value}: ${e?.message ?? e}`));
+  if (a && a.agent === agent && a.live.sessionId === t.session_id) void applyConfig(todoId, a).catch((e) => addEvent(todoId, "error", "app", `Could not set effort ${value}: ${e?.message ?? e}`));
   return null;
 }
 
@@ -716,7 +719,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
         } : {},
         grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId) },
       });
-      await applyConfig(todoId, agent);
+      await applyConfig(todoId, agent, undefined, true);
     } catch (e: any) {
       running.delete(todoId);
       interrupting.delete(todoId);
@@ -907,9 +910,11 @@ function autoContinue(todoId: number, why: string) {
 // Item 136: an update from a parked agent, with no turn running. Between turns Claude works on its own when a
 // background task finishes: it gets the task's notification and follows up. That cycle shows as a run of its own,
 // from its first update to the usage_update that ends it (or QUIET_MS without updates, or the end of the process).
+// Claude only: it marks the cycle's end. Codex sends a stray message after a turn (a plugin warning), which would show
+// the TODO running until QUIET_MS; it is dropped.
 function unprompted(todoId: number, agent: Agent, u: Update) {
   const t = todoRow(todoId);
-  if (!agentActivity(u) || running.has(todoId) || !t || t.removed_at || shuttingDown) return;
+  if (!isClaude(agent.agent) || !agentActivity(u) || running.has(todoId) || !t || t.removed_at || shuttingDown) return;
   const run: Run = { done: Promise.resolve(), live: agent.live };
   running.set(todoId, run);
   clearTimeout(agent.idle);
@@ -955,7 +960,7 @@ function backToStart(todoId: number, open: { no: number } | null) {
 
 // The step between Start and session 1: the operator picks the TODO's topic, picks no topic, or asks the user. Stored in
 // todos.routing while it runs or asks; todos.routed_at is set once the topic is decided.
-export type Routing = { state: "running" } | { state: "asking"; question: string; options: { id: number; name: string }[] };
+export type Routing = { state: "running" } | { state: "asking"; question: string; options: { id: number; name: string }[]; agent?: string };
 
 const ROUTING_PROMPT = `You are the operator of switchboard, a local app where each TODO is an agent session the user starts and steers. The user pressed Start on one TODO. You decide which topic it belongs to; its agent then runs in that topic's folder. You do not do the task.
 
@@ -967,7 +972,7 @@ const ROUTING_PROMPT = `You are the operator of switchboard, a local app where e
   - mcp__app__ask_topic with a short question and the 2 or 3 likely topics when you cannot tell. The user also gets a "No topic" choice.
 - A topic without a profile can still be picked on its name and folder; say so when you ask.
 - With route_todo, pass effort from the kind of work the TODO asks for: low for brainstorming, sketches and easy edits; medium for regular feature work; high for bug fixes in existing code, reviews and anything with hidden edge cases; xhigh for security reviews, performance work and long autonomous work on a hard problem. Leave it out when unsure: the agent starts at medium.
-- With route_todo, pass agent only when the TODO's text names the agent that should run it, such as "with Codex". Never pick one by the kind of work.`;
+- With route_todo or ask_topic, pass agent only when the TODO's text names the agent that should run it, such as "with Codex". Never pick one by the kind of work.`;
 const ROUTING_BUILTINS = ["Read", "Grep", "Glob"];
 
 const refuse = (r: PermissionRequest) => {
@@ -1078,6 +1083,8 @@ export function cancelRouting(todoId: number) {
 export function changeRepo(todoId: number, projectId: number | null, branch: string | null = null) {
   const t = todoRow(todoId)!;
   if (t.routing) {
+    const r = JSON.parse(t.routing) as Routing;   // ask_topic's agent from the TODO's text, when it named one
+    if (r.state === "asking" && r.agent && !t.agent) setTodo(todoId, { agent: r.agent });
     routeTo(todoId, projectId, null);
     addMessage(todoId, "app", projectId ? `Runs in ${projectRow(projectId)!.name}.` : "Runs without a topic, in the TODO's own folder.");
     return startRouted(todoId);

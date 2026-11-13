@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -724,4 +724,14 @@ test("guardianReview: Codex's auto review, denied only when the command did not 
   expect(guardianReview({ toolCallId: id, status: "failed", rawOutput: ev("aborted") })?.denied).toBe(false);
   // A review that completes without a start sends the whole event as rawInput.
   expect(guardianReview({ toolCallId: id, status: "failed", rawInput: ev("denied") })?.denied).toBe(true);
+});
+
+test("matchAgent: an agent named by id or name, any case, among the found ones", () => {
+  const found = [{ id: "claude", name: "Claude" }, { id: "codex", name: "Codex" }, { id: "open-code", name: "OpenCode" }];
+  expect(matchAgent(found, "CODEX")).toEqual({ id: "codex", names: "Claude, Codex, OpenCode" });
+  expect(matchAgent(found, " claude ").id).toBe("claude");
+  expect(matchAgent(found, "opencode").id).toBe("open-code");   // by name
+  expect(matchAgent(found, "open-code").id).toBe("open-code");  // by id
+  expect(matchAgent(found, "gemini").id).toBeNull();
+  expect(matchAgent([], "codex")).toEqual({ id: null, names: "" });
 });

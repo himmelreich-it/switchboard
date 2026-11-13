@@ -1683,6 +1683,7 @@ async function api(req: Request, path: string): Promise<Response> {
     } catch (e: any) {
       return fail(`the login failed: ${e?.message ?? e}`, 502);
     }
+    emit({ type: "agents" });   // "Needs login" turns to "Found"
     return json({});
   }
 

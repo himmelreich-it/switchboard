@@ -1,8 +1,11 @@
 // The agent registry (P5): which ACP agents a TODO can run, and what differs between them. Claude and Codex are
-// built in (Gemini waits until it can be tested); the user's own agents are rows of the `agents` table. runner.ts asks this file how to start an agent
-// and how to talk to it; acp.ts knows nothing about agents beyond the command line it is given.
+// built in (Gemini waits until it can be tested); the user's own agents are rows of the `agents` table. runner.ts asks
+// this file how to start an agent and how to talk to it; acp.ts knows nothing about agents beyond its command line.
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Spec } from "./acp";
+import { matchAgent } from "./lib";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import { db } from "./server";
 
@@ -11,6 +14,7 @@ export type AgentInfo = {
   id: string; name: string; builtin: boolean;
   command: string;        // as shown in Settings
   found: boolean;         // the command can be started
+  login: boolean;         // found, but the agent has no login yet (design v10: "· needs login")
   hint: string | null;    // how to get it when it is not found
 };
 
@@ -24,9 +28,12 @@ const adapter = (pkg: string) => {
 
 // The bundled adapters run on the Bun that runs this server (Claude: the spike; Codex: T-218): no Node needed. Codex's adapter
 // starts the Codex binary it depends on (@openai/codex), and reads the user's ~/.codex login and config.
-const BUILTINS: { id: string; name: string; command: () => string[] | null; shown: string; hint: string | null }[] = [
+// `loggedIn`: whether the agent has a login; Claude has no check (the app needs a Claude Code login to run at all).
+// Codex keeps its login, ChatGPT or API key, in $CODEX_HOME/auth.json; a missing file is the "needs login" state.
+const BUILTINS: { id: string; name: string; command: () => string[] | null; shown: string; hint: string | null; loggedIn?: () => boolean }[] = [
   { id: "claude", name: "Claude", command: () => [process.execPath, adapter("@agentclientprotocol/claude-agent-acp")], shown: "claude-agent-acp (bundled)", hint: null },
-  { id: "codex", name: "Codex", command: () => [process.execPath, adapter("@agentclientprotocol/codex-acp")], shown: "codex-acp (bundled)", hint: null },
+  { id: "codex", name: "Codex", command: () => [process.execPath, adapter("@agentclientprotocol/codex-acp")], shown: "codex-acp (bundled)", hint: null,
+    loggedIn: () => existsSync(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json")) },
 ];
 export const DEFAULT_AGENT = "claude";
 
@@ -56,19 +63,19 @@ export function specOf(id: string): Spec | null {
 // Every agent, built-ins first, for Settings › Agents and the agent selects.
 export function agentList(): AgentInfo[] {
   return [
-    ...BUILTINS.map((b) => ({ id: b.id, name: b.name, builtin: true, command: b.shown, found: !!b.command(), hint: b.hint })),
+    ...BUILTINS.map((b) => {
+      const found = !!b.command();
+      return { id: b.id, name: b.name, builtin: true, command: b.shown, found, login: found && !!b.loggedIn && !b.loggedIn(), hint: b.hint };
+    }),
     ...customRows().map((r) => ({
       id: r.id, name: r.name, builtin: false, command: [r.command, ...JSON.parse(r.args || "[]")].join(" "),
-      found: !!Bun.which(r.command), hint: null,
+      found: !!Bun.which(r.command), login: false, hint: null,
     })),
   ];
 }
 
 // An agent the operator or a worker names in route_todo or create_todo: its id or name, any case, installed ones only.
-export function namedAgent(name: string): { id: string | null; names: string } {
-  const found = agentList().filter((a) => a.found), key = name.trim().toLowerCase();
-  return { id: found.find((a) => a.id === key || a.name.toLowerCase() === key)?.id ?? null, names: found.map((a) => a.name).join(", ") };
-}
+export const namedAgent = (name: string) => matchAgent(agentList().filter((a) => a.found), name);
 
 // Without agentList: that looks up every agent's command on PATH, and a name needs none of it.
 export const agentName = (id: string | null) => {
