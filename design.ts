@@ -41,7 +41,7 @@ export function startDesign(todoId: number, by: "user" | "operator" | "agent"): 
   if (authorDesign(t)?.phase === "design") return `Design review runs already in T-${todoId}.`;
   const found = agentList().filter((a) => a.found);
   if (t.routed_at ? !reviewerAgent(t) : found.length < 2) return "Design review needs a second agent: Settings › Agents.";
-  save(todoId, newDesign());
+  save(todoId, { ...newDesign(), reviewer: authorDesign(t)?.reviewer ?? null });   // a second run keeps its reviewer and its session
   addMessage(todoId, "app", DESIGN_START, t.session_id ? "queued" : "pending");
   addEvent(todoId, "design review", by, "on");
   if (t.session_id) deliver(todoId, "design review");
@@ -52,6 +52,7 @@ export function startDesign(todoId: number, by: "user" | "operator" | "agent"): 
 export function requestReview(todoId: number, fileName: string, answers: Answer[]): string | { error: string } {
   const t = todoRow(todoId)!, d = authorDesign(t);
   if (!d) return { error: "Design review is not on for this TODO." };
+  if (d.phase === "design" && d.waiting === "reviewer") return { error: `T-${d.reviewer} reviews round ${d.round} now. Wait for its review; the app sends it to you.` };
   const f = filesOf(todoId).find((x) => basename(x.path) === basename(fileName));
   if (!f) return { error: `No attached file is named ${fileName}. Call attach_file first.` };
   if (!d.reviewer && !reviewerAgent(t)) return { error: "No second agent to review it: the user adds one in Settings › Agents." };
@@ -82,21 +83,40 @@ export function submitReview(todoId: number, verdict: "approve" | "changes", fin
   return "Recorded. End your turn now: the app sends the review to the author.";
 }
 
-// The end of a worker turn that was not stopped and did not fail: relays what the turn recorded.
-export function designStep(todoId: number) {
+// The end of a worker turn: relays what the turn recorded, also when it failed or was stopped after the tool call.
+// `clean`: the turn ended normally; only then a missing tool call gets a reminder.
+export function designStep(todoId: number, clean: boolean) {
   const t = todoRow(todoId)!;
   const of = reviewerOf(t);
-  if (of) return reviewed(of, t);
+  if (of) return reviewed(of, t, clean);
   const d = authorDesign(t);
   if (d?.request) return sendForReview(t, d);   // also after agreed or stuck: one more round
-  if (d?.phase === "design" && d.waiting === "author") nudge(t, d, todoId, "The design review waits for you: call request_review with your design file, then end your turn.");
+  if (clean && d?.phase === "design" && d.waiting === "author") nudge(t, d, todoId, "The design review waits for you: call request_review with your design file, then end your turn.");
+}
+
+// After a restart: relays what a turn recorded before the app stopped, and tells the user about a review that was
+// cut off (`wasRunning`: the TODOs that were running). The app resumes no turn on its own after a restart.
+export function designAfterRestart(wasRunning: number[]) {
+  for (const t of db.query("SELECT * FROM todos WHERE design IS NOT NULL AND removed_at IS NULL").all() as Todo[]) {
+    const d = authorDesign(t);
+    if (!d) continue;
+    if (d.request) sendForReview(t, d);
+    else if (d.review && d.reviewer) reviewed(t.id, todoRow(d.reviewer)!, true);
+    else if (d.phase === "design" && d.waiting === "reviewer" && d.reviewer && wasRunning.includes(d.reviewer)) {
+      addMessage(t.id, "app", `The app restarted while T-${d.reviewer} reviewed the design. Send T-${d.reviewer} "continue" to finish the review.`);
+      raise(t.id, "design review cut by a restart");
+    }
+  }
 }
 
 // A turn of the side the loop waits for ended without its tool call: the app asks once, then raises attention once.
-// Not while the user talks to it (attention raised, messages queued).
+// Only after a turn the loop prompted (an app message or the other side's message); a turn that answered the user
+// is the user's talk with the agent, as is a TODO with attention raised or messages queued.
 function nudge(author: Todo, d: Design, side: number, text: string) {
   const t = todoRow(side)!;
   if (t.attention || db.query("SELECT 1 FROM messages WHERE todo_id = ? AND state = 'queued'").get(side)) return;
+  const prompted = db.query("SELECT 1 FROM messages WHERE todo_id = ? AND delivered_at >= ? AND (author = 'app' OR via LIKE 'T-%')").get(side, t.run_started_at ?? "");
+  if (!prompted) return;
   save(author.id, { ...d, nudged: d.nudged + 1 });
   if (d.nudged === 0) addMessage(side, "app", text, "queued");
   else if (d.nudged === 1) {
@@ -133,9 +153,14 @@ function sendForReview(t: Todo, d: Design) {
   addMessage(t.id, "app", `Design sent for review, round ${round} of ${max}: T-${reviewer} (${agentName(todoRow(reviewer)!.agent)}).`);
 }
 
-function reviewed(authorId: number, rt: Todo) {
+function reviewed(authorId: number, rt: Todo, clean: boolean) {
   const p = todoRow(authorId), d = p && authorDesign(p);
   if (!p || p.removed_at || !d || d.phase !== "design" || d.waiting !== "reviewer" || d.reviewer !== rt.id) return;
+  if (!d.review && !clean) {
+    // The reviewer's turn failed or was stopped: its TODO is off the board, so the author says so.
+    addMessage(authorId, "app", `Design review paused: the review turn in T-${rt.id} did not finish. Open T-${rt.id} and send it "continue".`);
+    return raise(authorId, "design review paused");
+  }
   if (!d.review) return nudge(p, d, rt.id, "Call submit_review with your verdict and findings, then end your turn.");
   const r = d.review, o = reviewOutcome(d, r);
   const next: Design = { ...d, review: null, open: o.open, bounces: o.bounces, waiting: "author", nudged: 0 };

@@ -2756,8 +2756,9 @@ const designBadge = (t) => {
   if (d.phase === "stuck") return badge(`Design stuck · round ${d.round}/${d.max}`, "amber");
   return badge(d.round ? `Design · round ${d.round}/${d.max}` : "Design review", "blue");
 };
-// A reviewer TODO stays off the board while its author TODO shows the loop; it shows when it needs the user.
-const hiddenReviewer = (t) => !!t.design?.of && !t.attention;
+// A reviewer TODO stays off the board while its author TODO shows the loop. It shows when it needs the user, when its
+// start failed (back in the backlog), and when its author is removed.
+const hiddenReviewer = (t) => !!t.design?.of && !t.attention && t.status !== "not_started" && S.todos.some((x) => x.id === t.design.of && !x.removed_at);
 const agentBadge = (t) => (agentsFound().length > 1 || (t.agent && t.agent !== "claude") ? badge(agentLabel(t.agent)) : "");
 const lastWord = (t) => {
   // an app message (denial, failed run, login) is usually why the TODO needs you, so it wins over the last agent line

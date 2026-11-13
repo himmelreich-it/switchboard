@@ -861,6 +861,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
         addEvent(todoId, "error", "app", String(e?.stack ?? e));
       }
       backToStart(todoId, open);
+      designStep(todoId, false);   // item 151: a reviewer that could not start pauses the loop on its author
       return;
     }
     const live = agent.live;
@@ -1023,7 +1024,7 @@ function endRun(todoId: number, run: Run, agent: Agent, turn: ReturnType<typeof 
   const pid = todoRow(todoId)!.project_id;
   if (pid) refreshPrs(pid); // the agent may have pushed or opened a PR
   // Item 151: relays what a design review turn recorded (request_review, submit_review).
-  if (!error && !stopped && !background && !shuttingDown && !todoRow(todoId)!.removed_at) designStep(todoId);
+  if (!background && !shuttingDown && !todoRow(todoId)!.removed_at) designStep(todoId, !error && !stopped);
   if (cut && !stopped && !shuttingDown && !todoRow(todoId)!.removed_at) autoContinue(todoId, cut);
   else cuts.delete(todoId);
   // Queued messages, including ones committed during the turn, and after a Stop (item 129), go out now.

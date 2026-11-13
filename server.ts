@@ -12,7 +12,7 @@ import { CLI_HELP, lanApi, lanCli, lanUrls, loginOk, machineNames, pruneLogins, 
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, codexAppConfig, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
-import { startDesign } from "./design";
+import { designAfterRestart, startDesign } from "./design";
 import {
   contractFor, releaseAgent, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
@@ -1918,12 +1918,14 @@ for (const t of db.query("SELECT id FROM todos WHERE routing IS NOT NULL").all()
   cancelRouting(t.id);
   addEvent(t.id, "app restarted", "app");
 }
-for (const t of db.query("SELECT id, attention, attention_by, permission FROM todos WHERE status = 'running'").all() as Todo[]) {
+const wasRunning = db.query("SELECT id, attention, attention_by, permission FROM todos WHERE status = 'running'").all() as Todo[];
+for (const t of wasRunning) {
   // A permission request open at the crash died with its agent; the flag it raised drops with it.
   const attention = t.permission && t.attention_by === "permission" ? 0 : t.attention;
   setTodo(t.id, { status: statusAfterRun(attention), attention, attention_by: attention ? t.attention_by : null, permission: null });
   addEvent(t.id, "app restarted", "app");
 }
+designAfterRestart(wasRunning.map((t) => t.id));   // item 151: relays what a turn recorded before the stop
 refreshAllPrs();
 setInterval(refreshAllPrs, 120_000);
 // Item 144: one catch-up run per scheduled TODO whose slot passed while the app was closed, after the reset above and
