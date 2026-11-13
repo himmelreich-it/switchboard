@@ -338,13 +338,34 @@ export const MODES = ["auto", "default", "acceptEdits", "plan", "bypassPermissio
 export type Permission = {
   id: string; name: string; title: string; kind: string; input: any; diffs: ToolMeta["diffs"];
   options: { optionId: string; name: string; kind: string }[]; at: string;
+  question?: boolean;   // the agent asks the user (askQuestions): a chat message answers it too
 };
-export function permissionOf(r: { toolCall: any; options: any[] }, at: string): Permission {
+export function permissionOf(r: { toolCall: any; options: any[]; question?: boolean }, at: string): Permission {
   const m = toolMeta(null, r.toolCall ?? {});
   return {
+    ...(r.question ? { question: true } : {}),
     id: m.toolCallId, name: m.name, title: m.title, kind: m.kind, input: m.input, diffs: m.diffs, at,
     options: (r.options ?? []).map((o) => ({ optionId: String(o.optionId), name: String(o.name ?? o.optionId), kind: String(o.kind ?? "") })),
   };
+}
+
+// The questions of an agent's form (ACP form elicitation: Codex's request_user_input, an MCP server's form), one per
+// property: its choices from oneOf, enum or boolean, else none (answered in the user's words). Codex's note fields
+// ("Additional answer or note") are left out: a chat message answers in the user's own words instead.
+export type FormQuestion = { id: string; title: string; description: string | null; type: string; choices: [string, string][] };
+export function formQuestions(schema: any): FormQuestion[] {
+  return Object.entries<any>(schema?.properties ?? {}).filter(([, s]) => s && s._meta?.codex?.role !== "user_note").map(([id, s]) => ({
+    id, title: String(s.title ?? id), description: s.description ? String(s.description) : null, type: String(s.type ?? "string"),
+    choices: Array.isArray(s.oneOf) ? s.oneOf.map((o: any) => [String(o.const), String(o.title ?? o.const)] as [string, string])
+      : Array.isArray(s.enum) ? s.enum.map((v: any) => [String(v), String(v)] as [string, string])
+      : s.type === "boolean" ? [["true", "Yes"], ["false", "No"]] : [],
+  }));
+}
+// An answer as the form's type wants it: a boolean or a number where the property is one, else the text.
+export function formValue(q: FormQuestion, answer: string): unknown {
+  if (q.type === "boolean" && /^(true|false|yes|no)$/i.test(answer.trim())) return /^(true|yes)$/i.test(answer.trim());
+  if ((q.type === "number" || q.type === "integer") && answer.trim() !== "" && Number.isFinite(Number(answer))) return Number(answer);
+  return answer;
 }
 
 // The board lane: a running TODO with an open permission request needs the user now, so it shows in Waiting. So does

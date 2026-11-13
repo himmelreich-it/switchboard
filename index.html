@@ -2810,7 +2810,10 @@ const statHtml = (s) => (s ? `<span class="stat"><span class="a">+${s.a}</span>$
 function waitCard(t) {
   const p = t.status === "running" ? t.permission : null, last = lastWord(t), pr = prChip(t);
   let box = "", acts = "";
-  if (p) {
+  if (p?.question) {
+    box = `<div class="askbox"><span class="ml b" style="color:var(--accent-cyan)">${esc(agentLabel(t.agent))} asks</span><span class="t clamp3">${esc(p.title || p.name)}</span></div>`;
+    acts = p.options.filter((o) => o.kind === "allow_once").slice(0, 2).map((o) => btn(o.name, "perm", { id: `${t.id}|${o.optionId}` })).join("") + `<span class="reply">Reply →</span>`;
+  } else if (p) {
     const cmd = permCmd(p), path = cmd ? null : permPath(p), stat = path ? diffStat(p.diffs) : null;
     const verb = cmd ? "Run" : path ? "Edit" : esc(p.name);
     const line = cmd ? `<span class="dollar">$</span><span class="ellipsis">${esc(cmd)}</span>` : `<span class="ellipsis">${esc(path ?? p.title ?? p.name)}</span>${statHtml(stat)}`;
@@ -3174,7 +3177,7 @@ function renderFocusHead(t, d) {
   const from = S.focusFrom === "backlog" ? "Backlog" : S.focusFrom === "running" ? "Running" : "Board";
   // Row 1: back, number, title, status, actions, the waiting queue
   let status = "";
-  if (perm) status += badge("Needs approval", "amber", true);
+  if (perm) status += perm.question ? badge("Question", "cyan", true) : badge("Needs approval", "amber", true);
   if (t.attention && !perm) status += `<span class="wait-clear">${badge("Waiting on you", "amber", true)}<button type="button" class="xbtn" data-act="clear" data-id="${t.id}" data-fk="clear:${t.id}" aria-label="Clear attention" title="Clear attention">${SVG(CLOSE, 12)}</button></span>`;
   else if (t.status === "idle" || t.status === "waiting") status += badge("Idle", "neutral", true);
   if (t.status === "not_started") status += badge("Not started", "violet", true) + btn("Start", "start", { v: "primary", id: t.id });
@@ -3485,6 +3488,13 @@ function chatHtml(t, d) {
 function approvalHtml(t) {
   const p = t.permission, cmd = permCmd(p), path = cmd ? null : permPath(p), stat = path ? diffStat(p.diffs) : null;
   const mode = sessionRows(t).find((r) => r.kind === "mode");
+  if (p.question) return `<div class="appr" data-act="noop">
+    <div class="hd">${SVG(I.shield, 14, "var(--accent-cyan)")}<span class="ml b" style="color:var(--accent-cyan)">${esc(agentLabel(t.agent))} asks</span><span class="mut" style="color:var(--text-muted)">·</span>
+      <span class="verb">${esc(p.title || p.name)}</span><span class="right"><span class="mono muted" style="font-size:11px">${esc(hm(p.at))}</span></span></div>
+    ${p.input?.description ? `<span class="small">${esc(p.input.description)}</span>` : ""}
+    <div class="opts">${p.options.slice(0, 9).map((o, i) => `<button type="button" class="aopt${o.kind === "allow_once" ? " yes" : ""}" data-act="perm" data-id="${t.id}|${esc(o.optionId)}" data-fk="perm:${i}" title="press ${i + 1}"><span class="k">${i + 1}</span><span class="l">${esc(o.name)}</span></button>`).join("")}</div>
+    <span class="small">Or answer in your own words: send a message.</span>
+  </div>`;
   const body = cmd ? `<pre class="cmd"><span class="dollar">$ </span>${esc(cmd)}</pre>`
     : p.diffs?.length ? p.diffs.map((d) => dvHtml(d, 220)).join("")
     : Object.keys(p.input ?? {}).length ? `<pre class="cmd">${esc(JSON.stringify(p.input, null, 1))}</pre>` : "";
@@ -4439,7 +4449,7 @@ const ACTIONS = {
     const at = id.indexOf("|"), tid = Number(id.slice(0, at)), oid = id.slice(at + 1);
     const o = S.todos.find((x) => x.id === tid)?.permission?.options.find((x) => x.optionId === oid);
     S.pop = null;
-    act(call("POST", `/api/todos/${tid}/permission`, { optionId: oid }).then(() => o && (o.kind.startsWith("allow") ? toast("success", "Allowed", "· " + o.name) : toast("muted", "Rejected", "· the agent was told"))), "Not answered");
+    act(call("POST", `/api/todos/${tid}/permission`, { optionId: oid }).then(() => o && (o.kind.startsWith("allow") ? toast("success", o.optionId.startsWith("=") ? "Answered" : "Allowed", "· " + o.name) : toast("muted", o.optionId === "__skip" ? "Skipped" : "Rejected", "· the agent was told"))), "Not answered");
     if (o && !o.kind.startsWith("allow") && /tell/i.test(o.name)) { if (S.sel !== tid || S.mode !== "focus") select(tid); setTimeout(() => composer.focus(), 0); }
   },
   noop: () => {},   // a click inside the permission card must not open the TODO

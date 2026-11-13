@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -756,4 +756,26 @@ test("codexConfigLogin: a Codex login outside auth.json, from config.toml's top-
   expect(codexConfigLogin('model_provider = "bedrock"')).toBe(true);
   expect(codexConfigLogin('model_provider = "openai"')).toBe(false);   // OpenAI still needs a login
   expect(codexConfigLogin('model = "x"\n\n[profiles.local]\nmodel_provider = "ollama"')).toBe(false);   // not the active config
+});
+
+test("formQuestions and formValue: an agent's form as questions, answers in the form's types", () => {
+  // codex-acp buildUserInputSchema: a question with choices and Codex's note field, one without choices
+  const qs = formQuestions({ type: "object", required: ["a", "b"], properties: {
+    a: { type: "string", title: "Which database?", description: "Storage", oneOf: [{ const: "SQLite", title: "SQLite" }, { const: "None of the above", title: "None of the above" }] },
+    a_note: { type: "string", title: "Additional answer or note", _meta: { codex: { questionId: "a", role: "user_note" } } },
+    b: { type: "string", title: "Name?" },
+    c: { type: "boolean", title: "Sure?" },
+    d: { type: "integer", title: "How many?" },
+    e: { type: "string", enum: ["x", "y"] },
+  } });
+  expect(qs.map((q) => [q.id, q.choices.map((c) => c[0])])).toEqual([["a", ["SQLite", "None of the above"]], ["b", []], ["c", ["true", "false"]], ["d", []], ["e", ["x", "y"]]]);
+  expect(qs[0]).toMatchObject({ title: "Which database?", description: "Storage" });
+  expect(qs[4].title).toBe("e");
+  expect(formValue(qs[2], "true")).toBe(true);
+  expect(formValue(qs[2], "No")).toBe(false);
+  expect(formValue(qs[2], "maybe")).toBe("maybe");
+  expect(formValue(qs[3], "3")).toBe(3);
+  expect(formValue(qs[3], "a few")).toBe("a few");
+  expect(formValue(qs[1], "42")).toBe("42");
+  expect(formQuestions(null)).toEqual([]);
 });

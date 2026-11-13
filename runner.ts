@@ -3,11 +3,11 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
+import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Handlers, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
 import { DEFAULT_AGENT, agentList, agentName, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, autoEffort, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, attentionAfterAnswer, autoEffort, formQuestions, formValue, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
   markFromTodo,
 } from "./lib";
@@ -104,7 +104,7 @@ const bgTasks = (n: number) => `${n} background task${n === 1 ? "" : "s"}`;
 type Key = number | "operator"; // a TODO id, or the operator
 
 // What a turn's updates feed: the run's own state, swapped in for every run of a live agent process.
-type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Promise<any> | any };
+type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Promise<any> | any; onQuestion?: Handlers["onQuestion"] };
 
 // The live agent process of a TODO's (or the operator's) session. `fingerprint` is what session/new or session/resume
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
@@ -138,7 +138,7 @@ function seen(a: Agent) {
 }
 // A worker's open permission request (P3): the agent blocks on it, so there is at most one per TODO. The user's
 // answer, a Stop, a removal, a shutdown or the end of the turn settles it.
-const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutcome) => void }>();
+const pending = new Map<number, { perm: Permission; resolve: (o: PermissionOutcome & { text?: string }) => void }>();
 // TODOs whose agent posted a chat message in the current turn, so its final text is not posted as well. A set, not run
 // state, because the app tools' grant lives as long as the agent process, across runs.
 const posted = new Set<number>();
@@ -175,16 +175,40 @@ export function interrupt(key: Key, by: "user" | "app" = "app") {
 
 // The user's answer to the open request: the agent gets the chosen option, the request leaves the card, and the
 // attention flag drops when the request raised it. False when no request is open (answered already, or the turn ended).
-export function answerPermission(todoId: number, optionId: string): boolean {
+export function answerPermission(todoId: number, optionId: string, text?: string): boolean {
   const p = pending.get(todoId);
-  const option = p?.perm.options.find((o) => o.optionId === optionId);
+  const option = text !== undefined ? (p?.perm.question ? { name: "Answered in the chat" } : null) : p?.perm.options.find((o) => o.optionId === optionId);
   if (!p || !option) return false;
   pending.delete(todoId);
   const t = todoRow(todoId)!;
   setTodo(todoId, { permission: null, attention: t.attention ? attentionAfterAnswer(t.attention_by) : 0, attention_by: t.attention_by === "permission" ? null : t.attention_by });
   addEvent(todoId, "permission answered", "user", `${option.name}: ${toolLine(p.perm.name, p.perm.input)}`);
-  p.resolve({ outcome: "selected", optionId });
+  p.resolve({ outcome: "selected", optionId, text });
   return true;
+}
+
+// The agent's questions (Spec.questions; Codex's request_user_input): one after the other as a request on the card and in
+// the chat, its choices as the options. A chat message answers the open one in the user's words (commitMessage). Skip
+// leaves a question unanswered; a Stop, the end of the turn or the agent no longer waiting cancels the form.
+const SKIP = "__skip";
+async function askQuestions(todoId: number, r: any, signal: AbortSignal): Promise<any> {
+  const content: Record<string, unknown> = {};
+  const onAbort = () => cancelPermission(todoId);
+  signal.addEventListener("abort", onAbort);
+  try {
+    for (const q of formQuestions(r.requestedSchema)) {
+      const out = await askPermission(todoId, {
+        question: true, sessionId: r.sessionId, toolCall: { toolCallId: `question:${q.id}`, title: q.title, kind: "other", rawInput: q.description ? { description: q.description } : {} },
+        options: [...q.choices.map(([v, name]) => ({ optionId: `=${v}`, name, kind: "allow_once" as const })), { optionId: SKIP, name: "Skip", kind: "reject_once" as const }],
+      } as PermissionRequest & { question: true });
+      if (signal.aborted || out.outcome !== "selected") return { action: "cancel" };
+      if (out.optionId === SKIP) continue;
+      content[q.id] = formValue(q, out.text ?? out.optionId.slice(1));
+    }
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+  return Object.keys(content).length ? { action: "accept", content } : { action: "decline" };
 }
 
 // An open request that can no longer be answered (Stop, remove, shutdown, the turn ended): the agent is told it was cancelled.
@@ -201,11 +225,11 @@ function cancelPermission(todoId: number) {
 // The agent asks (a mode other than auto, or something auto still asks about): the request goes on the card and in
 // the chat, the TODO shows in Waiting, and the turn waits for the user. A request while one is already open (it
 // should not happen: the agent blocks) replaces it, and the earlier one is cancelled.
-function askPermission(todoId: number, r: PermissionRequest): Promise<PermissionOutcome> {
+function askPermission(todoId: number, r: PermissionRequest): Promise<PermissionOutcome & { text?: string }> {
   cancelPermission(todoId);
   const perm = permissionOf(r, now());
   const t = todoRow(todoId)!;
-  if (!t.attention) addEvent(todoId, "attention raised", "app", `${perm.name} needs approval`);
+  if (!t.attention) addEvent(todoId, "attention raised", "app", perm.question ? `question: ${perm.name}` : `${perm.name} needs approval`);
   setTodo(todoId, { permission: JSON.stringify(perm), attention: 1, attention_by: t.attention ? t.attention_by : "permission" });
   addEvent(todoId, "permission asked", "agent", toolLine(perm.name, perm.input));
   return new Promise((resolve) => pending.set(todoId, { perm, resolve }));
@@ -453,7 +477,10 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
       parkAgent(key);
     }
   };
-  const handlers = { onUpdate, onSdk, onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" } };
+  const handlers: Handlers = {
+    onUpdate, onSdk, onPermission: (r: PermissionRequest) => sink.s ? sink.s.onPermission(r) : { outcome: "cancelled" },
+    onQuestion: async (r, signal) => sink.s?.onQuestion ? sink.s.onQuestion(r, signal) : { action: "cancel" },
+  };
   const g = grant(o.grant, (secret) => secretHeader(o.agent, secret));
   // Claude forwards the SDK's level of live background tasks, which tells when one ends (backgroundLevel).
   const meta = isClaude(o.agent) ? { ...o.meta, claudeCode: { ...(o.meta.claudeCode as object), emitRawSDKMessages: [{ type: "system", subtype: "background_tasks_changed" }] } } : o.meta;
@@ -596,6 +623,12 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
 // question also runs one more routing turn.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = [], via: string | null = null) {
   setTodo(todoId, { suggestions: null }, false);   // a sent message answers the suggestions, picked or not
+  // The agent's open question (askQuestions) takes the user's own message as its answer.
+  if (author === "user" && !via && !uploads.length && pending.get(todoId)?.perm.question) {
+    const id = addMessage(todoId, author, body);
+    answerPermission(todoId, "", body);
+    return id;
+  }
   const t = todoRow(todoId)!, routing = t.routing ? (JSON.parse(t.routing) as Routing) : null;
   const action = deliveryAction(routing ? "not_started" : t.status, running.has(todoId));
   const id = db.transaction(() => {
@@ -866,6 +899,7 @@ function workerTurn(todoId: number, agent: Agent) {
     },
     // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
     onPermission: (r) => askPermission(todoId, r),
+    onQuestion: (r, signal) => askQuestions(todoId, r, signal),
   };
   return turn;
 }

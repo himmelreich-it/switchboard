@@ -9,7 +9,9 @@ export type PermissionOutcome = acp.RequestPermissionResponse["outcome"];
 export type McpServer = acp.McpServer;
 export type Command = { name: string; description: string; hint: string | null };
 // How to start an agent: its command line and extra environment (agents.ts builds it from the registry).
-export type Spec = { command: string[]; env?: Record<string, string> };
+// `questions`: the app takes the agent's questions as ACP form elicitations (Codex's request_user_input). Off for Claude,
+// whose workers ask through the app tools (the contract), not with AskUserQuestion.
+export type Spec = { command: string[]; env?: Record<string, string>; questions?: boolean };
 export type AuthMethod = { id: string; name: string; description: string | null };
 
 // session/new refused for want of a login (ACP error -32000): the agent's ways to log in, from its initialize answer.
@@ -23,6 +25,8 @@ export type Handlers = {
   onUpdate(u: Update): void;
   onSdk?(m: any): void; // a raw SDK message the session asked for in `_meta.claudeCode.emitRawSDKMessages` (Claude only)
   onPermission(r: PermissionRequest): Promise<PermissionOutcome> | PermissionOutcome;
+  // A form elicitation (Spec.questions): the answer, or decline/cancel. `signal` aborts when the agent stops waiting.
+  onQuestion?(r: acp.CreateElicitationRequest, signal: AbortSignal): Promise<acp.CreateElicitationResponse>;
 };
 export type SessionOpts = {
   cwd: string;
@@ -86,6 +90,8 @@ async function spawnAgent(spec: Spec, handlers: { h: Handlers | null }, extraEnv
     .onRequest(acp.methods.client.session.requestPermission, async (ctx) => ({
       outcome: handlers.h ? await handlers.h.onPermission(ctx.params) : { outcome: "cancelled" as const },
     }))
+    .onRequest(acp.methods.client.elicitation.create, async (ctx) =>
+      ctx.params.mode === "form" && handlers.h?.onQuestion ? handlers.h.onQuestion(ctx.params, ctx.signal) : { action: "cancel" as const })
     .onNotification(acp.methods.client.session.update, (ctx) => {
       const u: any = ctx.params.update;
       if (u.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions)) state.configOptions = u.configOptions;
@@ -101,7 +107,7 @@ async function spawnAgent(spec: Spec, handlers: { h: Handlers | null }, extraEnv
   try {
     const init = await withTimeout(conn.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, ...(spec.questions ? { elicitation: { form: {} } } : {}) },
       clientInfo: { name: "switchboard", version: "1" },
     }), INIT_TIMEOUT, "starting the agent");
     return { proc, conn, init, state, log: () => log };

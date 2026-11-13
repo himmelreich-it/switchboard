@@ -61,12 +61,12 @@ export function specOf(id: string): Spec | null {
   const b = BUILTINS.find((x) => x.id === id);
   if (b) {
     const command = b.command();
-    return command && { command };
+    return command && { command, questions: id !== "claude" };
   }
   const r = customRow(id);
   if (!r) return null;
   const command = onPath(r.command, JSON.parse(r.args || "[]"));
-  return command && { command, env: JSON.parse(r.env || "{}") };
+  return command && { command, env: JSON.parse(r.env || "{}"), questions: true };
 }
 
 // Every agent, built-ins first, for Settings › Agents and the agent selects.
