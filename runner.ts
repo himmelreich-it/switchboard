@@ -84,6 +84,7 @@ const OPERATOR_PROMPT = (home: string) => `You are the operator of switchboard, 
 - Get the state of the TODOs from your tools every time (mcp__app__list_todos, mcp__app__read_todo, mcp__app__read_file), not from earlier turns of this chat: those go stale, and the user can start a fresh operator session at any time.
 - A TODO with status not_started is in the user's backlog, unless it has a schedule: then it is in the board's Scheduled lane and starts at its first slot. The others are on the board. A TODO can span several sessions; only the latest is live.
 - TODOs are numbered: T-42 is TODO 42. Use that form when you name one. Jira keys such as AI-1234 are something else.
+- A message that starts with "[The user has T-42 open on screen]" was written while the user looked at T-42. "This TODO", "it" or "here" without another TODO named means T-42. Read it with your tools before acting.
 - mcp__app__create_todo creates a TODO: in the backlog by default, started with start: true, in a topic you name with topic (else routing picks it at the start). With schedule it is a scheduled TODO that runs a new session at each slot. Give it a short title with title. mcp__app__send_message sends a message to a TODO on the user's behalf; it shows in that TODO's chat as "via operator". mcp__app__remove_todo removes a TODO: its run stops and it moves to the Removed fold, where the user can restore it. Use them only when the user asks, and start or schedule only when the user's words say so.
 - TODO artifact files live under ${home}/data/<todo-id>/. You can also read them with Read, Grep and Glob.
 - A topic is what the user files TODOs under: one folder on disk (often a git repository, not always), with its own prompt and profile. Say "topic" to the user; name its folder only when the path matters.
@@ -440,12 +441,13 @@ export const closeAgents = () => { for (const key of [...agents.keys()]) closeAg
 function take(todoId: number | null, state: "pending" | "queued") {
   return takeMessages(todoId, state).bodies;
 }
+const markViewing = (body: string, via: string | null) => via ? `[The user has ${via} open on screen]\n${body}` : body;
 function takeMessages(todoId: number | null, state: "pending" | "queued") {
   const msgs = db.query("SELECT id, body, via FROM messages WHERE todo_id IS ? AND state = ? ORDER BY id").all(todoId, state) as { id: number; body: string; via: string | null }[];
   const at = now(), no = liveSessionNo(todoId);
   for (const m of msgs) db.run("UPDATE messages SET state = 'delivered', delivered_at = ?, session_no = ? WHERE id = ?", [at, no, m.id]);
   if (msgs.length) noteMessages(todoId, msgs.map((m) => m.id));
-  return { ids: msgs.map((m) => m.id), bodies: msgs.map((m) => withAttachments(markFromTodo(m.body, m.via), attachmentsOf(m.id).map((a) => a.path))) };
+  return { ids: msgs.map((m) => m.id), bodies: msgs.map((m) => withAttachments(todoId === null ? markViewing(m.body, m.via) : markFromTodo(m.body, m.via), attachmentsOf(m.id).map((a) => a.path))) };
 }
 
 // Item 20: at a tool boundary the queued messages go to the running turn, as one steer, and the agent reads them at
@@ -1284,8 +1286,9 @@ export async function scanRepo(projectId: number) {
 
 // ---------- operator ----------
 
-export function commitOperatorMessage(body: string) {
-  const id = addMessage(null, "user", body, "queued");
+// `viewing` ("T-42"): the TODO open on the user's screen when they wrote the message; stored in `via`.
+export function commitOperatorMessage(body: string, viewing: string | null = null) {
+  const id = addMessage(null, "user", body, "queued", null, viewing);
   deliverOperator();
   return id;
 }

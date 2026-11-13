@@ -1735,7 +1735,8 @@ async function api(req: Request, path: string): Promise<Response> {
   if (path === "/api/operator/messages" && method === "POST") {
     const text = String(body.body ?? "").trim();
     if (!text) return fail("empty message");
-    const id = commitOperatorMessage(text);
+    const viewing = Number.isInteger(body.viewing) && todoRow(body.viewing) ? `T-${body.viewing}` : null;
+    const id = commitOperatorMessage(text, viewing);
     setDraft("operator", "");
     return json(db.query("SELECT id, author, body, committed_at AS at, state FROM messages WHERE id = ?").get(id));
   }
