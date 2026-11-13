@@ -284,9 +284,8 @@ export function setAutoEffort(todoId: number, value: string, reason: string, by:
   if (user) return user;
   setTodo(todoId, { auto_effort: JSON.stringify({ value, reason }) });
   addEvent(todoId, "effort", by, `${value} · ${reason}`);
-  // Only the TODO's own session: while routing runs, the live agent under the TODO's key is the router.
   const a = liveAgent(todoId);
-  if (a && a.agent === agent && a.live.sessionId === t.session_id) void applyConfig(todoId, a).catch((e) => addEvent(todoId, "error", "app", `Could not set effort ${value}: ${e?.message ?? e}`));
+  if (a) void applyConfig(todoId, a).catch((e) => addEvent(todoId, "error", "app", `Could not set effort ${value}: ${e?.message ?? e}`));
   return null;
 }
 
@@ -316,7 +315,12 @@ export function commandsOf(todoId: number): Command[] {
 }
 
 // The live agent process of a TODO, when it is still alive (for a mode change between turns).
-export const liveAgent = (todoId: number) => { const a = agents.get(todoId); return a && a.live.alive ? a : null; };
+// The TODO's own session only: while routing runs, the agent under the TODO's key is the router, whose config and
+// commands are not the TODO's.
+export const liveAgent = (todoId: number) => {
+  const a = agents.get(todoId);
+  return a && a.live.alive && a.live.sessionId === todoRow(todoId)?.session_id ? a : null;
+};
 
 // Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
 // Background tasks end with it, so a TODO that showed running only for them is idle (or waiting) again.
@@ -717,7 +721,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
           // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).
           claudeCode: { options: { allowedTools: WORKER_TOOLS, extraArgs: { "system-prompt-snapshot": "off" } } },
         } : {},
-        grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId) },
+        grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId), agent: agentId },
       });
       await applyConfig(todoId, agent, undefined, true);
     } catch (e: any) {

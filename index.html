@@ -1962,7 +1962,7 @@ const agentsAll = () => S.meta?.agents ?? [{ id: "claude", name: "Claude", built
 const agentsFound = () => agentsAll().filter((a) => a.found);
 const agentLabel = (id) => agentsAll().find((a) => a.id === (id || "claude"))?.name ?? id;
 // An agent's option in the agent selects; design v10 marks one without a login.
-const agentOption = (a) => a.name + (a.login ? " · needs login" : "");
+const agentOption = (a) => a.name + (a.needsLogin ? " · needs login" : "");
 // Per agent, the config options last seen from any of its sessions (meta).
 const agentConfig = (agent) => S.meta?.agent_config?.[agent || "claude"] ?? [];
 const agentSelect = (value, attrs) => `<select ${attrs}>${agentsFound().map((a) => `<option value="${esc(a.id)}"${(value || "claude") === a.id ? " selected" : ""}>${esc(agentOption(a))}</option>`).join("")}</select>`;
@@ -3076,7 +3076,7 @@ function renderNew() {
   // is not reset by a live update. "Topic's default" leaves the pick to the topic routing chooses (801).
   const found = agentsFound();
   $("newAgentField").hidden = found.length < 2;
-  const akey = found.map((a) => a.id + (a.login ? "?" : "")).join("|");
+  const akey = found.map((a) => a.id + (a.needsLogin ? "?" : "")).join("|");
   if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(agentOption(a))}</option>`).join(""); newAgent.dataset.key = akey; }
   newAgent.value = found.some((a) => a.id === S.newAgent) ? S.newAgent : "";   // an agent no longer found falls back to the topic's
   S.rep ??= REP0();
@@ -4254,7 +4254,7 @@ function renderAgents() {
   // design v6: one row per agent, its state, how it runs, and its actions on the right
   setHtml($("agentList"), agentsAll().map((a) => {
     const info = S.agentInfo[a.id], busy = S.loggingIn === a.id;
-    const state = !a.found ? badge("Not found", "red", true) : a.login ? badge("Needs login", "amber", true) : badge("Found", "success", true);
+    const state = !a.found ? badge("Not found", "red", true) : a.needsLogin ? badge("Needs login", "amber", true) : badge("Found", "success", true);
     const note = a.id === "claude" ? "Uses your Claude Code login, settings, skills and hooks." : !a.found ? a.hint || "Not found on your login-shell PATH." : info?.error ?? "";
     const login = a.found && a.id !== "claude" && info?.authMethods?.length
       ? info.authMethods.map((m) => `<span title="${esc(m.description ?? "")}" style="display:flex">${btn(busy ? "Waiting for the login…" : m.name, "agent-login", { v: "primary", id: `${a.id}:${m.id}`, dis: !!S.loggingIn })}</span>`).join("") : "";

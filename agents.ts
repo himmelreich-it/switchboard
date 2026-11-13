@@ -1,7 +1,7 @@
 // The agent registry (P5): which ACP agents a TODO can run, and what differs between them. Claude and Codex are
 // built in (Gemini waits until it can be tested); the user's own agents are rows of the `agents` table. runner.ts asks
 // this file how to start an agent and how to talk to it; acp.ts knows nothing about agents beyond its command line.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Spec } from "./acp";
@@ -14,7 +14,7 @@ export type AgentInfo = {
   id: string; name: string; builtin: boolean;
   command: string;        // as shown in Settings
   found: boolean;         // the command can be started
-  login: boolean;         // found, but the agent has no login yet (design v10: "· needs login")
+  needsLogin: boolean;    // found, but the agent has no login yet (design v10: "· needs login")
   hint: string | null;    // how to get it when it is not found
 };
 
@@ -29,12 +29,22 @@ const adapter = (pkg: string) => {
 // The bundled adapters run on the Bun that runs this server (Claude: the spike; Codex: T-218): no Node needed. Codex's adapter
 // starts the Codex binary it depends on (@openai/codex), and reads the user's ~/.codex login and config.
 // `loggedIn`: whether the agent has a login; Claude has no check (the app needs a Claude Code login to run at all).
-// Codex keeps its login, ChatGPT or API key, in $CODEX_HOME/auth.json; a missing file is the "needs login" state.
 const BUILTINS: { id: string; name: string; command: () => string[] | null; shown: string; hint: string | null; loggedIn?: () => boolean }[] = [
   { id: "claude", name: "Claude", command: () => [process.execPath, adapter("@agentclientprotocol/claude-agent-acp")], shown: "claude-agent-acp (bundled)", hint: null },
   { id: "codex", name: "Codex", command: () => [process.execPath, adapter("@agentclientprotocol/codex-acp")], shown: "codex-acp (bundled)", hint: null,
-    loggedIn: () => existsSync(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json")) },
+    loggedIn: codexLoggedIn },
 ];
+
+// Codex keeps its login, ChatGPT or API key, in $CODEX_HOME/auth.json, unless config.toml stores it in the keychain
+// (cli_auth_credentials_store "keyring" or "auto") or sets a model_provider, which may need no login: then it counts
+// as logged in. A login that expired shows when a run starts (AuthRequired).
+function codexLoggedIn() {
+  const home = process.env.CODEX_HOME || join(homedir(), ".codex");
+  if (existsSync(join(home, "auth.json"))) return true;
+  let config = "";
+  try { config = readFileSync(join(home, "config.toml"), "utf8"); } catch {}
+  return /^\s*(model_provider\s*=|cli_auth_credentials_store\s*=\s*"(keyring|auto)")/m.test(config);
+}
 export const DEFAULT_AGENT = "claude";
 
 // A command found on PATH, with its arguments. A Windows .cmd or .bat shim (npm's global installs) runs through cmd.exe.
@@ -65,11 +75,11 @@ export function agentList(): AgentInfo[] {
   return [
     ...BUILTINS.map((b) => {
       const found = !!b.command();
-      return { id: b.id, name: b.name, builtin: true, command: b.shown, found, login: found && !!b.loggedIn && !b.loggedIn(), hint: b.hint };
+      return { id: b.id, name: b.name, builtin: true, command: b.shown, found, needsLogin: found && !!b.loggedIn && !b.loggedIn(), hint: b.hint };
     }),
     ...customRows().map((r) => ({
       id: r.id, name: r.name, builtin: false, command: [r.command, ...JSON.parse(r.args || "[]")].join(" "),
-      found: !!Bun.which(r.command), login: false, hint: null,
+      found: !!Bun.which(r.command), needsLogin: false, hint: null,
     })),
   ];
 }

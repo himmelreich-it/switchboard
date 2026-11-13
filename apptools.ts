@@ -22,7 +22,8 @@ export const ROUTER_TOOLS = ["read_todo", "read_file", "route_todo", "ask_topic"
 
 // `onPost` tells the run that the agent posted a chat message this turn (so its final text is not posted as well).
 // `via` names the Claude terminal a grant belongs to (P6): its chat messages carry it.
-type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void; via?: string } | { kind: "operator" } | { kind: "router"; todoId: number };
+// A worker's `agent` is its session's: a New session on another agent lists its tools before the TODO's agent changes.
+type Grant = { kind: "worker"; todoId: number; dir: string; onPost: () => void; via?: string; agent?: string } | { kind: "operator" } | { kind: "router"; todoId: number };
 const grants = new Map<string, Grant>();
 
 // A secret for one agent process, and the MCP server entry that names it. Revoke it when the agent process ends.
@@ -174,7 +175,7 @@ function workerTools(s: McpServer, g: Extract<Grant, { kind: "worker" }>) {
   });
   // Auto effort: the worker switches its own effort level as the work changes (CONTRACT's effort rules). The built-in
   // agents only (hasAutoEffort); a Claude terminal does not get it, as the level belongs to the TODO's session.
-  if (!g.via && hasAutoEffort(todoRow(todoId)!.agent)) s.registerTool("set_effort", {
+  if (!g.via && hasAutoEffort(g.agent ?? todoRow(todoId)!.agent)) s.registerTool("set_effort", {
     description: "Switch your effort level: low, medium, high or xhigh. reason: a few words the user reads, such as \"verifying the fix\". Refused when the user set the effort.",
     inputSchema: { level: z.enum(AUTO_EFFORTS), reason: z.string() },
   }, async ({ level, reason }) => {
