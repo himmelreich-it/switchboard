@@ -33,6 +33,7 @@
       "acp.ts",
       "agents.ts",
       "apptools.ts",
+      "design.ts",
       "lib.ts",
       "lan.ts",
       "index.html",
