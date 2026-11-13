@@ -1210,7 +1210,7 @@ export const DESIGN_START = "Design review is on for this TODO. Before you chang
 export function reviewerFirst(o: { parent: number; title: string; file: string; worktree: string | null; folder: string | null }) {
   return [
     `Review the design of T-${o.parent} (${o.title}). Its agent wrote it; you are the reviewer.`,
-    `Design file: ${o.file}`,
+    `Design file: ${o.file} (or read it with the app's read_file tool: T-${o.parent}, name ${o.file.split("/").pop()})`,
     o.worktree ? `Worktree with the code: ${o.worktree}` : o.folder ? `Topic folder: ${o.folder}` : null,
     "Read the design and the code it touches, and the repository's instructions (CLAUDE.md, AGENTS.md) when there are any. Do not edit any file outside your artifact folder.",
     "Look for wrong assumptions about the code, missing cases, a simpler option that does the same, and risks. Do not ask for features the task did not ask for.",

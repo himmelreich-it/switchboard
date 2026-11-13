@@ -131,6 +131,7 @@ function sendForReview(t: Todo, d: Design) {
   const max = d.round === 0 ? designConfig(t.project_id)?.max ?? DESIGN_MAX : d.phase === "design" ? d.max : round;
   const next: Design = { ...d, phase: "design", round, max, file: req.file, request: null, review: null, waiting: "reviewer", nudged: 0,
     rejected: req.answers.filter((a) => a.answer === "rejected").map((a) => a.id) };
+  const first = () => reviewerFirst({ parent: t.id, title: t.title, file: req.file, worktree: t.worktree_path, folder: projectRow(t.project_id)?.local_path ?? null });
   const live = d.reviewer ? todoRow(d.reviewer) : null;
   let reviewer = d.reviewer!;
   if (!live || live.removed_at) {
@@ -140,14 +141,14 @@ function sendForReview(t: Todo, d: Design) {
       addMessage(t.id, "app", "Design review needs a second agent: Settings › Agents.");
       return raise(t.id, "no reviewer agent");
     }
-    reviewer = createTodo(reviewerFirst({ parent: t.id, title: t.title, file: req.file, worktree: t.worktree_path, folder: projectRow(t.project_id)?.local_path ?? null }),
-      "agent", [], agent, { parent_id: t.id, project_id: t.project_id, title: `Design review of T-${t.id}` });
+    reviewer = createTodo(first(), "agent", [], agent, { parent_id: t.id, project_id: t.project_id, title: `Design review of T-${t.id}` });
     setTodo(reviewer, { design: JSON.stringify({ of: t.id } satisfies ReviewerOf), worktree_path: t.worktree_path }, false);
     save(t.id, { ...next, reviewer });
     start(reviewer);
   } else {
     save(t.id, next);
-    commitMessage(reviewer, "user via operator", reviewerNext({ round, file: req.file, answers: req.answers }), [], `T-${t.id}`);
+    // A new design review on a TODO that had one keeps its reviewer: round 1 is a new review there.
+    commitMessage(reviewer, "user via operator", round === 1 ? first() : reviewerNext({ round, file: req.file, answers: req.answers }), [], `T-${t.id}`);
   }
   addEvent(t.id, "design review", "app", `round ${round} of ${max} · sent to T-${reviewer}`);
   addMessage(t.id, "app", `Design sent for review, round ${round} of ${max}: T-${reviewer} (${agentName(todoRow(reviewer)!.agent)}).`);
