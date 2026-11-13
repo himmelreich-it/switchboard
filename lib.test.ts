@@ -295,6 +295,17 @@ test("toolMeta merges a tool call's updates; planCount", () => {
   expect(m).toMatchObject({ name: "Write", title: "Write b.txt", kind: "edit", status: "completed", input: { file_path: "/r/b.txt" }, output: "done",
     locations: [{ path: "/r/b.txt" }], diffs: [{ path: "/r/b.txt", oldText: null, newText: "x" }] });
   expect(toolMeta(null, { toolCallId: "t2", rawOutput: "x".repeat(9000), status: "completed" }).output.length).toBeLessThan(8100);
+  // Codex: a command's output in chunks, its exit code at the end; an MCP tool's result and error in rawOutput.
+  const term = (data: string) => ({ toolCallId: "c1", _meta: { terminal_output_delta: { data, terminal_id: "c1" } } });
+  const exec = [{ toolCallId: "c1", name: "exec_command", kind: "execute", status: "in_progress", rawInput: { command: "git pull" } },
+    term("There is no tracking information\n"), term("for the current branch.\n"),
+    { toolCallId: "c1", status: "failed", _meta: { terminal_exit: { exit_code: 1, signal: null, terminal_id: "c1" } } }];
+  expect(exec.reduce<any>((m, u) => toolMeta(m, u), null).output).toBe("There is no tracking information\nfor the current branch.\nexit code 1");
+  expect([term("y".repeat(7000)), term("y".repeat(7000)), term("z")].reduce<any>((m, u) => toolMeta(m, u), null).output).toMatch(/^y{8000}\n… cut/);
+  expect(toolMeta(null, { toolCallId: "c2", status: "completed", rawOutput: { exit_code: 0 } }).output).toBe("");
+  const mcp = (rawOutput: any) => toolMeta(null, { toolCallId: "m1", title: "mcp.app.post_message", status: "completed", rawOutput }).output;
+  expect(mcp({ result: { content: [{ type: "text", text: "posted" }] }, error: null })).toBe("posted");
+  expect(mcp({ result: null, error: { message: "unknown TODO" } })).toBe("unknown TODO");
   expect(planCount(null)).toBe(null);
   expect(planCount([{ content: "a", status: "completed" }, { content: "b", status: "pending" }])).toBe("1/2");
 });

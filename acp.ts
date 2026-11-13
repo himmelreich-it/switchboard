@@ -29,11 +29,15 @@ export type SessionOpts = {
   additionalDirectories?: string[];
   mcpServers: McpServer[];
   meta?: Record<string, unknown>; // the agent's own `_meta` for session/new and session/resume
+  // Appended to the agent's system prompt, for an agent that declares `sessionCapabilities.systemPrompt` (Codex).
+  systemPrompt?: string;
   env?: Record<string, string>; // added to the agent process's environment
 };
 
 export type Live = {
   sessionId: string;
+  // The agent took SessionOpts.systemPrompt; false: the caller sends the instructions with the first prompt instead.
+  readonly systemPrompt: boolean;
   // The session's config options (mode, model, effort, …) as the agent last reported them: from session/new or
   // session/resume, a set_config_option answer, or a config_option_update. A model switch rewrites the others.
   readonly configOptions: any[];
@@ -134,12 +138,13 @@ export async function killTree(pid: number, signal: NodeJS.Signals) {
 const pendingKills = new Set<() => void>();
 export const killNow = () => { for (const kill of [...pendingKills]) kill(); };
 
-function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, configOptions: any[] | null | undefined): Live {
+function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, configOptions: any[] | null | undefined, systemPrompt: boolean): Live {
   let alive = true;
   a.proc.exited.then(() => (alive = false));
   if (configOptions) a.state.configOptions = configOptions;
   return {
     sessionId,
+    systemPrompt,
     get configOptions() { return a.state.configOptions; },
     get commands() { return a.state.commands; },
     async prompt(text) {
@@ -180,15 +185,21 @@ function live(a: Awaited<ReturnType<typeof spawnAgent>>, sessionId: string, conf
   };
 }
 
+// ACP's `systemPrompt` (append) for session/new and session/resume, when the caller has one and the agent takes it.
+const systemPromptOf = (init: any, o: SessionOpts) =>
+  o.systemPrompt && init.agentCapabilities?.sessionCapabilities?.systemPrompt
+    ? { systemPrompt: { mode: "append", content: [{ type: "text", text: o.systemPrompt }] } } : {};
+
 // session/new in a new agent process. The agent makes the session id; for Claude it is the Claude Code session id.
 export async function openSession(spec: Spec, o: SessionOpts, h: Handlers): Promise<Live> {
   const handlers = { h };
   const a = await spawnAgent(spec, handlers, o.env);
   try {
+    const sp = systemPromptOf(a.init, o);
     const s = await a.conn.agent.request(acp.methods.agent.session.new, {
-      cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta,
+      cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta, ...sp,
     } as acp.NewSessionRequest);
-    return live(a, s.sessionId, s.configOptions);
+    return live(a, s.sessionId, s.configOptions, !!sp.systemPrompt);
   } catch (e: any) {
     a.proc.kill();
     if (e?.code === -32000) throw new AuthRequired(authMethodsOf(a.init));
@@ -203,13 +214,14 @@ export async function reopenSession(spec: Spec, sessionId: string, o: SessionOpt
   const a = await spawnAgent(spec, handlers, o.env);
   try {
     const caps: any = a.init.agentCapabilities ?? {};
-    const params = { sessionId, cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta };
+    const sp = systemPromptOf(a.init, o);
+    const params = { sessionId, cwd: o.cwd, mcpServers: o.mcpServers, additionalDirectories: o.additionalDirectories, _meta: o.meta, ...sp };
     let s: any;
     if (caps.sessionCapabilities?.resume) s = await a.conn.agent.request(acp.methods.agent.session.resume, params as any);
     else if (caps.loadSession) s = await a.conn.agent.request(acp.methods.agent.session.load, params as any);
     else throw new Error("this agent cannot resume sessions");
     handlers.h = h;
-    return live(a, sessionId, s?.configOptions);
+    return live(a, sessionId, s?.configOptions, !!sp.systemPrompt);
   } catch (e: any) {
     a.proc.kill();
     if (e?.code === -32000) throw new AuthRequired(authMethodsOf(a.init));

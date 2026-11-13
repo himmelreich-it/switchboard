@@ -1981,7 +1981,7 @@ const modeOptions = (value, projectDefault, agent, t) => {
 };
 // P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
 // is the TODO's session's as the agent last reported it, else the last one seen from any session of that agent (meta).
-const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+const CONFIG_CATEGORIES = ["model", "thought_level", "model_config", "collaboration_mode"];
 const configList = (t, agent) => (t?.config ?? agentConfig(t?.agent ?? agent)).filter((o) => CONFIG_CATEGORIES.includes(o.category));
 const optName = (o, v) => o.options.find((x) => x.value === v)?.name ?? v;
 // One select's options: "" first (the project's value, or the agent's own when the project sets none), then the agent's.
@@ -2845,7 +2845,7 @@ function activityOf(t) {
   if (t.background_wait) return ["other", `Waiting for ${plural(t.background, "background task")}`];
   if (t.last_tool) {
     const name = t.last_tool.split(" ")[0];
-    const kind = /^(Read|Glob|LS)$/.test(name) ? "read" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name) ? "edit" : /^(Bash|BashOutput)$/.test(name) ? "run"
+    const kind = /^(Read|Glob|LS)$/.test(name) ? "read" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name) ? "edit" : /^(Bash|BashOutput|Shell)$/.test(name) ? "run"
       : /^(Grep|Search|ToolSearch)$/.test(name) ? "search" : /^(WebFetch|WebSearch)$/.test(name) ? "fetch" : "other";
     return [kind, t.last_tool.replace(/^Bash /, "")];
   }
@@ -3127,13 +3127,13 @@ function sessionRows(t) {
     // Auto effort (built-in agents): effort the user did not set is the router's or the agent's pick, medium until one is made.
     const auto = agentsAll().find((a) => a.id === agent)?.builtin && o.category === "thought_level" && !inh ? t.auto_effort?.value ?? "medium" : null;
     const eff = own ?? inh ?? auto ?? live;
-    const isFast = o.category === "model_config";
+    const isFast = o.category === "model_config", isPlan = o.category === "collaboration_mode";
     const name = eff && eff !== "default" ? optName(o, eff).replace(/\s*\(.*\)$/, "") : null;
     rows.push({ kind: "cfg", id: o.id, label: o.name, own, from: inh ? "Project" : auto ? "Auto" : "Agent",
       first: inh ? `Topic's (${optName(o, inh)})` : auto ? `Auto (${optName(o, auto)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
       options: o.options.map((x) => [x.value, x.name]), value: eff, desc: auto && !own ? `Picked by the app: ${t.auto_effort?.reason ?? "medium until routing picks a level"}. Pick a level to set it yourself.` : null,
       // v10: the chip names the effort ("Effort High") and marks the app's pick with a small "auto" tag.
-      short: isFast ? (eff === "on" ? "Fast" : null) : o.category === "thought_level" && name ? `Effort ${name}` : name, auto: !!(auto && !own),
+      short: isFast ? (eff === "on" ? "Fast" : null) : isPlan ? (eff === "plan" ? "Plan" : null) : o.category === "thought_level" && name ? `Effort ${name}` : name, auto: !!(auto && !own),
       why: auto && !own ? t.auto_effort?.reason ?? "medium until routing picks a level" : null });
   }
   return rows;
@@ -5022,7 +5022,7 @@ function drawCmds() {
     const g = c.name.includes(":") ? "Plugins" : "Commands";
     if (g !== grp) { grp = g; body += `<div class="ml grp">${g}</div>`; }
     const pre = q && c.name.toLowerCase().startsWith(q.toLowerCase()) ? c.name.slice(0, q.length) : "";
-    body += `<div class="c" role="option" id="cmd-${i}" aria-selected="${i === CMDS.sel}" data-cmd="${i}"><span class="nm"><b>/${esc(pre)}</b>${esc(c.name.slice(pre.length))}</span><span class="hint">${esc(c.hint ?? "")}</span><span class="ds" title="${esc(c.description)}">${esc(c.description)}</span><span class="ent">${i === CMDS.sel ? "↵" : ""}</span></div>`;
+    body += `<div class="c" role="option" id="cmd-${i}" aria-selected="${i === CMDS.sel}" data-cmd="${i}"><span class="nm"><b>${c.name.startsWith("$") ? "" : "/"}${esc(pre)}</b>${esc(c.name.slice(pre.length))}</span><span class="hint">${esc(c.hint ?? "")}</span><span class="ds" title="${esc(c.description)}">${esc(c.description)}</span><span class="ent">${i === CMDS.sel ? "↵" : ""}</span></div>`;
   });
   if (!CMDS.items.length) body = CMDS.total ? `<div style="padding:16px 12px; display:flex; flex-direction:column; gap:4px"><span style="font-size:13px">No command matches /${esc(q)}</span><span class="small">The list comes from the agent and updates while the session runs.</span></div>`
     : '<div style="padding:16px 12px; display:flex; flex-direction:column; gap:4px"><span style="font-size:13px">No commands yet</span><span class="small">The agent sends its list once the session starts.</span></div>';
@@ -5040,7 +5040,7 @@ function closeCmds() {
 function pickCmd(i) {
   const c = CMDS.items[i];
   if (!c) return;
-  composer.value = `/${c.name} `;
+  composer.value = c.name.startsWith("$") ? `${c.name} ` : `/${c.name} `;   // a Codex skill is mentioned as $name, not run as /name
   closeCmds();
   saveDraftSoon(draftKey(), composer.value);
   renderHint();

@@ -249,7 +249,7 @@ export type ToolMeta = {
 };
 export function toolMeta(prev: ToolMeta | null, u: any): ToolMeta {
   const m: ToolMeta = prev ? { ...prev } : {
-    toolCallId: u.toolCallId, name: u._meta?.claudeCode?.toolName ?? u.name ?? u.title ?? "tool", title: "", kind: "other", status: "pending",
+    toolCallId: u.toolCallId, name: u._meta?.claudeCode?.toolName ?? shellName(u) ?? u.name ?? u.title ?? "tool", title: "", kind: "other", status: "pending",
     input: {}, locations: [], diffs: [], output: "",
   };
   if (u.title) m.title = u.title;
@@ -265,7 +265,30 @@ export function toolMeta(prev: ToolMeta | null, u: any): ToolMeta {
     if (text && (u.status === "completed" || u.status === "failed" || !m.output)) m.output = cut(text, 8000);
   }
   if (typeof u.rawOutput === "string" && u.rawOutput && (u.status === "completed" || u.status === "failed")) m.output = cut(u.rawOutput, 8000);
+  // Codex (codex-acp): a command's output streams in `_meta.terminal_output_delta` chunks and ends with its exit code;
+  // an MCP tool's result is `rawOutput {result, error}`.
+  const chunk = u._meta?.terminal_output_delta?.data ?? u._meta?.terminal_output?.data;
+  if (typeof chunk === "string" && !m.output.endsWith(CUT_MARK)) {
+    const all = m.output + chunk;
+    m.output = all.length > 8000 ? all.slice(0, 8000) + CUT_MARK : all;
+  }
+  const exit = u._meta?.terminal_exit?.exit_code ?? u.rawOutput?.exit_code;
+  if (typeof exit === "number" && exit !== 0) m.output += `${m.output && !m.output.endsWith("\n") ? "\n" : ""}exit code ${exit}`;
+  const r = u.rawOutput;
+  if (r && typeof r === "object" && ("result" in r || "error" in r) && (r.result != null || r.error != null)) {
+    const text = r.error != null ? String(r.error.message ?? JSON.stringify(r.error))
+      : Array.isArray(r.result?.content) ? r.result.content.filter((c: any) => c?.type === "text").map((c: any) => c.text).join("\n") : "";
+    if (text) m.output = cut(text, 8000);
+  }
   return m;
+}
+const CUT_MARK = "\n… cut at 8000 characters";
+
+// Codex runs every command through one tool (`exec_command`; without a name when a permission request opened the call).
+// Its row is named by what the command does, as Claude's tools are: Read, Search, else Shell with the command.
+function shellName(u: any): string | undefined {
+  if (u.name !== "exec_command" && (u.name || u.kind !== "execute" || typeof u.rawInput?.command !== "string")) return;
+  return u.kind === "read" ? "Read" : u.kind === "search" ? "Search" : "Shell";
 }
 
 // The agent's plan (its todo list) as `done/total`, or null without one.
@@ -347,9 +370,10 @@ export function configView(raw: any[]): ConfigOption[] {
   }));
 }
 
-// The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config).
-// The permission mode has its own setting (P3); options without a category (Claude's `agent`) are left to the agent.
-export const CONFIG_CATEGORIES = ["model", "thought_level", "model_config"];
+// The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config),
+// and Codex's plan mode (collaboration_mode). The permission mode has its own setting (P3); options without a category
+// (Claude's `agent`) are left to the agent.
+export const CONFIG_CATEGORIES = ["model", "thought_level", "model_config", "collaboration_mode"];
 
 // What to set for the wanted values ({config id: value}, the project's defaults under the TODO's own): the changes
 // against the agent's current options, and the values it does not offer (effort on a model without it). `models`
@@ -573,8 +597,10 @@ export class Throttle {
 }
 
 // The interesting argument of a tool call: the Bash command, the file path, the search pattern...
+// Codex's MCP calls nest the tool's input in `arguments`: their first text value stands for it.
 export const toolArg = (input: any): string =>
-  String(input?.command ?? input?.file_path ?? input?.pattern ?? input?.skill ?? input?.path ?? input?.url ?? "").slice(0, 300);
+  String(input?.command ?? input?.file_path ?? input?.pattern ?? input?.skill ?? input?.path ?? input?.url
+    ?? Object.values(input?.arguments ?? {}).find((v) => typeof v === "string") ?? "").slice(0, 300);
 
 // "Bash git status", "Read /a/b.ts": one line per tool call for the events list.
 export const toolLine = (name: string, input: any) => `${name} ${toolArg(input)}`.trim();

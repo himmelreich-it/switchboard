@@ -67,8 +67,9 @@ const EFFORT_RULES = `
 export const contractFor = (agent: string, dir: string) =>
   (CONTRACT + (hasAutoEffort(agent) ? EFFORT_RULES : "")).replaceAll("{artifact_dir}", dir).replace(/mcp__app__(\w+)/g, (_, tool) => toolName(agent, tool));
 
-// What an agent without a system-prompt append gets in front of the first prompt of each session (design §9). After a
-// restart the resumed session still has it in its context; an edited topic prompt reaches it with the next session.
+// What an agent without a system-prompt append (neither Claude's `_meta` nor ACP's `systemPrompt`) gets in front of the
+// first prompt of each session (design §9). A resumed session still has it in its context; an edited topic prompt
+// reaches it with the next session.
 const instructionsText = (contract: string, prompt: string) =>
   `# Switchboard instructions\n\n${[contract, prompt.trim()].filter(Boolean).join("\n\n")}\n\n# Your task\n\n`;
 
@@ -109,7 +110,10 @@ type Sink = { onUpdate(u: Update): void; onPermission(r: PermissionRequest): Pro
 // was given (system prompt, folders): when it changes (an edited project prompt), the next turn reopens the session.
 // `bg` is its background tasks still running (item 136), oldest first; `bgNames` and `bgSince` their names and when the app first
 // saw each (item 148).
-type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; bgNames: Record<string, string>; bgSince: Record<string, string>; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string };
+type Agent = { agent: string; live: Live; secret: string; sink: { s: Sink | null }; fingerprint: string; bg: string[]; bgNames: Record<string, string>; bgSince: Record<string, string>; idle?: Timer; configError?: string; skipped?: string; modeMiss?: string;
+  // The options as the session reported them when the process opened it, before the app set any: the reset value of an
+  // agent without a `default` value (Codex).
+  initial: Record<string, string> };
 const agents = new Map<Key, Agent>();
 
 // `live` is set once the agent process is ready; `cancel` records a Stop that came before that; `kill` is the fallback
@@ -248,7 +252,13 @@ export async function applyConfig(todoId: number, a: Agent, reset?: string, open
   const wanted = wantedConfig(t, a.agent);
   const auto = (own || opening) && hasAutoEffort(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
   if (auto) wanted[auto[0]] = auto[1];
-  if (reset && !wanted[reset] && configView(a.live.configOptions).find((o) => o.id === reset)?.options.some((x) => x.value === "default")) wanted[reset] = "default";
+  // shortcut: a resumed Codex session reports the value it last ran with, so a reset reaches the config.toml value only
+  // in a process that opened a new session; upgrade by reading Codex's config (config/read) when that matters.
+  if (reset && !wanted[reset]) {
+    const o = configView(a.live.configOptions).find((x) => x.id === reset);
+    const back = o?.options.some((x) => x.value === "default") ? "default" : a.initial[reset];
+    if (back && o?.options.some((x) => x.value === back)) wanted[reset] = back;
+  }
   const errors: string[] = [];
   let skipped: [string, string][] = [];
   for (const models of [true, false]) {
@@ -300,6 +310,17 @@ function saveConfig(todoId: number, a: Agent) {
     if (getMeta(metaKey("agent_config", a.agent)) !== config) setMeta(metaKey("agent_config", a.agent), config);
   }
   if (a.live.commands.length) setMeta(metaKey("agent_commands", a.agent), JSON.stringify(a.live.commands));
+}
+
+// Codex leaves its plan mode itself once the user approves the plan ("Implement this plan?"): the TODO's own plan pick
+// is dropped, else the next turn would switch back to planning.
+function leftPlan(todoId: number, a: Agent) {
+  const t = todoRow(todoId)!, own = t.overrides ? JSON.parse(t.overrides) : {};
+  const o = configView(a.live.configOptions).find((x) => x.category === "collaboration_mode");
+  if (!o || own[o.id] !== "plan" || o.value === "plan") return;
+  delete own[o.id];
+  setTodo(todoId, { overrides: Object.keys(own).length ? JSON.stringify(own) : null });
+  addEvent(todoId, "config", "agent", `${o.name}: ${o.options.find((x) => x.value === o.value)?.name ?? o.value} (plan approved)`);
 }
 
 // Every agent's last seen config options, for /api/meta.
@@ -394,8 +415,8 @@ async function steerQueued(todoId: number, agent: Agent) {
 
 // The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
 // session/resume in a new process. The config options and the permission mode are set afterwards, by applyConfig().
-async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; grant: Parameters<typeof grant>[0] }) {
-  const fingerprint = JSON.stringify([o.agent, o.cwd, o.dirs, o.meta]);
+async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; systemPrompt?: string; grant: Parameters<typeof grant>[0] }) {
+  const fingerprint = JSON.stringify([o.agent, o.cwd, o.dirs, o.meta, o.systemPrompt]);
   const had = agents.get(key);
   if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === fingerprint) {
     clearTimeout(had.idle);
@@ -436,7 +457,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
   const g = grant(o.grant, (secret) => secretHeader(o.agent, secret));
   // Claude forwards the SDK's level of live background tasks, which tells when one ends (backgroundLevel).
   const meta = isClaude(o.agent) ? { ...o.meta, claudeCode: { ...(o.meta.claudeCode as object), emitRawSDKMessages: [{ type: "system", subtype: "background_tasks_changed" }] } } : o.meta;
-  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
+  const opts = { cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: [g.server], meta, systemPrompt: o.systemPrompt, env: { SWITCHBOARD_MCP_SECRET: g.secret } };
   let live: Live;
   try {
     live = sessionId ? await reopenSession(spec, sessionId, opts, handlers as any) : await acpOpen(spec, opts, handlers as any);
@@ -444,7 +465,8 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     revoke(g.secret);
     throw e;
   }
-  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint, bg: [], bgNames: {}, bgSince: {} });
+  const initial = Object.fromEntries(configView(live.configOptions).map((c) => [c.id, c.value]));
+  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint, bg: [], bgNames: {}, bgSince: {}, initial });
   agents.set(key, a);
   // A process that dies between turns takes its background tasks along.
   live.exited.then(() => agents.get(key) === a && !running.has(key) && closeAgent(key));
@@ -521,6 +543,8 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
       return;
     }
     if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
+    // On a Stop, Codex ends its open tool calls as failed: they were cut off, as Claude's "ended" ones are.
+    if (u.status === "failed" && todo !== null && interrupting.has(todo)) u = { ...u, status: "ended" };
     // Codex's auto review gets no row of its own (it would double the rows); a denial is reported like Claude's below.
     const review = guardianReview(u);
     if (review) {
@@ -721,6 +745,8 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
           // Without snapshot off, a resumed session keeps the system prompt of its first turn (spike finding 4).
           claudeCode: { options: { allowedTools: WORKER_TOOLS, extraArgs: { "system-prompt-snapshot": "off" } } },
         } : {},
+        // The others get it through ACP's systemPrompt when they take it (Codex), else in front of the first prompt.
+        systemPrompt: isClaude(agentId) ? undefined : [contract, prompt].filter(Boolean).join("\n\n"),
         grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId), agent: agentId },
       });
       await applyConfig(todoId, agent, undefined, true);
@@ -792,7 +818,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       open?.no === 1 && cur.parent_id && `This TODO was created by the agent of T-${cur.parent_id}, not typed by the user.`,
       first != null && cur.title !== first && `Title: ${cur.title}. Keep this title.`,
     ].filter((x): x is string => !!x);
-    const text = (open && !isClaude(agentId) ? instructionsText(contract, prompt) : "")
+    const text = (open && !isClaude(agentId) && !live.systemPrompt ? instructionsText(contract, prompt) : "")
       + deliveryPrompt(cur.worktree_path, [...created, ...takeBodies()], open?.header ?? "");
     addEvent(todoId, "prompt", "app");
     try {
@@ -832,7 +858,10 @@ function workerTurn(todoId: number, agent: Agent) {
   agent.sink.s = {
     onUpdate: (u) => {
       // The agent changed an option itself (plan mode left, a /model command): the Focus header follows.
-      if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") saveConfig(todoId, agent);
+      if (u.sessionUpdate === "config_option_update" || u.sessionUpdate === "current_mode_update") {
+        saveConfig(todoId, agent);
+        leftPlan(todoId, agent);
+      }
       turn.onUpdate(u);
     },
     // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
