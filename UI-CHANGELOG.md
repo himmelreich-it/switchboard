@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-13 · Mistral Vibe as a second agent
+- Where: Settings › Agents; the agent selects on the New TODO card, the Focus header and New session.
+- Now: Settings › Agents lists a second built-in agent, "Mistral Vibe" (command vibe-acp). When it is not installed, its row reads "Install it with uv tool install mistral-vibe, then run vibe-acp --setup once to save your Mistral API key." Once it is found, the agent selects and agent badges appear, since there is now a choice of agent. Its resume hint in the session list reads "vibe --resume <session id>".
+- Why: the user wanted to run TODOs on Mistral's coding agent.
+- Design question: should the Agents row offer a way to enter the Mistral API key in the app, rather than pointing to a terminal command?
+
 ### 2026-11-12 · Messages from another TODO's agent
 - Where: Focus › chat, a message in the user's column.
 - Now: an agent can send a message to another TODO when the user asks it to. The message shows in the receiving TODO's chat as the user's messages do, with the badge "From T-12" (click opens T-12), the same badge a TODO created by another TODO's agent has on its first message. Before, that badge only appeared on a first message.
