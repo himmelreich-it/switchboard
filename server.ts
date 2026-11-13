@@ -972,6 +972,8 @@ async function spawnTerm(x: Term) {
     const g = grant({ kind: "worker", todoId: t.id, dir, onPost: () => {}, via: `Codex ${x.no}` }, () => "");
     x.secret = secret = g.secret;
     const app = JSON.parse(codexAppConfig((g.server as any).url)).mcp_servers.app;
+    // shortcut: -c developer_instructions replaces one set in ~/.codex/config.toml (the worker path appends to it); read and
+    // join the user's own when someone sets it.
     const contract = terminalContract("codex", dir);
     cmd = [...codex, "--add-dir", dir, "-c", `developer_instructions=${JSON.stringify(contract)}`,
       "-c", `mcp_servers.app.url=${JSON.stringify(app.url)}`, "-c", `mcp_servers.app.env_http_headers={ "X-Switchboard-Session" = "SWITCHBOARD_MCP_SECRET" }`,

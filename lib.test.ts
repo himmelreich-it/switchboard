@@ -789,6 +789,7 @@ test("codexError: Codex's failed turn ends with its error as text", () => {
   expect(codexError("exceeded retry limit, last status: 429 Too Many Requests")).toBe("exceeded retry limit, last status: 429 Too Many Requests");
   expect(codexError("Done. The stream disconnected before completion once, I retried.")).toBe(null);
   expect(codexError("All tests pass.")).toBe(null);
+  expect(codexError("Added detection for 'ran out of room in the model's context window'.")).toBe(null);
   expect(cutReason("stream disconnected before completion: x")).toBe("the connection dropped");
   expect(cutReason("exceeded retry limit, last status: 502 Bad Gateway")).toBe("an API server error");
   expect(cutReason("exceeded retry limit, last status: 429 Too Many Requests")).toBe("a rate limit");

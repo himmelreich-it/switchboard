@@ -218,6 +218,9 @@ export function answerPermission(todoId: number, optionId: string, text?: string
 // leaves a question unanswered; a Stop, the end of the turn or the agent no longer waiting cancels the form.
 const SKIP = "__skip";
 async function askQuestions(todoId: number, r: any, signal: AbortSignal): Promise<any> {
+  // Codex's async questions ("Codex keeps working while you answer") are in its message too, and a reply steers it:
+  // a card would block steering and another request would cancel it.
+  if (r._meta?.codex?.delivery === "async") return { action: "cancel" };
   const content: Record<string, unknown> = {};
   const onAbort = () => cancelPermission(todoId);
   signal.addEventListener("abort", onAbort);
@@ -406,6 +409,7 @@ export const liveAgent = (todoId: number) => {
 export function releaseAgent(todoId: number) {
   const a = agents.get(todoId);
   if (!a || running.has(todoId) || a.bg.length) return false;
+  cuts.delete(todoId);   // a pending auto-continue would resume the session the user is about to open
   closeAgent(todoId);
   return true;
 }
@@ -481,9 +485,10 @@ async function steerQueued(todoId: number, agent: Agent) {
 // The agent process for a session: the live one when it still fits, else session/new (`sessionId` null) or
 // session/resume in a new process. The config options and the permission mode are set afterwards, by applyConfig().
 async function agentFor(key: Key, sessionId: string | null, o: { agent: string; cwd: string; dirs: string[]; meta: Record<string, unknown>; systemPrompt?: string; title?: string; grant: Parameters<typeof grant>[0] }) {
-  const fingerprint = JSON.stringify([o.agent, o.cwd, o.dirs, o.meta, o.systemPrompt]);
+  // The system prompt counts only for an agent that took it: another one gets it with the first prompt of a session.
+  const print = (sp: boolean) => JSON.stringify([o.agent, o.cwd, o.dirs, o.meta, sp ? o.systemPrompt : null]);
   const had = agents.get(key);
-  if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === fingerprint) {
+  if (had && had.live.alive && sessionId && had.live.sessionId === sessionId && had.fingerprint === print(had.live.systemPrompt)) {
     clearTimeout(had.idle);
     return had;
   }
@@ -539,7 +544,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
     throw e;
   }
   const initial = Object.fromEntries(configView(live.configOptions).map((c) => [c.id, c.value]));
-  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint, bg: [], bgNames: {}, bgSince: {}, initial });
+  const a: Agent = (self = { agent: o.agent, live, secret: g.secret, sink, fingerprint: print(live.systemPrompt), bg: [], bgNames: {}, bgSince: {}, initial });
   agents.set(key, a);
   // A process that dies between turns takes its background tasks along.
   live.exited.then(() => agents.get(key) === a && !running.has(key) && closeAgent(key));
@@ -617,7 +622,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
     }
     if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
     // On a Stop, Codex ends its open tool calls as failed: they were cut off, as Claude's "ended" ones are.
-    if (u.status === "failed" && todo !== null && interrupting.has(todo)) u = { ...u, status: "ended" };
+    if (u.status === "failed" && todo !== null && interrupting.has(todo) && agents.get(todo)?.agent === "codex") u = { ...u, status: "ended" };
     // Codex's auto review gets no row of its own (it would double the rows); a denial is reported like Claude's below.
     const review = guardianReview(u);
     if (review) {

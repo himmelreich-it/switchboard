@@ -42,7 +42,7 @@ export function cutReason(error: string): string | null {
 // Codex ends a failed turn as a normal one (codex-acp, ACP v1): its error is the turn's last text. The texts are Codex's
 // own (codex 0.166): a dropped stream, a status after its retries, a full model or context window. null for any other text.
 export function codexError(text: string): string | null {
-  const m = text.match(/(?:^|\n)((?:stream disconnected before completion|exceeded retry limit, last status|unexpected status \d{3}|Selected model is at capacity|[^\n]*ran out of room in the model's context window)[\s\S]*)$/);
+  const m = text.match(/(?:^|\n)((?:stream disconnected before completion|exceeded retry limit, last status|unexpected status \d{3}|Selected model is at capacity|(?:Codex )?ran out of room in the model's context window)[\s\S]*)$/);
   return m ? m[1]!.trim() : null;
 }
 
