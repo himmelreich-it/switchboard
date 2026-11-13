@@ -1100,6 +1100,8 @@ CREATE INDEX IF NOT EXISTS events_todo_kind ON events (todo_id, kind);
   addColumn("todos", "parent_id", "INTEGER");    // the TODO whose agent created this one (item 145)
   addColumn("todos", "key", "TEXT");             // create_todo's dedupe key, unique below
   addColumn("todos", "auto_effort", "TEXT");     // the effort the router or the agent picked, {value, reason} (JSON); null: medium
+  addColumn("todos", "design", "TEXT");          // design review (item 151): Design on the author, ReviewerOf on the reviewer (JSON)
+  addColumn("projects", "design", "TEXT");       // the topic's design review pair and rules, DesignConfig (JSON)
   // A TODO has no repo before routing, or none at all: project_id becomes nullable. SQLite cannot drop NOT NULL, so the
   // table is rebuilt from its own CREATE statement. It has no triggers; its one index (todos_key) is made after this.
   if ((db.query("SELECT \"notnull\" AS n FROM pragma_table_info('todos') WHERE name = 'project_id'").get() as any)?.n) {
@@ -1148,3 +1150,113 @@ CREATE TABLE IF NOT EXISTS passkey_invites (hash TEXT PRIMARY KEY, expires_at TE
 // A message another TODO's agent sent (via "T-<n>") says so to the receiving agent, for the contract's rule on its authority.
 export const markFromTodo = (body: string, via: string | null) =>
   /^T-\d+$/.test(via ?? "") ? `[Message from the agent of ${via}, not typed by the user]\n${body}` : body;
+
+// ---------- design review (item 151) ----------
+
+// One TODO's agent (the author) writes a design, another agent reviews it in a child TODO, and the app relays between
+// them until the reviewer approves, the round cap is hit, or a rejected finding keeps coming back (stuck).
+export type Finding = { id: string; severity: "blocking" | "nit"; text: string };
+export type Answer = { id: string; answer: "fixed" | "rejected"; reason?: string };
+export type Review = { verdict: "approve" | "changes"; findings: Finding[]; file: string | null };
+// todos.design of the author TODO. `request` and `review` are what request_review and submit_review recorded during the
+// turn; the turn's end relays them. `open`: the last review's blocking findings; `rejected`: the ids the author
+// rejected with its last request; `bounces`: per id, how often it came back blocking after a rejection. `waiting`: whose
+// turn the loop waits for; `nudged`: how often the app asked for the missing tool call (once, then attention).
+export type Design = {
+  phase: "design" | "agreed" | "stuck"; round: number; max: number; reviewer: number | null; file: string | null;
+  request: { file: string; answers: Answer[] } | null; review: Review | null;
+  open: Finding[]; rejected: string[]; bounces: Record<string, number>; waiting: "author" | "reviewer"; nudged: number;
+};
+// todos.design of the reviewer TODO.
+export type ReviewerOf = { of: number };
+// projects.design: the topic's pair and rules.
+export type DesignConfig = { author?: string; reviewer?: string; max?: number; after?: "wait" | "implement" };
+export const DESIGN_MAX = 3;
+
+export const newDesign = (): Design =>
+  ({ phase: "design", round: 0, max: DESIGN_MAX, reviewer: null, file: null, request: null, review: null, open: [], rejected: [], bounces: {}, waiting: "author", nudged: 0 });
+
+// The reviewer agent: the topic's pick when it is found, else the first found agent that is not the author
+// (`found` lists the found agent ids, built-ins first). null: no second agent.
+export const pickReviewer = (cfg: DesignConfig | null, author: string, found: string[]) =>
+  cfg?.reviewer && found.includes(cfg.reviewer) ? cfg.reviewer : found.find((a) => a !== author) ?? null;
+
+// request_review's answers: every open blocking finding answered, a rejection with its reason. null when fine.
+export function answersError(open: Finding[], answers: Answer[]): string | null {
+  const missing = open.filter((f) => !answers.some((a) => a.id === f.id));
+  if (missing.length) return `Answer every blocking finding of the last review: ${missing.map((f) => f.id).join(", ")} (fixed, or rejected with a reason).`;
+  const bare = answers.filter((a) => a.answer === "rejected" && !a.reason?.trim());
+  return bare.length ? `A rejection needs a reason: ${bare.map((a) => a.id).join(", ")}.` : null;
+}
+
+// A submitted review against the design so far. Agreed: approve with no blocking finding (nits never block). Stuck:
+// not agreed and the round cap is reached, or a finding the author rejected came back blocking a second time.
+export function reviewOutcome(d: Design, r: Review): { outcome: "agreed" | "stuck" | "revise"; open: Finding[]; bounces: Record<string, number> } {
+  const open = r.findings.filter((f) => f.severity === "blocking");
+  const bounces = { ...d.bounces };
+  for (const f of open) if (d.rejected.includes(f.id)) bounces[f.id] = (bounces[f.id] ?? 0) + 1;
+  if (r.verdict === "approve" && !open.length) return { outcome: "agreed", open, bounces };
+  const stuck = d.round >= d.max || Object.values(bounces).some((n) => n >= 2);
+  return { outcome: stuck ? "stuck" : "revise", open, bounces };
+}
+
+const findingLines = (fs: Finding[]) => fs.map((f) => `- ${f.id} [${f.severity}]: ${f.text.replace(/\s*\n\s*/g, " ")}`).join("\n");
+const answerLines = (as: Answer[]) => as.map((a) => `- ${a.id} ${a.answer}${a.reason?.trim() ? `: ${a.reason.trim()}` : ""}`).join("\n");
+
+// The author's instruction when design review starts (New TODO, routing, start_design_review).
+export const DESIGN_START = "Design review is on for this TODO. Before you change any code, write the design as a markdown file in your artifact folder, register it with attach_file, and call request_review with its file name. Another agent reviews it in a TODO of its own; the app sends you its review. Do not edit code in the worktree until the design is agreed. Once you have called request_review, end your turn.";
+
+// The reviewer's first instruction, and each later round's message.
+export function reviewerFirst(o: { parent: number; title: string; file: string; worktree: string | null; folder: string | null }) {
+  return [
+    `Review the design of T-${o.parent} (${o.title}). Its agent wrote it; you are the reviewer.`,
+    `Design file: ${o.file} (or read it with the app's read_file tool: T-${o.parent}, name ${o.file.split("/").pop()})`,
+    o.worktree ? `Worktree with the code: ${o.worktree}` : o.folder ? `Topic folder: ${o.folder}` : null,
+    "Read the design and the code it touches, and the repository's instructions (CLAUDE.md, AGENTS.md) when there are any. Do not edit any file outside your artifact folder.",
+    "Look for wrong assumptions about the code, missing cases, a simpler option that does the same, and risks. Do not ask for features the task did not ask for.",
+    "Then call submit_review: verdict approve or changes, and findings, each with an id (F1, F2, …) you keep across rounds, severity blocking (the design is wrong or incomplete without the change) or nit, and a one-paragraph text. A longer review goes in a markdown file in your artifact folder: register it with attach_file and pass its name as file_name. Approve when no blocking finding is left. End your turn after submit_review.",
+  ].filter(Boolean).join("\n\n");
+}
+export function reviewerNext(o: { round: number; file: string; answers: Answer[] }) {
+  return [
+    `Round ${o.round}: the author revised the design: ${o.file}`,
+    o.answers.length ? `Their answers to your findings:\n${answerLines(o.answers)}` : null,
+    "Check each fix. Accept a rejection with a good reason, or keep the finding blocking with the same id and say why. Keep the ids. Then call submit_review and end your turn.",
+  ].filter(Boolean).join("\n\n");
+}
+// The review relayed to the author.
+export function authorRevise(o: { round: number; max: number; reviewer: string; review: Review }) {
+  return [
+    `Review round ${o.round} of ${o.max} by ${o.reviewer}: ${o.review.verdict === "approve" ? "approved, with nits" : "changes requested"}.`,
+    o.review.findings.length ? findingLines(o.review.findings) : null,
+    o.review.file ? `Review file: ${o.review.file}` : null,
+    "Revise the design file where you agree. Then call request_review with answers for every blocking finding: fixed, or rejected with your reason. Nits need no answer. End your turn after request_review.",
+  ].filter(Boolean).join("\n\n");
+}
+// What the user reads in the author TODO's chat when the loop ends.
+export const agreedText = (round: number, implement: boolean) =>
+  `Design agreed after ${round} round${round === 1 ? "" : "s"}.${implement ? " The agent implements it now." : ""}`;
+export const stuckText = (d: { round: number; max: number }, open: Finding[]) =>
+  `Design review stuck after round ${d.round} of ${d.max}: ${open.map((f) => f.id).join(", ") || "no agreement"} still open. Tell the agent which way to go, or say "Continue review".`;
+// A topic's design review settings from a request body; null when nothing is set, a string when a value is not taken.
+// `known` tells an agent id the registry has.
+export function designConfigIn(v: unknown, known: (id: string) => boolean): DesignConfig | null | string {
+  if (v == null) return null;
+  if (typeof v !== "object" || Array.isArray(v)) return "design must be an object";
+  const o = v as Record<string, unknown>, out: DesignConfig = {};
+  for (const k of ["author", "reviewer"] as const) {
+    if (o[k] == null || o[k] === "") continue;
+    if (!known(String(o[k]))) return `no agent ${o[k]}`;
+    out[k] = String(o[k]);
+  }
+  if (o.max != null && o.max !== "") {
+    const n = Number(o.max);
+    if (!Number.isInteger(n) || n < 1 || n > 10) return "max rounds must be 1 to 10";
+    if (n !== DESIGN_MAX) out.max = n;
+  }
+  if (o.after != null && o.after !== "wait") {
+    if (o.after !== "implement") return "after must be wait or implement";
+    out.after = "implement";
+  }
+  return Object.keys(out).length ? out : null;
+}

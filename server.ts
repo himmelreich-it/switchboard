@@ -4,7 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir, hostname } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  DOCKER_FORMAT, MODES, configIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  DOCKER_FORMAT, MODES, configIn, designConfigIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
   descendants, addTurn, type Turn, accessOf, hostOk, type Access, type LanConfig,
 } from "./lib";
@@ -12,6 +12,7 @@ import { CLI_HELP, lanApi, lanCli, lanUrls, loginOk, machineNames, pruneLogins, 
 import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, codexAppConfig, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
+import { designAfterRestart, startDesign } from "./design";
 import {
   contractFor, releaseAgent, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
@@ -49,13 +50,13 @@ export type Todo = {
   removed_at: string | null; removed_by: string | null; ctx: string | null; plan: string | null; places: string | null;
   mode: string | null; permission: string | null; attention_by: string | null; config: string | null; overrides: string | null;
   agent: string | null; suggestions: string | null; run_started_at: string | null; routing: string | null; routed_at: string | null;
-  schedule: string | null; next_run_at: string | null; parent_id: number | null; key: string | null; auto_effort: string | null;
+  schedule: string | null; next_run_at: string | null; parent_id: number | null; key: string | null; auto_effort: string | null; design: string | null;
 };
 export type Session = { no: number; session_id: string; started_at: string; ended_at: string | null; agent: string | null };
 export type Project = {
   id: number; name: string; slug: string; local_path: string; agent_prompt: string; created_at: string; mode: string | null; defaults: string | null;
   default_agent: string | null; profile: string | null; profile_at: string | null; profile_edited: number | null;
-  independent: number | null;
+  independent: number | null; design: string | null;
 };
 
 export const now = () => new Date().toISOString();
@@ -546,6 +547,7 @@ export async function summaries(where = "1", args: any[] = []) {
       permission: permission ? JSON.parse(permission) : null,
       config: config ? JSON.parse(config) : null, overrides: overrides ? JSON.parse(overrides) : {}, auto_effort: auto_effort ? JSON.parse(auto_effort) : null,
       suggestions: suggestions ? JSON.parse(suggestions) : null, routing: routing ? JSON.parse(routing) : null,
+      design: r.design ? JSON.parse(r.design) : null,   // item 151: Design on the author, {of} on the reviewer
       // Change topic: the worktree, branch and PR each other topic keeps for this TODO.
       places: Object.entries(places ? JSON.parse(places) : {}).map(([k, v]: [string, any]) => ({ project_id: k === "none" ? null : Number(k), ...v })),
       // Item 144: the schedule, its chip text, and its last firing (run or skipped) for the chip's amber state.
@@ -696,7 +698,7 @@ async function projectOut(p: Project) {
   const c = db.query(`SELECT EXISTS (SELECT 1 FROM todos WHERE project_id = ? AND session_id IS NOT NULL) AS locked,
     (SELECT COUNT(*) FROM todos WHERE project_id = ? AND removed_at IS NULL) AS todo_count`).get(p.id, p.id) as any;
   return { ...p, default_agent: p.default_agent ?? DEFAULT_AGENT, defaults: defaultsOf(p.defaults), repo: r.ok ? r.out : null, git: g.ok, locked: !!c.locked, todo_count: c.todo_count,
-    profile_edited: !!p.profile_edited, independent: !!p.independent, scanning: isScanning(p.id), scan_error: scanError(p.id) };
+    profile_edited: !!p.profile_edited, independent: !!p.independent, design: p.design ? JSON.parse(p.design) : null, scanning: isScanning(p.id), scan_error: scanError(p.id) };
 }
 
 // ---------- writes shared with runner.ts ----------
@@ -792,6 +794,11 @@ function defaultsIn(v: unknown): string | null | { error: string } {
   }
   return Object.keys(out).length ? JSON.stringify(out) : null;
 }
+// Item 151: a topic's design review settings, stored as JSON (null when none is set); { error } when a value is not taken.
+const designIn = (v: unknown): string | null | { error: string } => {
+  const d = designConfigIn(v, isKnown);
+  return typeof d === "string" ? { error: d } : d && JSON.stringify(d);
+};
 const agentIn = (v: unknown): string | null | undefined => (v == null || v === "" ? null : isKnown(String(v)) ? String(v) : undefined);
 // A custom agent's arguments (a list, or one string split on spaces) and environment ({name: value}, or NAME=value lines).
 const agentArgs = (v: unknown): string[] => Array.isArray(v) ? v.map(String) : String(v ?? "").split(/\s+/).filter(Boolean);
@@ -1140,9 +1147,11 @@ async function api(req: Request, path: string): Promise<Response> {
     const defaults = defaultsIn(body.defaults), agent = agentIn(body.default_agent);
     if (defaults && typeof defaults === "object") return fail(defaults.error);
     if (agent === undefined) return fail(`no agent ${body.default_agent}`);
+    const design = designIn(body.design);
+    if (design && typeof design === "object") return fail(design.error);
     const id = Number(db.run(
-      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, defaults, default_agent, independent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), defaults, agent === DEFAULT_AGENT ? null : agent, body.independent ? 1 : null],
+      "INSERT INTO projects (name, slug, local_path, agent_prompt, created_at, defaults, default_agent, independent, design) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [name, uniqueSlug(slugify(name), taken), localPath, String(body.agent_prompt ?? ""), now(), defaults, agent === DEFAULT_AGENT ? null : agent, body.independent ? 1 : null, design],
     ).lastInsertRowid);
     scanRepo(id);   // the profile routing reads (801)
     emit({ type: "projects" });
@@ -1163,9 +1172,11 @@ async function api(req: Request, path: string): Promise<Response> {
     if (defaults && typeof defaults === "object") return fail(defaults.error);
     const agent = body.default_agent === undefined ? p.default_agent : agentIn(body.default_agent);
     if (agent === undefined) return fail(`no agent ${body.default_agent}`);
-    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, defaults = ?, default_agent = ?, independent = ? WHERE id = ?",
+    const design = body.design === undefined ? p.design : designIn(body.design);
+    if (design && typeof design === "object") return fail(design.error);
+    db.run("UPDATE projects SET name = ?, local_path = ?, agent_prompt = ?, defaults = ?, default_agent = ?, independent = ?, design = ? WHERE id = ?",
       [name, localPath, body.agent_prompt === undefined ? p.agent_prompt : String(body.agent_prompt), defaults, agent === DEFAULT_AGENT ? null : agent,
-        body.independent === undefined ? p.independent : body.independent ? 1 : null, p.id]);
+        body.independent === undefined ? p.independent : body.independent ? 1 : null, design, p.id]);
     // 801: a profile the user edits is marked edited, so a Rescan asks before it overwrites it.
     if (body.profile !== undefined && String(body.profile).trim() !== (p.profile ?? ""))
       db.run("UPDATE projects SET profile = ?, profile_edited = 1 WHERE id = ?", [String(body.profile).trim() || null, p.id]);
@@ -1200,6 +1211,9 @@ async function api(req: Request, path: string): Promise<Response> {
     const schedule = body.schedule == null ? null : scheduleIn(body.schedule);   // item 144: Repeat in the New TODO dialog
     if (typeof schedule === "string") return fail(schedule);
     const id = createTodo(instruction, "user", uploadsIn(body.attachments), agent, { schedule });
+    // Item 151: Design review first. Refused (one agent only), the TODO stays as added and the answer says why.
+    const refused = body.design_review === true ? startDesign(id, "user") : null;
+    if (refused) addMessage(id, "app", refused);
     if (body.start === true) start(id);   // Add & start (item 92): one request, so the TODO never sits in the backlog
     return json((await summaries("t.id = ?", [id]))[0]);
   }
@@ -1904,12 +1918,14 @@ for (const t of db.query("SELECT id FROM todos WHERE routing IS NOT NULL").all()
   cancelRouting(t.id);
   addEvent(t.id, "app restarted", "app");
 }
-for (const t of db.query("SELECT id, attention, attention_by, permission FROM todos WHERE status = 'running'").all() as Todo[]) {
+const wasRunning = db.query("SELECT id, attention, attention_by, permission FROM todos WHERE status = 'running'").all() as Todo[];
+for (const t of wasRunning) {
   // A permission request open at the crash died with its agent; the flag it raised drops with it.
   const attention = t.permission && t.attention_by === "permission" ? 0 : t.attention;
   setTodo(t.id, { status: statusAfterRun(attention), attention, attention_by: attention ? t.attention_by : null, permission: null });
   addEvent(t.id, "app restarted", "app");
 }
+designAfterRestart(wasRunning.map((t) => t.id));   // item 151: relays what a turn recorded before the stop
 refreshAllPrs();
 setInterval(refreshAllPrs, 120_000);
 // Item 144: one catch-up run per scheduled TODO whose slot passed while the app was closed, after the reset above and

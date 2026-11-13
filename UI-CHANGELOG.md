@@ -6,6 +6,18 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-13 · Design review: switch, topic settings and badges
+- Where: New TODO dialog; Settings › Topics; board cards, backlog rows and the Focus header.
+- Now: New TODO has a switch "Design review first" next to the Agent select (only with two or more agents; tooltip "The agent writes a design first; another agent reviews it until they agree. The topic's settings pick the reviewer."). Settings › Topics has a card "Design review" under Agent defaults: "For a TODO started with "Design review first": the author writes a design, the reviewer reviews it in a TODO of its own, and the app passes it back and forth until they agree.", with the selects Author ("Topic's default agent"; hint "Unless you picked an agent for the TODO."), Reviewer ("Another agent than the author"), the number field Max rounds (hint "Then the TODO waits for you with the open findings.") and the select After agreement (Wait for me, Start implementing). A TODO with design review shows a badge on its card, backlog row and header: "Design review" or "Design · round 2/3" (blue), "Design stuck · round 3/3" (amber), "Design agreed" (green). The header also has a chip "reviewer T-12" that opens the reviewer's TODO.
+- Why: the user wanted one agent to design and another provider to review the design until they agree, per TODO.
+- Design question: should the round badge replace the agent badge on the card, to keep the meta line short?
+
+### 2026-11-13 · Design review: the reviewer's TODO and the loop's messages
+- Where: the board, and the author TODO's chat.
+- Now: the reviewer runs in a TODO of its own ("Design review of T-12", from T-12) that stays off the board and out of the Board count, unless it needs the user. The author's chat shows app notes "Design sent for review, round 1 of 3: T-13 (Codex).", the review as a message "From T-13", and at the end "Design agreed after 2 rounds. Design: <path>" with the pills "Implement the design" and "One more review round", or "Design review stuck after round 3 of 3: F1 still open. Tell the agent which way to go, or say "Continue review"." with the pill "Continue review". Both raise Waiting on you.
+- Why: the loop should show on one card, while the reviewer's chat stays one click away.
+- Design question: should the reviewer's turns show inline in the author's chat instead, or as a folded group per round?
+
 ### 2026-11-13 · Copying Codex's resume command while Codex works
 - Where: Focus header › session popover and the ⋯ menu, "Copy resume command" of a Codex TODO.
 - Now: copying the command frees the session for `codex resume` in a terminal. While Codex works on the TODO or runs a background command it cannot, and a toast says "Session still open here · Codex works on this TODO, or runs a background command. Stop it or let it finish, then copy the command again."
