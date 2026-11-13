@@ -7,7 +7,7 @@ import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type
 import { DEFAULT_AGENT, agentList, agentName, codexAppConfig, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import {
-  agentActivity, attentionAfterAnswer, autoEffort, codexError, formQuestions, formValue, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, answerForm, attentionAfterAnswer, autoEffort, codexError, formQuestions, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
   markFromTodo,
 } from "./lib";
@@ -221,23 +221,20 @@ async function askQuestions(todoId: number, r: any, signal: AbortSignal): Promis
   // Codex's async questions ("Codex keeps working while you answer") are in its message too, and a reply steers it:
   // a card would block steering and another request would cancel it.
   if (r._meta?.codex?.delivery === "async") return { action: "cancel" };
-  const content: Record<string, unknown> = {};
   const onAbort = () => cancelPermission(todoId);
   signal.addEventListener("abort", onAbort);
   try {
-    for (const q of formQuestions(r.requestedSchema)) {
+    return await answerForm(formQuestions(r.requestedSchema), async (q) => {
       const out = await askPermission(todoId, {
         question: true, sessionId: r.sessionId, toolCall: { toolCallId: `question:${q.id}`, title: q.title, kind: "other", rawInput: q.description ? { description: q.description } : {} },
         options: [...q.choices.map(([v, name]) => ({ optionId: `=${v}`, name, kind: "allow_once" as const })), { optionId: SKIP, name: "Skip", kind: "reject_once" as const }],
       } as PermissionRequest & { question: true });
-      if (signal.aborted || out.outcome !== "selected") return { action: "cancel" };
-      if (out.optionId === SKIP) continue;
-      content[q.id] = formValue(q, out.text ?? out.optionId.slice(1));
-    }
+      if (signal.aborted || out.outcome !== "selected") return null;
+      return out.text !== undefined ? { text: out.text } : out.optionId === SKIP ? "skip" : { value: out.optionId.slice(1) };
+    });
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
-  return Object.keys(content).length ? { action: "accept", content } : { action: "decline" };
 }
 
 // An open request that can no longer be answered (Stop, remove, shutdown, the turn ended): the agent is told it was cancelled.
@@ -402,18 +399,19 @@ export const liveAgent = (todoId: number) => {
   return a && a.live.alive && a.live.sessionId === todoRow(todoId)?.session_id ? a : null;
 };
 
-// Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
-// Background tasks end with it, so a TODO that showed running only for them is idle (or waiting) again.
 // An idle worker's agent process closes now (the next turn resumes the session in a new one), so `codex resume` in a
-// terminal can open the session: Codex lets one process write a session. Not while a turn or a background task runs.
-export function releaseAgent(todoId: number) {
+// terminal can open the session: Codex lets one process write a session. "busy" while a turn or a background task runs.
+export function releaseAgent(todoId: number): "released" | "busy" | "none" {
   const a = agents.get(todoId);
-  if (!a || running.has(todoId) || a.bg.length) return false;
+  if (!a) return "none";
+  if (running.has(todoId) || a.bg.length) return "busy";
   cuts.delete(todoId);   // a pending auto-continue would resume the session the user is about to open
   closeAgent(todoId);
-  return true;
+  return "released";
 }
 
+// Ends the agent process of a TODO's live session (remove, new session, shutdown). The session stays resumable.
+// Background tasks end with it, so a TODO that showed running only for them is idle (or waiting) again.
 export function closeAgent(key: Key) {
   const a = agents.get(key);
   if (!a) return;
@@ -534,7 +532,7 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
   const codex = o.agent === "codex";
   const opts = {
     cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: codex ? [] : [g.server], meta, systemPrompt: o.systemPrompt, title: o.title,
-    env: { SWITCHBOARD_MCP_SECRET: g.secret, ...(codex ? { CODEX_CONFIG: codexAppConfig((g.server as any).url) } : {}) },
+    env: { SWITCHBOARD_MCP_SECRET: g.secret, ...(codex ? { CODEX_CONFIG: codexAppConfig(g.server.url) } : {}) },
   };
   let live: Live;
   try {
@@ -678,10 +676,15 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
 // question also runs one more routing turn.
 export function commitMessage(todoId: number, author: "user" | "user via operator", body: string, uploads: Upload[] = [], via: string | null = null) {
   setTodo(todoId, { suggestions: null }, false);   // a sent message answers the suggestions, picked or not
-  // The agent's open question (askQuestions) takes the user's own message as its answer.
-  if (author === "user" && !via && !uploads.length && pending.get(todoId)?.perm.question) {
-    const id = addMessage(todoId, author, body);
-    answerPermission(todoId, "", body);
+  // The agent's open question (askQuestions) takes the user's message as its answer, also one relayed by the operator or
+  // with files (their paths go with it); not a message from another TODO's agent (`via`).
+  if (!via && pending.get(todoId)?.perm.question) {
+    const id = db.transaction(() => {
+      const id = addMessage(todoId, author, body);
+      saveAttachments(todoId, id, uploads);
+      return id;
+    })();
+    answerPermission(todoId, "", withAttachments(body, attachmentsOf(id).map((a) => a.path)));
     return id;
   }
   const t = todoRow(todoId)!, routing = t.routing ? (JSON.parse(t.routing) as Routing) : null;

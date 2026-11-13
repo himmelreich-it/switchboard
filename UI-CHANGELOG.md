@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-13 · Copying Codex's resume command while Codex works
+- Where: Focus header › session popover and the ⋯ menu, "Copy resume command" of a Codex TODO.
+- Now: copying the command frees the session for `codex resume` in a terminal. While Codex works on the TODO or runs a background command it cannot, and a toast says "Session still open here · Codex works on this TODO, or runs a background command: codex resume fails until it ends. Stop it first, then resume."
+- Why: `codex resume` failed with "already has an active writer" and the app said nothing.
+- Design question: should the copy button itself say that the session is busy, instead of a toast after the copy?
+
 ### 2026-11-13 · Codex asks a question
 - Where: Focus › chat, the request card above the composer; the TODO's card in Waiting on you; the Focus header badge.
 - Now: when Codex asks the user a question with choices, the card above the composer reads "Codex asks · <question>", with the question's note under it, one numbered button per choice plus "Skip", and the line "Or answer in your own words: send a message." The composer hint reads "Sends as your answer to the question above." and its button "Answer". The work group line reads "Waiting for your answer". The board card shows "Codex asks" with the question and the first two choices as buttons, then "Reply →". The Focus header badge reads "Question" (cyan) instead of "Needs approval". Several questions come one card after the other.

@@ -971,7 +971,7 @@ async function spawnTerm(x: Term) {
     if (terms.get(x.id) !== x || x.proc) return;
     const g = grant({ kind: "worker", todoId: t.id, dir, onPost: () => {}, via: `Codex ${x.no}` }, () => "");
     x.secret = secret = g.secret;
-    const app = JSON.parse(codexAppConfig((g.server as any).url)).mcp_servers.app;
+    const app = JSON.parse(codexAppConfig(g.server.url)).mcp_servers.app;
     // shortcut: -c developer_instructions replaces one set in ~/.codex/config.toml (the worker path appends to it); read and
     // join the user's own when someone sets it.
     const contract = terminalContract("codex", dir);
@@ -1555,7 +1555,7 @@ async function api(req: Request, path: string): Promise<Response> {
     const action = m[2];
 
     // The user copied the resume command: Codex opens a session in one process only, so the idle agent process lets go.
-    if (action === "release") return json({ released: releaseAgent(todoOr404(id).id) });
+    if (action === "release") return json({ release: releaseAgent(todoOr404(id).id) });
 
     // Item 72: ends the live session and starts the next with the hand-over header, the queued messages and this one.
     if (action === "new-session") {

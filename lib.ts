@@ -379,6 +379,20 @@ export function formQuestions(schema: any): FormQuestion[] {
       : s.type === "boolean" ? [["true", "Yes"], ["false", "No"]] : [],
   }));
 }
+// Asks a form's questions one after the other (`ask`: a choice's value as `=value`, `skip`, a text answer, or null when
+// the form is cancelled) and returns the ACP elicitation response: accept with the answers, decline when every
+// question was skipped, cancel when one was cancelled.
+export type FormAnswer = { value: string } | { text: string } | "skip" | null;
+export async function answerForm(questions: FormQuestion[], ask: (q: FormQuestion) => Promise<FormAnswer>) {
+  const content: Record<string, unknown> = {};
+  for (const q of questions) {
+    const a = await ask(q);
+    if (a === null) return { action: "cancel" as const };
+    if (a !== "skip") content[q.id] = formValue(q, "text" in a ? a.text : a.value);
+  }
+  return Object.keys(content).length ? { action: "accept" as const, content } : { action: "decline" as const };
+}
+
 // An answer as the form's type wants it: a boolean or a number where the property is one, else the text.
 export function formValue(q: FormQuestion, answer: string): unknown {
   if (q.type === "boolean" && /^(true|false|yes|no)$/i.test(answer.trim())) return /^(true|yes)$/i.test(answer.trim());

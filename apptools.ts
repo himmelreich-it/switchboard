@@ -29,12 +29,12 @@ const grants = new Map<string, Grant>();
 // A secret for one agent process, and the MCP server entry that names it. Revoke it when the agent process ends.
 // `header` gives the header value for the secret: Claude's is a ${VAR} reference to the agent process's environment
 // (runner.ts sets SWITCHBOARD_MCP_SECRET), see agents.ts secretHeader.
-export function grant(g: Grant, header: (secret: string) => string): { secret: string; server: McpServerConfig } {
+export function grant(g: Grant, header: (secret: string) => string): { secret: string; server: Extract<McpServerConfig, { type: "http" }> } {
   const secret = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
   grants.set(secret, g);
   return {
     secret,
-    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: header(secret) }] } as McpServerConfig,
+    server: { type: "http", name: "app", url: `http://${HOST}:${PORT}/mcp/app`, headers: [{ name: "X-Switchboard-Session", value: header(secret) }] },
   };
 }
 export const revoke = (secret: string) => grants.delete(secret);
