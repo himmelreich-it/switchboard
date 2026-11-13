@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { McpServer as McpServerConfig } from "./acp";
 import { hasAutoEffort, namedAgent } from "./agents";
 import { AUTO_EFFORTS, addTurn, deliveryAction, followUpError, isInside, lineCount, scheduleIn } from "./lib";
-import { DEFAULT_STARTED_PER_TURN, commitMessage, isRunning, routeTo, setAutoEffort, start } from "./runner";
+import { DEFAULT_STARTED_PER_TURN, commitMessage, hasOpenQuestion, isRunning, routeTo, setAutoEffort, start } from "./runner";
 // server.ts imports this file too (an ES module cycle): use these only inside functions, never at the top level.
 import {
   HOST, PORT, addEvent, addMessage, attachmentsOf, changed, commentsOf, createTodo, db, filesOf, getMeta, liveSessionNo, noteTodo, refreshPrs, removeTodo, sessionsOf, setSchedule, setTodo, summaries, todoRow,
@@ -265,6 +265,7 @@ function operatorTools(s: McpServer, used: Used) {
 
 // Read before commitMessage: delivery changes the TODO's state.
 function deliveryOutcome(t: NonNullable<ReturnType<typeof todoRow>>, id: number) {
+  if (hasOpenQuestion(id)) return "delivered now as the answer to the agent's open question";
   return {
     pending: "stored; it is delivered when the user starts the TODO",
     queue: "queued; the agent gets it when its current turn ends",

@@ -8,7 +8,7 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ### 2026-11-13 · Copying Codex's resume command while Codex works
 - Where: Focus header › session popover and the ⋯ menu, "Copy resume command" of a Codex TODO.
-- Now: copying the command frees the session for `codex resume` in a terminal. While Codex works on the TODO or runs a background command it cannot, and a toast says "Session still open here · Codex works on this TODO, or runs a background command: codex resume fails until it ends. Stop it first, then resume."
+- Now: copying the command frees the session for `codex resume` in a terminal. While Codex works on the TODO or runs a background command it cannot, and a toast says "Session still open here · Codex works on this TODO, or runs a background command. Stop it or let it finish, then copy the command again."
 - Why: `codex resume` failed with "already has an active writer" and the app said nothing.
 - Design question: should the copy button itself say that the session is busy, instead of a toast after the copy?
 

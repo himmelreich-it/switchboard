@@ -4422,10 +4422,10 @@ const ACTIONS = {
     S.pop = null; copyText(id, "Copied", id); render();
     // Codex opens a session in one process at a time: the TODO's idle agent process lets go of it (releaseAgent).
     // The live session's resume command as the server gave it (agents.ts resumeHint).
-    const t = cur(), live = S.detail?.todo.id === t?.id ? S.detail.sessions.at(-1) : null;
+    const t = cur(), live = t && S.detail?.todo.id === t.id ? S.detail.sessions.at(-1) : null;
     if (t && live?.agent === "codex" && live.session_id === t.session_id && id === live.resume)
       call("POST", `/api/todos/${t.id}/release`).then((r) => r.release === "busy" && toast("muted", "Session still open here",
-        "Codex works on this TODO, or runs a background command: codex resume fails until it ends. Stop it first, then resume."), () => {});
+        "Codex works on this TODO, or runs a background command. Stop it or let it finish, then copy the command again."), () => {});
   },
   "open-ns": (id) => { S.nsMode[Number(id)] = true; S.tab = "chat"; S.pop = null; render(); composer.focus(); },
   "cancel-ns": (id) => { delete S.nsMode[Number(id)]; render(); },

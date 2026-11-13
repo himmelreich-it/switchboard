@@ -425,7 +425,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
     - Errors: Codex ends a failed turn as a normal one with its error as the last text. The app treats a dropped stream, retries used up, a full model or a full context window as the turn's error; the retryable ones auto-continue.
     - Background commands: a command still running when the turn ends counts as a background task (item 136): the TODO waits, its row follows the command, and its end posts "Background command ended: <command>" and raises attention.
     - Images attached to a message go as image blocks too (Claude reads the paths with Read, as before).
-    - Copying the resume command of the live session closes the TODO's idle agent process: Codex lets one process write a session, so `codex resume` failed while the app held it. While a turn or a background command runs, the process stays and a toast says so ("Session still open here").
+    - Copying the resume command of the live session closes the TODO's idle agent process: Codex lets one process write a session, so `codex resume` failed while the app held it. While a turn or a background command runs, the process stays and a toast says so ("Session still open here"): the user copies the command again once it has ended, which releases it then.
     - Settings › Agents: an auth method that takes an API key (Codex's "API Key") gets a key field next to its button.
 
 ### Operator

@@ -237,6 +237,8 @@ async function askQuestions(todoId: number, r: any, signal: AbortSignal): Promis
   }
 }
 
+export const hasOpenQuestion = (todoId: number) => !!pending.get(todoId)?.perm.question;
+
 // An open request that can no longer be answered (Stop, remove, shutdown, the turn ended): the agent is told it was cancelled.
 function cancelPermission(todoId: number) {
   const p = pending.get(todoId);
@@ -403,8 +405,8 @@ export const liveAgent = (todoId: number) => {
 // terminal can open the session: Codex lets one process write a session. "busy" while a turn or a background task runs.
 export function releaseAgent(todoId: number): "released" | "busy" | "none" {
   const a = agents.get(todoId);
+  if (running.has(todoId) || a?.bg.length) return "busy";   // running also covers a turn whose process still starts
   if (!a) return "none";
-  if (running.has(todoId) || a.bg.length) return "busy";
   cuts.delete(todoId);   // a pending auto-continue would resume the session the user is about to open
   closeAgent(todoId);
   return "released";
@@ -678,22 +680,18 @@ export function commitMessage(todoId: number, author: "user" | "user via operato
   setTodo(todoId, { suggestions: null }, false);   // a sent message answers the suggestions, picked or not
   // The agent's open question (askQuestions) takes the user's message as its answer, also one relayed by the operator or
   // with files (their paths go with it); not a message from another TODO's agent (`via`).
-  if (!via && pending.get(todoId)?.perm.question) {
-    const id = db.transaction(() => {
-      const id = addMessage(todoId, author, body);
-      saveAttachments(todoId, id, uploads);
-      return id;
-    })();
-    answerPermission(todoId, "", withAttachments(body, attachmentsOf(id).map((a) => a.path)));
-    return id;
-  }
+  const answers = !via && hasOpenQuestion(todoId);
   const t = todoRow(todoId)!, routing = t.routing ? (JSON.parse(t.routing) as Routing) : null;
   const action = deliveryAction(routing ? "not_started" : t.status, running.has(todoId));
   const id = db.transaction(() => {
-    const id = addMessage(todoId, author, body, action === "pending" ? "pending" : "queued", null, via);
+    const id = addMessage(todoId, author, body, answers ? "delivered" : action === "pending" ? "pending" : "queued", null, via);
     saveAttachments(todoId, id, uploads);
     return id;
   })();
+  if (answers) {
+    answerPermission(todoId, "", withAttachments(body, attachmentsOf(id).map((a) => a.path)));
+    return id;
+  }
   if (action === "send") deliver(todoId);
   if (routing?.state === "asking" && !running.has(todoId)) runRouting(todoId);
   return id;
