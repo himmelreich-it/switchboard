@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-16 · Model select next to the agent, and Load models
+- Where: New TODO dialog; the New session bar above the composer; Settings › Agents; the session popover and chip.
+- Now: New TODO has a "Model" select right of the Agent select. It shows once an agent is picked (not for "Topic's default"), lists that agent's models, starts at "Agent's default", and refills when the agent changes. The Focus header of a TODO that has not started has the same select after its agent select (also with only one agent); changing the agent there resets it to "Agent's default". The New session bar has the same select after its agent select; its first entry reads "Current model" on the TODO's agent and "Agent's default" on another one. When the app has no model list for the agent yet, the select is disabled and a "Load models" button sits next to it. Settings › Agents has a "Load models" button per found agent ("Reload models" once a list is known, "Loading…" while it runs); success shows the toast "<agent> models loaded" / "Pick one in the Model select." Mistral Vibe's Thinking option now shows in the session popover and in the topic's agent defaults, and the session chip reads "Thinking <level>".
+- Why: the user wanted to pick the model where they pick the agent, also for an agent that has not run yet.
+- Design question: should the Model select sit in the same row as Agent, or should Agent and Model become one combined "Agent · Model" picker?
+
 ### 2026-11-13 · Mistral Vibe as a third agent
 - Where: Settings › Agents; the agent selects on the New TODO card, the Focus header and New session.
 - Now: Settings › Agents lists a third built-in agent, "Mistral Vibe" (command vibe-acp), after Claude and Codex. When it is not installed, its row reads "Install it with uv tool install mistral-vibe, then sign in with the button here." Once it is found, the row shows Vibe's version and the button "Sign in through Mistral AI Studio", which opens the browser sign-in; the agent selects offer "Mistral Vibe". Its resume hint in the session list reads "vibe --resume <session id>".

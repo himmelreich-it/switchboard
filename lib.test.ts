@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, codexConfigLogin, formQuestions, formValue, type FormQuestion, answerForm, codexError, attachedImages,
+  addTurn, agentActivity, atToolBoundary, backgroundLevel, backgroundNames, backgroundStep, ownerOf, parseCwd, parseDocker, parseListen, parsePs, contextFile, cutReason, cutToTwoLines, cycleEnd, descendants, deliveryAction, deliveryPrompt, ghOutcome, parseGhLogins, handOver, isInside, lineCount, migrateDb, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, ctxStep, planCount, toolMeta, guardianReview, matchAgent, matchModel, codexConfigLogin, formQuestions, formValue, type FormQuestion, answerForm, codexError, attachedImages,
   prFromNode, safeFileName, slugify, statusAfterRun, tokenOk, toolArg, toolLine, uniqueSlug, withAttachments, followUpError,
   MODES, attentionAfterAnswer, laneOf, permissionOf, type Permission, autoEffort, configChanges, configIn, configView, topicIntro,
   nextRun, scheduleIn, scheduleText, skipReason, slotText, type Schedule, parseWorktreeList, worktreeVerdict, type WorktreeFacts, swapPlace,
@@ -857,4 +857,15 @@ test("design review: answersError, pickReviewer, designConfigIn", () => {
   expect(designConfigIn({ reviewer: "gemini" }, known)).toBe("no agent gemini");
   expect(designConfigIn({ max: 11 }, known)).toBe("max rounds must be 1 to 10");
   expect(designConfigIn({ after: "later" }, known)).toBe("after must be wait or implement");
+});
+
+test("matchModel: a model by value or name, any case; null with the choices when unknown or no model option", () => {
+  const opts = [
+    { id: "effort", name: "Effort", category: "thought_level", value: "high", options: [{ value: "high", name: "High" }] },
+    { id: "model", name: "Model", category: "model", value: "default", options: [{ value: "default", name: "Default (recommended)" }, { value: "opus", name: "Opus" }] },
+  ];
+  expect(matchModel(opts, "OPUS").pick).toEqual(["model", "opus"]);
+  expect(matchModel(opts, " default (recommended) ").pick).toEqual(["model", "default"]);
+  expect(matchModel(opts, "high")).toEqual({ pick: null, names: "Default (recommended), Opus" });
+  expect(matchModel([], "opus")).toEqual({ pick: null, names: "" });
 });

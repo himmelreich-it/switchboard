@@ -4,17 +4,17 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync,
 import { homedir, hostname } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
-  DOCKER_FORMAT, MODES, configIn, designConfigIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
+  DOCKER_FORMAT, MODES, configIn, configView, designConfigIn, contextFile, ownerOf, parseCwd, parseDocker, parseListen, parsePs, defaultsOf, ghOutcome, parseGhLogins, isInside, migrateDb, nextRun, parseGitStatus, parseMarks, parseOscTitle, revealCommand, vscodeCommand, versionAtLeast, parseGithubRemote, parseRefCounts, prFromNode, prQuery, parseWorktreeList, worktreeVerdict, SCAN_PR_FIELDS, safeFileName, scheduleIn, scheduleText, slugify, statusAfterRun, tokenOk, uniqueSlug,
   type ConfigOption, type Pr, type Schedule, type Status, type Verdict, type WorktreeFacts,
   descendants, addTurn, type Turn, accessOf, hostOk, type Access, type LanConfig,
 } from "./lib";
 import { CLI_HELP, lanApi, lanCli, lanUrls, loginOk, machineNames, pruneLogins, readLan, tlsFiles, type Here } from "./lan";
-import { authenticate, describe, killNow, killTree, sessionExists } from "./acp";
+import { AuthRequired, authenticate, describe, killNow, killTree, probeConfig, sessionExists } from "./acp";
 import { DEFAULT_AGENT, agentList, codexAppConfig, onPath, agentName, isBuiltin, isClaude, isKnown, resumeHint, specOf } from "./agents";
 import { WORKER_TOOLS, grant, handleMcp, revoke } from "./apptools";
 import { designAfterRestart, startDesign } from "./design";
 import {
-  contractFor, releaseAgent, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
+  contractFor, releaseAgent, DEFAULT_BACKGROUND_HOURS, DEFAULT_STARTED_PER_TURN, terminalContract, agentConfigs, modelPick, answerPermission, applyConfig, backgroundCount, backgroundTasks, cancelRouting, changeRepo, closeAgent, closeAgents, metaKey, commandsOf, commitMessage,
   commitOperatorMessage, deliver, fireDue, fireSchedule, interrupt, isGitFolder, isRunning, isScanning, liveAgent, modeOf, newSession, scanError, scanRepo, start, stopAll, worktreeRoot,
 } from "./runner";
 
@@ -709,15 +709,16 @@ async function projectOut(p: Project) {
 // (via); `project_id` given (null: no topic) decides the topic now, so Start skips routing. Item 144: `schedule`.
 // `title`, from an agent's create_todo, replaces the first instruction as the title; session 1 is told to keep it.
 export function createTodo(instruction: string, actor: "user" | "operator" | "agent", uploads: Upload[] = [], agent: string | null = null,
-  o: { parent_id?: number | null; key?: string | null; project_id?: number | null; schedule?: Schedule | null; title?: string | null } = {}) {
+  o: { parent_id?: number | null; key?: string | null; project_id?: number | null; schedule?: Schedule | null; title?: string | null; model?: [string, string] } = {}) {
   const routed = o.project_id !== undefined, p = projectRow(o.project_id ?? null);
   const id = db.transaction(() => {
     const at = now();
     const id = Number(db.run(
-      `INSERT INTO todos (title, status, created_at, updated_at, agent, parent_id, key, project_id, routed_at, schedule, next_run_at)
-       VALUES (?, 'not_started', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO todos (title, status, created_at, updated_at, agent, parent_id, key, project_id, routed_at, schedule, next_run_at, overrides)
+       VALUES (?, 'not_started', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [o.title || instruction, at, at, agent ?? (routed ? p?.default_agent ?? null : null), o.parent_id ?? null, o.key ?? null, p?.id ?? null, routed ? at : null,
-        o.schedule ? JSON.stringify(o.schedule) : null, o.schedule && !o.schedule.paused ? nextRun(o.schedule, new Date())?.toISOString() ?? null : null],
+        o.schedule ? JSON.stringify(o.schedule) : null, o.schedule && !o.schedule.paused ? nextRun(o.schedule, new Date())?.toISOString() ?? null : null,
+        o.model ? JSON.stringify({ [o.model[0]]: o.model[1] }) : null],
     ).lastInsertRowid);
     const mid = addMessage(id, actor === "user" ? "user" : "user via operator", instruction, "pending", null, o.parent_id ? `T-${o.parent_id}` : null);
     saveAttachments(id, mid, uploads);
@@ -780,6 +781,10 @@ const fail = (msg: string, status = 400) => json({ error: msg }, status);
 // Claude's modes are known here; another agent's are its own, so any name is taken and the agent reports a miss.
 const modeIn = (v: unknown, agent: string | null): string | null | undefined =>
   v == null || v === "" ? null : !isClaude(agent) || MODES.includes(v as any) ? String(v) : undefined;
+// A model from a request body (P1) for a TODO or session on `agent`: undefined when not given, a string when not taken.
+// A model needs a chosen agent: the topic's default agent is not known before routing.
+const modelIn = (v: unknown, agent: string | null): [string, string] | string | undefined =>
+  v == null || v === "" ? undefined : !agent ? "pick the agent to pick its model" : modelPick(agent, String(v));
 // A project's defaults from a request body, {agent: {config id: value, mode}}, stored as JSON (null when none is set);
 // a string when a value is not taken.
 function defaultsIn(v: unknown): string | null | { error: string } {
@@ -1210,7 +1215,9 @@ async function api(req: Request, path: string): Promise<Response> {
     if (agent === undefined) return fail(`no agent ${body.agent}`);
     const schedule = body.schedule == null ? null : scheduleIn(body.schedule);   // item 144: Repeat in the New TODO dialog
     if (typeof schedule === "string") return fail(schedule);
-    const id = createTodo(instruction, "user", uploadsIn(body.attachments), agent, { schedule });
+    const model = modelIn(body.model, agent);
+    if (typeof model === "string") return fail(model);
+    const id = createTodo(instruction, "user", uploadsIn(body.attachments), agent, { schedule, model });
     // Item 151: Design review first. Refused (one agent only), the TODO stays as added and the answer says why.
     const refused = body.design_review === true ? startDesign(id, "user") : null;
     if (refused) addMessage(id, "app", refused);
@@ -1241,11 +1248,22 @@ async function api(req: Request, path: string): Promise<Response> {
     if (instruction === "") return fail("the first instruction is required");
     const agent = body.agent === undefined ? null : agentIn(body.agent);
     if (agent === undefined) return fail(`no agent ${body.agent}`);
+    // P1: the model of the first session; "" goes back to the agent's default.
+    const model = body.model === "" ? null : modelIn(body.model, agent ?? t.agent ?? DEFAULT_AGENT);
+    if (typeof model === "string") return fail(model);
     db.transaction(() => {
       // P5: the agent of the first session, like the project, until the start.
       if (agent && agent !== (t.agent || DEFAULT_AGENT)) {
         setTodo(t.id, { agent, mode: null, overrides: null, config: null });
         addEvent(t.id, "edited", "user", `agent ${agentName(t.agent)} → ${agentName(agent)}`);
+      }
+      if (model !== undefined) {
+        const own = configIn(todoRow(t.id)!.overrides ? JSON.parse(todoRow(t.id)!.overrides!) : null);
+        const id = model?.[0] ?? (JSON.parse(getMeta(metaKey("agent_config", agent ?? t.agent ?? DEFAULT_AGENT)) ?? "[]") as ConfigOption[]).find((o) => o.category === "model")?.id ?? "model";
+        if (model) own[id] = model[1];
+        else delete own[id];
+        setTodo(t.id, { overrides: Object.keys(own).length ? JSON.stringify(own) : null });
+        addEvent(t.id, "edited", "user", `model ${model?.[1] ?? "agent's default"}`);
       }
       if (instruction !== null && instruction !== first.body) {
         db.run("UPDATE messages SET body = ? WHERE id = ?", [instruction, first.id]);
@@ -1578,6 +1596,8 @@ async function api(req: Request, path: string): Promise<Response> {
       if (isRunning(id)) return fail("the agent is running; a new session can start once it stops", 409);
       const agent = agentIn(body.agent);
       if (agent === undefined) return fail(`no agent ${body.agent}`);
+      const model = modelIn(body.model, agent ?? t.agent ?? DEFAULT_AGENT);
+      if (typeof model === "string") return fail(model);
       const text = String(body.body ?? "").trim();
       const uploads = uploadsIn(body.attachments);
       if (body.suggested === true && !pickSuggestion(id, text)) return fail("That suggestion is gone", 409);
@@ -1587,7 +1607,7 @@ async function api(req: Request, path: string): Promise<Response> {
         return mid;
       })();
       if (body.suggested !== true) setDraft(`todo:${id}`, "");
-      newSession(id, agent ?? undefined);
+      newSession(id, agent ?? undefined, undefined, model);
       return json(messageOut(mid));
     }
 
@@ -1699,6 +1719,19 @@ async function api(req: Request, path: string): Promise<Response> {
     }
     emit({ type: "agents" });
     return json({});
+  }
+  // P4: the agent's model list before its first session, from a throwaway session in the app's folder.
+  if ((m = path.match(/^\/api\/agents\/([\w-]+)\/load-config$/)) && method === "POST") {
+    const id = m[1]!, spec = specOf(id);
+    if (!spec) return fail(`${agentName(id)} is not installed`, 409);
+    try {
+      const config = configView(await probeConfig(spec, HOME, "Switchboard model list"));
+      if (config.length) setMeta(metaKey("agent_config", id), JSON.stringify(config));
+      emit({ type: "agents" });
+      return json(config);
+    } catch (e: any) {
+      return fail(e instanceof AuthRequired ? `${agentName(id)} needs a login first` : `${agentName(id)} did not start: ${e?.message ?? e}`, 502);
+    }
   }
   // What the agent says about itself: its version and its ways to log in (Settings › Agents).
   if ((m = path.match(/^\/api\/agents\/([\w-]+)\/describe$/)) && method === "GET") {

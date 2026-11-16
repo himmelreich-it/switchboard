@@ -8,7 +8,7 @@ import { DEFAULT_AGENT, agentList, agentName, codexAppConfig, hasAutoEffort, isC
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import { authorDesign, designConfig, designStep } from "./design";
 import {
-  agentActivity, answerForm, attentionAfterAnswer, autoEffort, codexError, formQuestions, backgroundLevel, backgroundNames, backgroundStep, configChanges, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
+  agentActivity, answerForm, attentionAfterAnswer, autoEffort, codexError, formQuestions, backgroundLevel, backgroundNames, backgroundStep, configChanges, matchModel, cutReason, cycleEnd, configIn, configView, defaultsFor, ctxStep, guardianReview, atToolBoundary, cutToTwoLines, deliveryAction, deliveryPrompt, handOver, nextRun, topicIntro, permissionOf, planCount, scheduleText, skipReason, slotText, statusAfterRun, swapPlace, toolArg, toolLine, toolMeta, withAttachments,
   type ConfigOption, type Ctx, type Permission, type Schedule, type ToolMeta,
   markFromTodo,
 } from "./lib";
@@ -301,12 +301,14 @@ async function applyMode(a: Agent, mode: string | null) {
 // Effort the user did not set comes from auto effort (setAutoEffort), medium until the router or the worker picks one.
 // `opening`: the TODO's worker session that opens now, also on another agent (New session), whose agent becomes the
 // TODO's only once it opened: its first turn gets auto effort too.
-export async function applyConfig(todoId: number, a: Agent, reset?: string, opening = false) {
+// `model`: the model picked for the session that opens now (New session, P1), set over the wanted values.
+export async function applyConfig(todoId: number, a: Agent, reset?: string, opening = false, model?: [string, string]) {
   const t = todoRow(todoId)!, p = projectRow(t.project_id) ?? { defaults: null };   // a TODO without a topic has no defaults
   const own = (t.agent || DEFAULT_AGENT) === a.agent;
   const wanted = wantedConfig(t, a.agent);
   const auto = (own || opening) && hasAutoEffort(a.agent) ? autoEffort(configView(a.live.configOptions), wanted, JSON.parse(t.auto_effort ?? "null")?.value ?? null) : null;
   if (auto) wanted[auto[0]] = auto[1];
+  if (model) wanted[model[0]] = model[1];
   // Codex keeps its plan mode in the session: unless the TODO or topic picks it, it is off (a resumed session would
   // otherwise stay in the mode it last had).
   const collab = configView(a.live.configOptions).find((c) => c.category === "collaboration_mode");
@@ -382,6 +384,13 @@ function followPlan(todoId: number, a: Agent) {
   else own[o.id] = o.value;
   setTodo(todoId, { overrides: Object.keys(own).length ? JSON.stringify(own) : null });
   addEvent(todoId, "config", "agent", `${o.name}: ${o.options.find((x) => x.value === o.value)?.name ?? o.value}`);
+}
+
+// A model for a new TODO or session on `agent` (P1), by value or name among the agent's last seen model choices;
+// a string says why not.
+export function modelPick(agent: string, name: string): [string, string] | string {
+  const m = matchModel(JSON.parse(getMeta(metaKey("agent_config", agent)) ?? "[]"), name);
+  return m.pick ?? (m.names ? `Unknown model "${name}" for ${agentName(agent)}. Models: ${m.names}.` : `${agentName(agent)} has no model list yet: load it in Settings › Agents.`);
 }
 
 // Every agent's last seen config options, for /api/meta.
@@ -717,7 +726,7 @@ export function start(todoId: number) {
 // Item 72: ends the live session (it stays as history), clears attention, and starts the next session with the
 // hand-over header plus every queued message, because the ended session gets no more runs. `agent` switches the TODO
 // to another agent (P5); the header is plain text, so the next agent picks up from it like any other.
-export function newSession(todoId: number, agent?: string, scheduled?: string) {
+export function newSession(todoId: number, agent?: string, scheduled?: string, model?: [string, string]) {
   const t = todoRow(todoId)!;
   const prev = sessionsOf(todoId).at(-1)!;
   const no = prev.no + 1;
@@ -736,7 +745,7 @@ export function newSession(todoId: number, agent?: string, scheduled?: string) {
     files: files.filter((f) => !f.work).map((f) => ({ path: f.path, session_no: f.session_no, by_user: !!f.by_user })),
     work: files.some((f) => f.work) ? `${artifactDir(todoId)}/work/` : null, scheduled,
   });
-  runWorker(todoId, () => take(todoId, "queued"), { no, header, agent }, scheduled ? "scheduled run" : "new session");
+  runWorker(todoId, () => take(todoId, "queued"), { no, header, agent, model }, scheduled ? "scheduled run" : "new session");
 }
 
 // ---------- schedules (item 144) ----------
@@ -813,7 +822,7 @@ async function findWorktreeRoot(localPath: string) {
 // hand-over); null resumes todos.session_id. The TODO shows running at once, while the agent process starts.
 // `takeBodies` marks the messages delivered, so it is called only once the agent is ready: a setup error leaves them
 // pending or queued, and the user sees an app message instead of messages that look sent but never reached the agent.
-function runWorker(todoId: number, takeBodies: () => string[], open: { no: number; header?: string; agent?: string } | null, reason: string) {
+function runWorker(todoId: number, takeBodies: () => string[], open: { no: number; header?: string; agent?: string; model?: [string, string] } | null, reason: string) {
   const t = todoRow(todoId)!;
   const p = projectRow(t.project_id);   // null: a TODO without a topic, which runs in its artifact folder (801)
   const agentId = open?.agent || t.agent || DEFAULT_AGENT;
@@ -846,7 +855,7 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
         title: `T-${todoId} ${t.title}`,
         grant: { kind: "worker", todoId, dir, onPost: () => posted.add(todoId), agent: agentId },
       });
-      await applyConfig(todoId, agent, undefined, true);
+      await applyConfig(todoId, agent, undefined, true, open?.model);
     } catch (e: any) {
       running.delete(todoId);
       interrupting.delete(todoId);
@@ -894,7 +903,10 @@ function runWorker(todoId: number, takeBodies: () => string[], open: { no: numbe
       changed(todoId);
       // The TODO's own mode and options were its last agent's: on another agent they would not mean the same.
       const switched = (t.agent || DEFAULT_AGENT) !== agentId;
-      setTodo(todoId, { session_id: live.sessionId, ctx: null, plan: null, agent: agentId, ...(switched ? { mode: null, overrides: null } : {}) });
+      // A model picked for this session becomes the TODO's own (P1).
+      const own = switched ? {} : configIn(t.overrides ? JSON.parse(t.overrides) : null);
+      if (open.model) own[open.model[0]] = open.model[1];
+      setTodo(todoId, { session_id: live.sessionId, ctx: null, plan: null, agent: agentId, ...(switched ? { mode: null } : {}), ...(switched || open.model ? { overrides: Object.keys(own).length ? JSON.stringify(own) : null } : {}) });
       if (open.no > 1) addEvent(todoId, "new session", "user", `session ${open.no} · ${agentName(agentId)} · ${live.sessionId}\n${open.header}`);
     }
     if (agent.configError) {
