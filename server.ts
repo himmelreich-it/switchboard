@@ -1248,11 +1248,22 @@ async function api(req: Request, path: string): Promise<Response> {
     if (instruction === "") return fail("the first instruction is required");
     const agent = body.agent === undefined ? null : agentIn(body.agent);
     if (agent === undefined) return fail(`no agent ${body.agent}`);
+    // P1: the model of the first session; "" goes back to the agent's default.
+    const model = body.model === "" ? null : modelIn(body.model, agent ?? t.agent ?? DEFAULT_AGENT);
+    if (typeof model === "string") return fail(model);
     db.transaction(() => {
       // P5: the agent of the first session, like the project, until the start.
       if (agent && agent !== (t.agent || DEFAULT_AGENT)) {
         setTodo(t.id, { agent, mode: null, overrides: null, config: null });
         addEvent(t.id, "edited", "user", `agent ${agentName(t.agent)} → ${agentName(agent)}`);
+      }
+      if (model !== undefined) {
+        const own = configIn(todoRow(t.id)!.overrides ? JSON.parse(todoRow(t.id)!.overrides!) : null);
+        const id = model?.[0] ?? (JSON.parse(getMeta(metaKey("agent_config", agent ?? t.agent ?? DEFAULT_AGENT)) ?? "[]") as ConfigOption[]).find((o) => o.category === "model")?.id ?? "model";
+        if (model) own[id] = model[1];
+        else delete own[id];
+        setTodo(t.id, { overrides: Object.keys(own).length ? JSON.stringify(own) : null });
+        addEvent(t.id, "edited", "user", `model ${model?.[1] ?? "agent's default"}`);
       }
       if (instruction !== null && instruction !== first.body) {
         db.run("UPDATE messages SET body = ? WHERE id = ?", [instruction, first.id]);

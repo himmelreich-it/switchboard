@@ -3301,6 +3301,11 @@ function renderFocusHead(t, d) {
   if (t.design && !t.design.of) chips += designBadge(t) + (t.design.reviewer ? `<button type="button" class="hchip" data-act="open" data-id="${t.design.reviewer}" title="The design reviewer's TODO · open T-${t.design.reviewer}">reviewer&nbsp;T-${t.design.reviewer}</button>` : "");
   // P5: the agent, editable until the start
   if (t.status === "not_started" && !t.removed_at && agentsFound().length > 1) chips += `<span class="mb-select-wrap" style="width:150px">${agentSelect(t.agent, `class="mb-select" style="height:26px; font-size:12px" aria-label="Agent" title="Agent · editable until you start" data-change="todo-agent" data-id="${t.id}"`)}</span>`;
+  // P1: its model too; another agent drops the model picked for the old one.
+  if (t.status === "not_started" && !t.removed_at) {
+    const mo = agentConfig(t.agent).find((c) => c.category === "model");
+    chips += modelSelect(t.agent || "claude", (mo && t.overrides?.[mo.id]) ?? "", "Agent's default", `class="mb-select" style="height:26px; font-size:12px" aria-label="Model" title="Model · editable until you start" data-change="todo-model" data-id="${t.id}"`);
+  }
   const pr = t.pr;
   if (pr) {
     const pf = prFactsOf(pr, true), head = prFactsOf(pr, false)[0] ?? pf[0], err = t.gh_error, age = t.pr_checked_at ? ago(t.pr_checked_at) : "";
@@ -5050,6 +5055,7 @@ document.addEventListener("change", (e) => {
   const el = e.target.closest?.("[data-change]");
   if (el?.dataset.change === "filter") setFilter(el.value);
   if (el?.dataset.change === "set-repo") setRepo(Number(el.dataset.id), el.value === "none" ? null : Number(el.value));
+  if (el?.dataset.change === "todo-model") act(call("POST", `/api/todos/${el.dataset.id}/edit`, { model: el.value }).then(() => need("detail", "todos")), "Model not changed");
   if (el?.dataset.change === "todo-agent") act(call("POST", `/api/todos/${el.dataset.id}/edit`, { agent: el.value }).then(() => need("detail", "todos")), "Agent not changed");
   if (el?.dataset.change === "ns-agent") { S.nsAgent[el.dataset.id] = el.value; delete S.nsModel[el.dataset.id]; render(); }
   if (el?.dataset.change === "ns-model") { S.nsModel[el.dataset.id] = el.value; render(); }
