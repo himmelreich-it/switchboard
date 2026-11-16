@@ -253,6 +253,24 @@ export async function reopenSession(spec: Spec, sessionId: string, o: SessionOpt
   }
 }
 
+// The config options (model, effort, …) of a throwaway session, for an agent's model list before its first real
+// session (P4): ACP gives them only in session/new. The session stays behind in the agent's own history, under `title`
+// where the agent takes one.
+export async function probeConfig(spec: Spec, cwd: string, title: string): Promise<any[]> {
+  const a = await spawnAgent(spec, { h: null });
+  try {
+    const s = await withTimeout(a.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] } as acp.NewSessionRequest), INIT_TIMEOUT, "session/new");
+    if ((a.init.agentCapabilities as any)?.sessionCapabilities?.title)
+      await a.conn.agent.request("session/set_title" as any, { sessionId: s.sessionId, title }).catch(() => {});
+    return s.configOptions ?? [];
+  } catch (e: any) {
+    if (e?.code === -32000) throw new AuthRequired(authMethodsOf(a.init));
+    throw e;
+  } finally {
+    a.proc.kill();
+  }
+}
+
 // What an agent says about itself in initialize (Settings › Agents): its name and version, and its ways to log in.
 export async function describe(spec: Spec): Promise<{ name: string | null; version: string | null; authMethods: AuthMethod[] }> {
   const a = await spawnAgent(spec, { h: null });

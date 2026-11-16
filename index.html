@@ -1660,6 +1660,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
     <div id="newRepeat"></div>
     <div class="foot">
       <div id="newAgentField" class="mb-field" style="width:180px" hidden><label class="mb-field__label" for="newAgent">Agent</label><span class="mb-select-wrap"><select id="newAgent" class="mb-select"></select></span></div>
+      <div id="newModelField" class="mb-field" hidden><span class="mb-field__label">Model</span><span id="newModel" style="display:flex; gap:6px; align-items:center"></span></div>
       <label id="newDesignField" class="mb-switch" style="margin-bottom:8px" hidden title="The agent writes a design first; another agent reviews it until they agree. The topic's settings pick the reviewer."><input type="checkbox" id="newDesign"><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Design review first</span></label>
       <button type="button" class="mb-iconbtn mb-iconbtn--outline" data-act="pick-files" data-id="new" aria-label="Attach files" title="Attach files (or paste, or drop them on the text)" style="margin-bottom:4px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
       <span class="right"><span class="kbd">⌘⇧↵</span><button type="button" id="addStartBtn" class="mb-btn mb-btn--secondary mb-btn--md" data-act="add-start" disabled>Add &amp; start</button>
@@ -1914,7 +1915,10 @@ const S = {
   board: "board", focusFrom: "board",   // overview side (item 86) and the side the Focus view returns to (item 91)
   events: false,                        // events mixed into the chat (item 100), kept in localStorage
   nsMode: {},                           // TODO id -> composer in new-session mode (item 71); browser only
-  nsAgent: {},                          // TODO id -> agent chosen for the new session (P5); browser only
+  nsAgent: {},
+  nsModel: {},                          // TODO id -> model chosen for the new session (P1); browser only
+  newModel: "",                        // the New TODO card's model (P1); "": the agent's default
+  loadingModels: null,                  // the agent whose model list is loading (P4)                          // TODO id -> agent chosen for the new session (P5); browser only
   newAgent: null,                       // the New TODO card's agent (P5), kept in localStorage; null: the project's default
   live: {},   // item 130: the text a running agent is writing now, per TODO ({kind, text}), from SSE "stream" events
   openSess: new Set(), openEv: new Set(),  // expanded earlier sessions ("id:no") and event details (event id)
@@ -1976,6 +1980,24 @@ const agentLabel = (id) => agentsAll().find((a) => a.id === (id || "claude"))?.n
 const agentOption = (a) => a.name + (a.needsLogin ? " · needs login" : "");
 // Per agent, the config options last seen from any of its sessions (meta).
 const agentConfig = (agent) => S.meta?.agent_config?.[agent || "claude"] ?? [];
+// P1: the Model select next to an Agent select, from the agent's last seen model list. "" keeps `first` (the agent's
+// default, or the TODO's current model). An empty list offers "Load models" (P4).
+const modelSelect = (agent, value, first, attrs) => {
+  const o = agentConfig(agent).find((c) => c.category === "model");
+  if (!o) return `<span class="mb-select-wrap" style="width:150px"><select ${attrs} disabled><option>${esc(first)}</option></select></span>${btn(S.loadingModels === agent ? "Loading…" : "Load models", "load-models", { v: "ghost", id: agent, dis: !!S.loadingModels })}`;
+  return `<span class="mb-select-wrap" style="width:150px"><select ${attrs}><option value="">${esc(first)}</option>${o.options.map((x) => `<option value="${esc(x.value)}"${x.value === value ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></span>`;
+};
+async function loadModels(agent) {
+  S.loadingModels = agent;
+  render();
+  try {
+    const list = await call("POST", `/api/agents/${agent}/load-config`);
+    need("meta");
+    toast("success", `${agentLabel(agent)} models loaded`, list.some((c) => c.category === "model") ? "Pick one in the Model select." : "The agent reports no model choice.");
+  } catch (e) { toast("danger", "Models not loaded", e.message); }
+  S.loadingModels = null;
+  render();
+}
 const agentSelect = (value, attrs) => `<select ${attrs}>${agentsFound().map((a) => `<option value="${esc(a.id)}"${(value || "claude") === a.id ? " selected" : ""}>${esc(agentOption(a))}</option>`).join("")}</select>`;
 // The permission modes (lib.ts MODES); the UI's labels for them. They are Claude's: another agent's modes are its own
 // `mode` option, from its session or the last one seen.
@@ -1992,7 +2014,7 @@ const modeOptions = (value, projectDefault, agent, t) => {
 };
 // P4: the agent's config options a project or TODO sets (lib.ts CONFIG_CATEGORIES): model, effort, fast. The list
 // is the TODO's session's as the agent last reported it, else the last one seen from any session of that agent (meta).
-const CONFIG_CATEGORIES = ["model", "thought_level", "model_config", "collaboration_mode"];
+const CONFIG_CATEGORIES = ["model", "thought_level", "thinking", "model_config", "collaboration_mode"];
 const configList = (t, agent) => (t?.config ?? agentConfig(t?.agent ?? agent)).filter((o) => CONFIG_CATEGORIES.includes(o.category));
 const optName = (o, v) => o.options.find((x) => x.value === v)?.name ?? v;
 // One select's options: "" first (the project's value, or the agent's own when the project sets none), then the agent's.
@@ -2270,7 +2292,7 @@ function flushDraft(keepalive = false) {
 addEventListener("pagehide", () => flushDraft(true));
 
 function nsStarted(tid, nsNo) {
-  delete S.nsMode[tid]; delete S.nsAgent[tid];
+  delete S.nsMode[tid]; delete S.nsAgent[tid]; delete S.nsModel[tid];
   toast("success", `Session ${nsNo} started`, `Session ${nsNo - 1} ended and stays above as history.`);
 }
 async function commit(key, el) {
@@ -2288,7 +2310,7 @@ async function commit(key, el) {
   render();
   let sent = null;
   try {
-    sent = await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}),
+    sent = await call("POST", key === "operator" ? "/api/operator/messages" : `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body, attachments: files.map(wire), ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}), ...(ns && S.nsModel[tid] ? { model: S.nsModel[tid] } : {}),
       ...(key === "operator" && S.view === "todos" && S.mode === "focus" && typeof S.sel === "number" ? { viewing: S.sel } : {}) });   // the operator reads "this TODO" as the one on screen
     if (ns) nsStarted(tid, nsNo);
   } catch (e) {
@@ -2314,13 +2336,16 @@ async function addTodo(start = false) {
   render();
   const files = uploads.new ?? [];
   try {
-    const agent = agentsFound().length > 1 ? newAgent.value : null;   // "": the topic's default, once routing picks it
+    const found = agentsFound();
+    const model = !$("newModelField").hidden && S.newModel || null;   // P1: sent with its agent
+    const agent = found.length > 1 ? newAgent.value : model ? found[0].id : null;   // "": the topic's default, once routing picks it
     const schedule = S.rep?.on ? schedOut(S.rep) : null;   // item 144: Repeat
     const design = agentsFound().length > 1 && $("newDesign").checked;   // item 151
-    const t = await call("POST", "/api/todos", { instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}), ...(schedule ? { schedule } : {}), ...(design ? { design_review: true } : {}) });
+    const t = await call("POST", "/api/todos", { instruction, attachments: files.map(wire), start, ...(agent ? { agent } : {}), ...(model ? { model } : {}), ...(schedule ? { schedule } : {}), ...(design ? { design_review: true } : {}) });
     newText.value = "";
     S.newOpen = false;
     S.rep = null;
+    S.newModel = "";
     uploads.new = (uploads.new ?? []).filter((u) => !files.includes(u));   // keeps files added while this was sending
     if (start) startedToast(t.id, instruction);
     else if (schedule) toast("success", "Scheduled", `${short(instruction, 48)}.${t.next_run_at ? ` First run ${dayAt(t.next_run_at)}.` : ""}`, ["Open", () => select(t.id)]);
@@ -3118,6 +3143,11 @@ function renderNew() {
   const akey = found.map((a) => a.id + (a.needsLogin ? "?" : "")).join("|");
   if (newAgent.dataset.key !== akey) { newAgent.innerHTML = '<option value="">Topic\'s default</option>' + found.map((a) => `<option value="${esc(a.id)}">${esc(agentOption(a))}</option>`).join(""); newAgent.dataset.key = akey; }
   newAgent.value = found.some((a) => a.id === S.newAgent) ? S.newAgent : "";   // an agent no longer found falls back to the topic's
+  // P1: a model needs a known agent; "Topic's default" leaves both to routing.
+  const mAgent = found.length > 1 ? newAgent.value : found[0]?.id ?? "";
+  $("newModelField").hidden = !mAgent;
+  const mkey = mAgent + "|" + JSON.stringify(agentConfig(mAgent).find((c) => c.category === "model")?.options ?? null) + S.loadingModels;
+  if (mAgent && $("newModel").dataset.key !== mkey) { setHtml($("newModel"), modelSelect(mAgent, S.newModel, "Agent's default", `class="mb-select" aria-label="Model" data-change="new-model"`)); $("newModel").dataset.key = mkey; }
   S.rep ??= REP0();
   $("newNote").textContent = keys(S.rep.on ? "Paste images with ⌘V. Lands in the Scheduled lane. The operator picks the topic at the first run." : "Paste images with ⌘V. Lands in the backlog. The operator picks the topic when you start it.");
   setHtml($("newRepeat"), `<div class="repeat"><label class="mb-switch" style="align-self:flex-start"><input type="checkbox" data-act="rep-toggle"${S.rep.on ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Repeat</span></label>
@@ -3172,7 +3202,7 @@ function sessionRows(t) {
       first: inh ? `Topic's (${optName(o, inh)})` : auto ? `Auto (${optName(o, auto)})` : live ? `Agent's default (${optName(o, live)})` : "Agent's default",
       options: o.options.map((x) => [x.value, x.name]), value: eff, desc: auto && !own ? `Picked by the app: ${t.auto_effort?.reason ?? "medium until routing picks a level"}. Pick a level to set it yourself.` : null,
       // v10: the chip names the effort ("Effort High") and marks the app's pick with a small "auto" tag.
-      short: isFast ? (eff === "on" ? "Fast" : null) : isPlan ? (eff === "plan" ? "Plan" : null) : o.category === "thought_level" && name ? `Effort ${name}` : name, auto: !!(auto && !own),
+      short: isFast ? (eff === "on" ? "Fast" : null) : isPlan ? (eff === "plan" ? "Plan" : null) : o.category === "thought_level" && name ? `Effort ${name}` : o.category === "thinking" && name ? `Thinking ${name}` : name, auto: !!(auto && !own),
       why: auto && !own ? t.auto_effort?.reason ?? "medium until routing picks a level" : null });
   }
   return rows;
@@ -3595,7 +3625,10 @@ function renderChat(t, d) {
   const nsHead = $("nsHead");
   nsHead.hidden = !ns;
   // P5: the next session may run on another agent; the hand-over is plain text, so any agent picks it up.
-  const nsAgent = ns && agentsFound().length > 1 ? `<span class="mb-select-wrap" style="width:170px">${agentSelect(S.nsAgent[t.id] ?? t.agent, `class="mb-select" aria-label="Agent" title="Agent for session ${nSess + 1}" data-change="ns-agent" data-id="${t.id}"`)}</span>` : "";
+  const nsA = S.nsAgent[t.id] ?? t.agent ?? "claude";
+  // P1: on the same agent "" keeps the TODO's model; on another one the old pick means nothing, so it starts at the default.
+  const nsModel = ns ? modelSelect(nsA, S.nsModel[t.id] ?? "", nsA === (t.agent ?? "claude") ? "Current model" : "Agent's default", `class="mb-select" aria-label="Model" title="Model for session ${nSess + 1}" data-change="ns-model" data-id="${t.id}"`) : "";
+  const nsAgent = (ns && agentsFound().length > 1 ? `<span class="mb-select-wrap" style="width:170px">${agentSelect(S.nsAgent[t.id] ?? t.agent, `class="mb-select" aria-label="Agent" title="Agent for session ${nSess + 1}" data-change="ns-agent" data-id="${t.id}"`)}</span>` : "") + nsModel;
   // v10: the mode reads as a violet frame around the composer; Esc or "Keep session n" leaves it.
   $("chatView").querySelector(".composer").classList.toggle("ns", ns);
   setHtml(nsHead, ns ? `${SVG(PLUS, 16, "var(--accent-violet)")}<span class="t">New session ${nSess + 1}</span><span class="s">Your next message starts it. The hand-over carries this TODO's history. Esc keeps session ${nSess || 1}.</span>${nsAgent}${btn(`Keep session ${nSess || 1}`, "cancel-ns", { v: "ghost", id: t.id })}` : "");
@@ -4311,7 +4344,7 @@ function renderAgents() {
         <div class="line"><span class="nm">${esc(a.name)}</span><span class="ml">${a.builtin ? "Built-in" : "Custom"}</span>${state}</div>
         <span class="cmd">${esc(a.command)}<span style="color:var(--text-muted)">${/bundled/.test(a.command) || a.builtin ? "" : " · custom"}${info?.version ? ` · ${esc(info.name ?? "")} ${esc(info.version)}` : ""}</span></span>
         ${note ? `<span class="note" style="${info?.error ? "color:var(--accent-amber)" : ""}">${esc(note)}</span>` : ""}</div>
-      <div class="r">${login}${!a.found ? btn("Check again", "agent-check") : ""}${a.builtin ? "" : `<button type="button" class="mb-iconbtn" data-act="agent-delete" data-id="${esc(a.id)}" aria-label="Remove agent" title="Remove ${esc(a.name)}">${SVG(TRASH, 15)}</button>`}</div></div>`;
+      <div class="r">${login}${a.found && !a.needsLogin ? btn(S.loadingModels === a.id ? "Loading…" : agentConfig(a.id).some((c) => c.category === "model") ? "Reload models" : "Load models", "load-models", { v: "ghost", id: a.id, dis: !!S.loadingModels }) : ""}${!a.found ? btn("Check again", "agent-check") : ""}${a.builtin ? "" : `<button type="button" class="mb-iconbtn" data-act="agent-delete" data-id="${esc(a.id)}" aria-label="Remove agent" title="Remove ${esc(a.name)}">${SVG(TRASH, 15)}</button>`}</div></div>`;
   }).join(""));
   $("agentErr").textContent = S.agentErr ?? "";
 }
@@ -4389,7 +4422,7 @@ const ACTIONS = {
     render();
     const ns = S.nsMode[tid], nsNo = ns ? (S.detail?.sessions?.length ?? 1) + 1 : 0;   // in New-session mode the pill starts the new session
     try {
-      await call("POST", `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body: text, suggested: true, ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}) });
+      await call("POST", `/api/todos/${tid}/${ns ? "new-session" : "messages"}`, { body: text, suggested: true, ...(ns && S.nsAgent[tid] ? { agent: S.nsAgent[tid] } : {}), ...(ns && S.nsModel[tid] ? { model: S.nsModel[tid] } : {}) });
       if (ns) { nsStarted(tid, nsNo); render(); }
       else if (S.sel !== tid || S.mode !== "focus") toast("info", `Sent to T-${tid}`, "· " + short(text, 48));
     }
@@ -4560,6 +4593,7 @@ const ACTIONS = {
   "open-settings": () => (S.view === "settings" ? closeSettings() : openSettings()),
   "set-sec": (id) => { S.setSec = id; if (id === "network") S.net = undefined; render(); },
   "agent-login": (id) => agentLogin(id),
+  "load-models": (id) => loadModels(id),
   "agent-delete": (id) => act(call("DELETE", `/api/agents/${id}`).then(() => need("meta", "projects")), "Agent not removed"),
   filter: setFilter,
   "gh-retry": () => {
@@ -5017,7 +5051,9 @@ document.addEventListener("change", (e) => {
   if (el?.dataset.change === "filter") setFilter(el.value);
   if (el?.dataset.change === "set-repo") setRepo(Number(el.dataset.id), el.value === "none" ? null : Number(el.value));
   if (el?.dataset.change === "todo-agent") act(call("POST", `/api/todos/${el.dataset.id}/edit`, { agent: el.value }).then(() => need("detail", "todos")), "Agent not changed");
-  if (el?.dataset.change === "ns-agent") { S.nsAgent[el.dataset.id] = el.value; render(); }
+  if (el?.dataset.change === "ns-agent") { S.nsAgent[el.dataset.id] = el.value; delete S.nsModel[el.dataset.id]; render(); }
+  if (el?.dataset.change === "ns-model") { S.nsModel[el.dataset.id] = el.value; render(); }
+  if (el?.dataset.change === "new-model") S.newModel = el.value;
   // Item 144: the schedule editor's fields. Times are kept as typed; the server refuses one that is not HH:MM.
   const ch = el?.dataset.change, ctx = el?.dataset.id;
   if (ch?.startsWith("sch-")) {
@@ -5130,7 +5166,7 @@ addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files"
 addEventListener("drop", (e) => { if (e.dataTransfer?.types.includes("Files")) e.preventDefault(); });
 newText.addEventListener("keydown", (e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); addTodo(e.shiftKey); } });
 $("newDesign").addEventListener("change", (e) => { try { localStorage.setItem("switchboard-new-design", e.target.checked ? "1" : ""); } catch (x) {} });
-newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; try { localStorage.setItem("switchboard-new-agent", newAgent.value); } catch (e) {} });
+newAgent.addEventListener("change", () => { S.newAgent = newAgent.value; S.newModel = ""; try { localStorage.setItem("switchboard-new-agent", newAgent.value); } catch (e) {} render(); });
 [pName, pPath, pPrompt, pProfile, pMode].forEach((el) => el.addEventListener("input", renderProjects));
 pMode.addEventListener("change", renderProjects);
 pAgent.addEventListener("change", renderProjects);

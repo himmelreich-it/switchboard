@@ -427,7 +427,7 @@ export function configView(raw: any[]): ConfigOption[] {
 // The options a user sets per project and per TODO: model, effort (thought_level) and the like (fast, model_config),
 // and Codex's plan mode (collaboration_mode). The permission mode has its own setting (P3); options without a category
 // (Claude's `agent`) are left to the agent.
-export const CONFIG_CATEGORIES = ["model", "thought_level", "model_config", "collaboration_mode"];
+export const CONFIG_CATEGORIES = ["model", "thought_level", "thinking", "model_config", "collaboration_mode"];
 
 // What to set for the wanted values ({config id: value}, the project's defaults under the TODO's own): the changes
 // against the agent's current options, and the values it does not offer (effort on a model without it). `models`
@@ -454,6 +454,14 @@ export function autoEffort(current: ConfigOption[], wanted: Record<string, strin
   const i = AUTO_EFFORTS.indexOf(level as any), top = i < 0 ? AUTO_EFFORTS.indexOf("medium") : i;
   const v = AUTO_EFFORTS.slice(0, top + 1).reverse().find((x) => o.options.some((y) => y.value === x));
   return v ? [o.id, v] : null;
+}
+
+// A model named by the user, an agent's tool call or a request: its value or name, any case, among the model option's
+// choices. `names` lists them for an error; empty when the agent reported no model option yet.
+export function matchModel(opts: ConfigOption[], name: string): { pick: [string, string] | null; names: string } {
+  const o = opts.find((c) => c.category === "model"), key = name.trim().toLowerCase();
+  const x = o?.options.find((x) => x.value.toLowerCase() === key || x.name.toLowerCase() === key);
+  return { pick: o && x ? [o.id, x.value] : null, names: o?.options.map((x) => x.name).join(", ") ?? "" };
 }
 
 // A {config id: value} object from a request body or a column: string values only, empty ones dropped.
