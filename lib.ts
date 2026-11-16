@@ -352,14 +352,15 @@ export const MODES = ["auto", "default", "acceptEdits", "plan", "bypassPermissio
 
 // An open session/request_permission, as stored in todos.permission and shown on the card and in the chat: the tool
 // call's name, title, kind, input and diffs (as in a transcript row), plus the agent's options. One per TODO at most,
-// because the agent blocks until it is answered.
+// because the agent blocks until it is answered. `seen`: the tool call as the turn already has it, for an agent whose
+// request carries the call's id only (Mistral Vibe).
 export type Permission = {
   id: string; name: string; title: string; kind: string; input: any; diffs: ToolMeta["diffs"];
   options: { optionId: string; name: string; kind: string }[]; at: string;
   question?: boolean;   // the agent asks the user (askQuestions): a chat message answers it too
 };
-export function permissionOf(r: { toolCall: any; options: any[]; question?: boolean }, at: string): Permission {
-  const m = toolMeta(null, r.toolCall ?? {});
+export function permissionOf(r: { toolCall: any; options: any[]; question?: boolean }, at: string, seen: ToolMeta | null = null): Permission {
+  const m = toolMeta(seen, r.toolCall ?? {});
   return {
     ...(r.question ? { question: true } : {}),
     id: m.toolCallId, name: m.name, title: m.title, kind: m.kind, input: m.input, diffs: m.diffs, at,

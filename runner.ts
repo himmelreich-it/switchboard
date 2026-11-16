@@ -4,7 +4,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { AuthRequired, openSession as acpOpen, reopenSession, type Command, type Handlers, type Live, type PermissionOutcome, type PermissionRequest, type Update } from "./acp";
-import { DEFAULT_AGENT, agentList, agentName, codexAppConfig, hasAutoEffort, isClaude, secretHeader, specOf, toolName } from "./agents";
+import { DEFAULT_AGENT, agentList, agentName, codexAppConfig, hasAutoEffort, isClaude, secretHeader, specOf, toolName, vibeAppTools } from "./agents";
 import { OPERATOR_TOOLS, ROUTER_TOOLS, WORKER_TOOLS, grant, revoke } from "./apptools";
 import { authorDesign, designConfig, designStep } from "./design";
 import {
@@ -256,9 +256,9 @@ function cancelPermission(todoId: number) {
 // The agent asks (a mode other than auto, or something auto still asks about): the request goes on the card and in
 // the chat, the TODO shows in Waiting, and the turn waits for the user. A request while one is already open (it
 // should not happen: the agent blocks) replaces it, and the earlier one is cancelled.
-function askPermission(todoId: number, r: PermissionRequest): Promise<PermissionOutcome & { text?: string }> {
+function askPermission(todoId: number, r: PermissionRequest, seen: ToolMeta | null = null): Promise<PermissionOutcome & { text?: string }> {
   cancelPermission(todoId);
-  const perm = permissionOf(r, now());
+  const perm = permissionOf(r, now(), seen);
   const t = todoRow(todoId)!;
   if (!t.attention) addEvent(todoId, "attention raised", "app", perm.question ? `question: ${perm.name}` : `${perm.name} needs approval`);
   setTodo(todoId, { permission: JSON.stringify(perm), attention: 1, attention_by: t.attention ? t.attention_by : "permission" });
@@ -538,7 +538,10 @@ async function agentFor(key: Key, sessionId: string | null, o: { agent: string; 
   const codex = o.agent === "codex";
   const opts = {
     cwd: o.cwd, additionalDirectories: o.dirs, mcpServers: codex ? [] : [g.server], meta, systemPrompt: o.systemPrompt, title: o.title,
-    env: { SWITCHBOARD_MCP_SECRET: g.secret, ...(codex ? { CODEX_CONFIG: codexAppConfig(g.server.url) } : {}) },
+    env: {
+      SWITCHBOARD_MCP_SECRET: g.secret, ...(codex ? { CODEX_CONFIG: codexAppConfig(g.server.url) } : {}),
+      ...(o.agent === "mistral" ? { VIBE_TOOLS: vibeAppTools([...WORKER_TOOLS, ...OPERATOR_TOOLS, ...ROUTER_TOOLS]) } : {}),
+    },
   };
   let live: Live;
   try {
@@ -671,7 +674,7 @@ function turnState(todo: number | null, onDenied: (name: string, input: any, rea
     if (todo !== null) emit({ type: "stream", id: todo, item: null });
     return kept;
   };
-  return { t, hooks, onUpdate, finish };
+  return { t, hooks, onUpdate, finish, call: (id: string | undefined) => (id && calls.get(id)?.meta) || null };
 }
 
 // ---------- workers ----------
@@ -965,7 +968,7 @@ function workerTurn(todoId: number, agent: Agent) {
       turn.onUpdate(u);
     },
     // The agent's question goes to the user (P3); the turn waits until it is answered or cancelled.
-    onPermission: (r) => askPermission(todoId, r),
+    onPermission: (r) => askPermission(todoId, r, turn.call(r.toolCall?.toolCallId)),
     onQuestion: (r, signal) => askQuestions(todoId, r, signal),
   };
   return turn;
