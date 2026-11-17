@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-17 · Notifications button in the top bar
+- Where: top bar, right side, before the theme button.
+- Now: a bell button turns system notifications on and off for this device (off at first; crossed-out bell when off). Turning it on asks the system for permission; when denied, the toast "Notifications blocked" / "Allow them for Switchboard in the system settings." shows. While on, a TODO that stops running shows a system notification titled "T-<n> <title>" with the text "Needs your attention" or "Done · idle", unless that TODO is open in the focused window. Clicking the notification brings Switchboard forward and opens the TODO. The button is hidden where the browser offers no notifications (plain http over the LAN).
+- Why: the user wanted to know when an agent stops without watching the board.
+- Design question: should the bell show a count of TODOs that stopped while the window was in the background?
+
 ### 2026-11-16 · Model select next to the agent, and Load models
 - Where: New TODO dialog; the New session bar above the composer; Settings › Agents; the session popover and chip.
 - Now: New TODO has a "Model" select right of the Agent select. It shows once an agent is picked (not for "Topic's default"), lists that agent's models, starts at "Agent's default", and refills when the agent changes. The Focus header of a TODO that has not started has the same select after its agent select (also with only one agent); changing the agent there resets it to "Agent's default". The New session bar has the same select after its agent select; its first entry reads "Current model" on the TODO's agent and "Agent's default" on another one. When the app has no model list for the agent yet, the select is disabled and a "Load models" button sits next to it. Settings › Agents has a "Load models" button per found agent ("Reload models" once a list is known, "Loading…" while it runs); success shows the toast "<agent> models loaded" / "Pick one in the Model select." Mistral Vibe's Thinking option now shows in the session popover and in the topic's agent defaults, and the session chip reads "Thinking <level>".
