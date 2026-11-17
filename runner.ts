@@ -1257,6 +1257,8 @@ export function changeRepo(todoId: number, projectId: number | null, branch: str
     { worktree_path: t.worktree_path, branch, pr_number: t.pr_number }, existsSync);
   setTodo(todoId, { places: JSON.stringify(places), worktree_path: back.worktree_path, pr_number: back.pr_number });
   routeTo(todoId, projectId, null);
+  // The PR store has no entry for a PR or branch this topic just got back; without this the card waits for the 2-minute refresh.
+  if (projectId && (back.pr_number || back.worktree_path)) refreshPrs(projectId);
   if (!t.session_id) return;
   closeAgent(todoId);
   db.run("UPDATE sessions SET ended_at = ? WHERE todo_id = ? AND ended_at IS NULL", [now(), todoId]);
