@@ -26,6 +26,8 @@ app reads it from `~/.switchboard/token`. After a server restart, open the new l
 `install-local` quits a running Switchboard first, which stops its running agents and terminals. The installed app
 runs a copy of the code: run `install-local` again to update it. It still needs `bun` installed; it reads PATH and
 other variables from your login shell (`zsh -ilc`), since apps started from the Dock or Spotlight do not get them.
+The macOS build is ad-hoc signed (`mac.identity: "-"`): without a valid bundle signature macOS drops the app's
+notifications. On first notification macOS asks to allow them; allow, or turn them on in System Settings › Notifications.
 
 `install-local:linux` does the same for your user, without sudo: the app goes to `~/.local/share/switchboard`, with a
 desktop entry and icons (app grid and dock) and `~/.local/bin/switchboard` for terminals. On Linux the login shell
