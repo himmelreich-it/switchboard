@@ -403,7 +403,7 @@ UI changes are checked against the running app on localhost, in Chrome or in the
 
     The agent's `tool_call` updates record `tool` events and the most recent tool (item 51). A run is one turn, and the turn's end (the `session/prompt` response) is the idle signal, also after an interrupt.
 31. Every agent receives a fixed app contract that the user cannot edit, appended to the system prompt before the repo prompt. Settings › Repos shows it read-only, at full width, under "App contract". Its first line says the session is part of a TODO that can span several sessions. The contract instructs the agent to:
-    - talk to the user only through the app's MCP tools, and set a title on its first turn of session 1 only;
+    - talk to the user only through the app's MCP tools, end each turn with a short final answer (shown as the turn's result), and set a title on its first turn of session 1 only;
     - keep chat messages to one or two lines and put anything longer in a file under the given artifact folder, linked from the message;
     - treat the TODO text and the user's committed messages as its go-ahead for local edits within this TODO's scope, while outward actions (push, PR comments, Jira, Slack) still need an explicit message from the user;
     - work out from the TODO text, and from any referenced ticket, what kind of work this is (a review, a feature, or thinking only with no code changes) and whether it needs a worktree, following the repo prompt for how to create one (a no-repo TODO has no worktree);
