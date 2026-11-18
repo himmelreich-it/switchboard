@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-18 · Comments in Diff mode
+- Where: file view › Diff mode, both Unified and Side by side; the Comments column on the right.
+- Now: selecting text on the current side of a diff shows the "Comment" button, as in Read and Edit. In Unified that is the added and unchanged lines; in Side by side the right pane. Removed lines and the left pane show no button. A selection across removed lines quotes only the current lines around them. The Comments column and its "Comments · N" header button now show in Diff too, and commented text is highlighted amber on the current side; a click on it, or on its card, makes that comment active.
+- Why: the user could not comment while reviewing a change in the diff.
+- Design question: should removed lines take comments too (anchored to the old version), and is the Comments column too narrow beside the side-by-side diff?
+
 ### 2026-11-18 · Change marks on the right edge of the Diff tab
 - Where: Files tab › a file in Diff mode, both Unified and Side by side.
 - Now: a narrow strip on the right edge of the diff shows where in the whole file the changes are: a green mark for added lines, a red mark for removed lines, placed by their position in the file. In Side by side the strip has two lanes, red on the left half and green on the right half, so a changed block shows both colors side by side. A click on a mark scrolls the diff so that change sits a third down the view; the pointer turns into a hand over a mark, with the tooltip "Jump to change".

@@ -177,11 +177,13 @@ function merge(parent: HTMLElement, o: { a: string; b: string; name: string }): 
     language(o.name), syntaxHighlighting(style), theme, mergeTheme,
     EditorState.readOnly.of(true),
   ];
-  const mv = new MergeView({ parent, a: { doc: o.a, extensions: ext }, b: { doc: o.b, extensions: ext }, gutter: true });
+  // Comments mark only the current side: their offsets are in the current text.
+  const mv = new MergeView({ parent, a: { doc: o.a, extensions: ext }, b: { doc: o.b, extensions: [ext, marksField] }, gutter: true });
   const view = mv.b;
   return {
     view,
-    setDoc() {}, setReadOnly() {}, format() {}, setMarks() {},   // read-only; the app rebuilds it when the text changes
+    setDoc() {}, setReadOnly() {}, format() {},   // read-only; the app rebuilds it when the text changes
+    setMarks(marks) { view.dispatch({ effects: setMarksFx.of(marks) }); },
     focus() { view.focus(); },
     search() { openSearchPanel(view); },
     reveal(pos) { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) }); },
