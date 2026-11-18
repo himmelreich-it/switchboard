@@ -8,9 +8,9 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ### 2026-11-18 · Change marks on the right edge of the Diff tab
 - Where: Files tab › a file in Diff mode, both Unified and Side by side.
-- Now: a narrow strip on the right edge of the diff shows where in the whole file the changes are: a green mark for added lines, a red mark for removed lines, placed by their position in the file. In Side by side the strip has two lanes, red on the left half and green on the right half, so a changed block shows both colors side by side. The marks do not react to clicks; the scrollbar stays usable on top of them.
+- Now: a narrow strip on the right edge of the diff shows where in the whole file the changes are: a green mark for added lines, a red mark for removed lines, placed by their position in the file. In Side by side the strip has two lanes, red on the left half and green on the right half, so a changed block shows both colors side by side. A click on a mark scrolls the diff so that change sits a third down the view; the pointer turns into a hand over a mark, with the tooltip "Jump to change".
 - Why: the user wanted to see at a glance where a long file changed, like the change marks next to the scrollbar in VS Code.
-- Design question: should a click on a mark jump to that change, and should changed blocks get one blue "modified" color instead of red and green?
+- Design question: should changed blocks get one blue "modified" color instead of red and green?
 
 ### 2026-11-17 · Notifications button in the top bar
 - Where: top bar, right side, before the theme button.

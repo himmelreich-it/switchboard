@@ -1146,7 +1146,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .dv-wrap:has(> #fileDiff[hidden]) { display: none; }
 .dv-wrap > .dv { min-width: 0; }
 .druler { position: absolute; top: 0; right: 0; bottom: 0; width: 12px; pointer-events: none; }
-.druler > i { position: absolute; left: 0; right: 0; min-height: 3px; }
+.druler > i { position: absolute; left: 0; right: 0; min-height: 3px; pointer-events: auto; cursor: pointer; }
 .druler > .add { background: var(--status-success); }
 .druler > .del { background: var(--accent-red); }
 .druler.split > .del { right: 50%; }
@@ -3852,7 +3852,7 @@ function renderFile(t) {
   }
   const split = S.diffView === "split", rl = show.diff && drows ? rulerMarks(drows, split) : null;
   $("diffRuler").className = "druler" + (split ? " split" : "");
-  setHtml($("diffRuler"), rl ? rl.marks.map((m) => `<i class="${m.c}" style="top:${(100 * m.y / rl.total).toFixed(3)}%; height:${(100 * m.h / rl.total).toFixed(3)}%"></i>`).join("") : "");
+  setHtml($("diffRuler"), rl ? rl.marks.map((m) => `<i class="${m.c}" data-act="diff-jump" data-id="${m.y / rl.total}" title="Jump to change" style="top:${(100 * m.y / rl.total).toFixed(3)}%; height:${(100 * m.h / rl.total).toFixed(3)}%"></i>`).join("") : "");
   const base = f.diff?.base_sha ? f.diff.base_sha.slice(0, 7) : "";
   $("fileFoot").hidden = show.msg || !$("fileLocked").hidden;   // nothing to save, or the lock note says it already
   $("fileFoot").textContent = mode === "diff" ? `Diff · ${f.diff?.base_label ?? "merge-base"} ${base} (origin/HEAD) → ${dirty ? "your unsaved edits" : "on disk"} · read-only`
@@ -4615,6 +4615,7 @@ const ACTIONS = {
   "cform-cancel": () => { S.cform = null; render(); },
   "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm(f.kind, f.root, msg); },
   "md-view": (id) => { S.mdView = id; render(); },
+  "diff-jump": (id) => { const h = $("fileDiff"); h.scrollTop = Number(id) * h.scrollHeight - h.clientHeight / 3; },   // the change a third down the view
   "diff-view": (id) => { S.diffView = id; try { localStorage.setItem("switchboard-diff-view", id); } catch (e) {} render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
