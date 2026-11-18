@@ -12,6 +12,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 - Why: the user could not comment while reviewing a change in the diff.
 - Design question: should removed lines take comments too (anchored to the old version), and is the Comments column too narrow beside the side-by-side diff?
 
+### 2026-11-18 · Change marks on the right edge of the Diff tab
+- Where: Files tab › a file in Diff mode, both Unified and Side by side.
+- Now: a narrow strip on the right edge of the diff shows where in the whole file the changes are: a green mark for added lines, a red mark for removed lines, placed by their position in the file. In Side by side the strip has two lanes, red on the left half and green on the right half, so a changed block shows both colors side by side. A click on a mark scrolls the diff so that change sits a third down the view; the pointer turns into a hand over a mark, with the tooltip "Jump to change".
+- Why: the user wanted to see at a glance where a long file changed, like the change marks next to the scrollbar in VS Code.
+- Design question: should changed blocks get one blue "modified" color instead of red and green?
+
 ### 2026-11-17 · Notifications button in the top bar
 - Where: top bar, right side, before the theme button.
 - Now: a bell button turns system notifications on and off for this device (off at first; crossed-out bell when off). Turning it on asks the system for permission; when denied, the toast "Notifications blocked" / "Allow them for Switchboard in the system settings." shows. While on, a TODO that stops running shows a system notification titled "T-<n> <title>" with the text "Needs your attention" or "Done · idle", unless that TODO is open in the focused window. Clicking the notification brings Switchboard forward and opens the TODO. The button is hidden where the browser offers no notifications (plain http over the LAN).
