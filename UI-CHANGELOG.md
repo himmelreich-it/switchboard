@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-18 · Comments in Diff mode
+- Where: file view › Diff mode, both Unified and Side by side; the Comments column on the right.
+- Now: selecting text on the current side of a diff shows the "Comment" button, as in Read and Edit. In Unified that is the added and unchanged lines; in Side by side the right pane. Removed lines and the left pane show no button. A selection across removed lines quotes only the current lines around them. The Comments column and its "Comments · N" header button now show in Diff too, and commented text is highlighted amber on the current side; a click on it, or on its card, makes that comment active.
+- Why: the user could not comment while reviewing a change in the diff.
+- Design question: should removed lines take comments too (anchored to the old version), and is the Comments column too narrow beside the side-by-side diff?
+
 ### 2026-11-17 · Notifications button in the top bar
 - Where: top bar, right side, before the theme button.
 - Now: a bell button turns system notifications on and off for this device (off at first; crossed-out bell when off). Turning it on asks the system for permission; when denied, the toast "Notifications blocked" / "Allow them for Switchboard in the system settings." shows. While on, a TODO that stops running shows a system notification titled "T-<n> <title>" with the text "Needs your attention" or "Done · idle", unless that TODO is open in the focused window. Clicking the notification brings Switchboard forward and opens the TODO. The button is hidden where the browser offers no notifications (plain http over the LAN).

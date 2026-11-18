@@ -3881,7 +3881,7 @@ function mountMerge(f, a, b) {
   if (S.cm?.key === key && S.cm.f === f && S.cm.a === a && S.cm.b === b) return;
   if (!window.SBEditor) { setHtml(host, '<div style="padding:8px 16px" class="muted">Loading…</div>'); loadEditor().then(() => S.file === f && render(), (e) => toast("danger", "Editor not loaded", e.message)); return; }
   destroyEditor();
-  host.innerHTML = "";
+  host.innerHTML = ""; host._html = null;   // Unified writes its rows again
   S.cm = { key, handle: SBEditor.merge(host, { a, b, name: f.name }), f, a, b };
 }
 // Edit asked for focus (⌘E, the Edit button, New note); done once the editor exists, which can be after its lazy load.
@@ -4688,8 +4688,15 @@ function placedFor(f, list, keep) {
   placedOf.set(f, { key, text: f.text, placed });
   return placed;
 }
-// The visible rendered markdown: Read mode, or the preview of Split and Preview.
-const cmtRendered = () => (!$("fileRead").hidden ? $("fileRead").querySelector(".md") : !$("fileMd").hidden && S.mdView !== "write" ? $("filePreview") : null);
+// The visible rendered text: Read mode, the preview of Split and Preview, or the unified diff.
+const cmtRendered = () => (!$("fileRead").hidden ? $("fileRead").querySelector(".md") : !$("fileMd").hidden && S.mdView !== "write" ? $("filePreview")
+  : !$("fileDiff").hidden && !S.cm?.key.endsWith(":merge") ? $("fileDiff") : null);
+// Its text nodes. In the diff only the current file's lines: removed lines and line numbers are not in the file's text.
+function cmtNodes(host) {
+  const nodes = [], w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT), diff = host.id === "fileDiff";
+  while (w.nextNode()) if (!diff || w.currentNode.parentElement.matches(".dr:not(.del) > .x")) nodes.push(w.currentNode);
+  return nodes;
+}
 let cmtRanges = [];    // [{id, range}] in the rendered markdown, for a click on a highlight
 let cmtShown = null;   // [host, key of its ranges, the active comment] as the highlights show them
 let renderedIndex = null;
@@ -4697,24 +4704,26 @@ let renderedIndex = null;
 // The ranges are found again only when the rendered markdown or the placed comments change; another active comment
 // only regroups them.
 function highlightRendered(placed) {
-  const host = cmtRendered(), key = host && JSON.stringify([host._src, placed.map((p) => [p.c.id, p.nth])]);
+  const host = cmtRendered(), src = host && (host._src ?? host._html), key = host && JSON.stringify([src, placed.map((p) => [p.c.id, p.nth])]);
   if (!cmtShown || cmtShown[0] !== host || cmtShown[1] !== key) {
     cmtRanges = [];
     if (host) {
       // The text nodes and their index, kept while the rendered markdown stays: a resolved comment only drops a range.
-      if (renderedIndex?.host !== host || renderedIndex.src !== host._src) {
-        const nodes = [], w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
-        while (w.nextNode()) nodes.push(w.currentNode);
-        renderedIndex = { host, src: host._src, nodes, ix: quoteIndex(nodes.map((n) => n.data)) };
+      if (renderedIndex?.host !== host || renderedIndex.src !== src || renderedIndex.nodes[0]?.isConnected === false) {
+        const nodes = cmtNodes(host);
+        renderedIndex = { host, src, nodes, ix: quoteIndex(nodes.map((n) => n.data)) };
       }
       const { nodes, ix } = renderedIndex;
       for (const p of placed) {
         if (p.outdated) continue;
         const ms = quoteMatches(ix, p.c.quote), m = ms[Math.min(p.nth, ms.length - 1)];   // the nth match in the source is the nth on screen
         if (!m) continue;
-        const r = document.createRange();
-        r.setStart(nodes[m.from[0]], m.from[1]); r.setEnd(nodes[m.to[0]], m.to[1]);
-        cmtRanges.push({ id: p.c.id, range: r });
+        // A range per text node: one range across them would also paint what lies between (the diff's removed lines).
+        for (let i = m.from[0]; i <= m.to[0]; i++) {
+          const r = document.createRange();
+          r.setStart(nodes[i], i === m.from[0] ? m.from[1] : 0); r.setEnd(nodes[i], i === m.to[0] ? m.to[1] : nodes[i].length);
+          cmtRanges.push({ id: p.c.id, range: r });
+        }
       }
     }
     cmtShown = [host, key, undefined];
@@ -4781,14 +4790,14 @@ document.addEventListener("keydown", (e) => {
 // v10: the Comments column hides and shows from a button in the file header; a new comment shows it again.
 function cmtToggle(f, show) {
   const list = fileComments(f);
-  if (!(show.read || show.md || show.code) || !list.length) return "";
+  if (!(show.read || show.md || show.code || show.diff) || !list.length) return "";
   const on = !S.cmtHidden[fileKey(f)] || S.cmtDraft?.key === fileKey(f);
   return `<button type="button" class="cmt-tog" data-act="cmt-toggle" data-fk="cmt-toggle" aria-pressed="${on}" title="Show or hide the comments">${SVG(BUBBLE, 12)}Comments · ${list.filter((c) => c.state !== "resolved").length}</button>`;
 }
 function renderNotes(f, show, typing) {
   const box = $("fileNotes"), list = fileComments(f);
   const draft = S.cmtDraft?.key === fileKey(f) ? S.cmtDraft : null;
-  const on = (show.read || show.md || show.code) && (draft || (list.length && !S.cmtHidden[fileKey(f)]));
+  const on = (show.read || show.md || show.code || show.diff) && (draft || (list.length && !S.cmtHidden[fileKey(f)]));
   box.hidden = !on;
   const placed = on ? placedFor(f, list.filter((c) => c.state !== "resolved"), typing) : [];
   highlightRendered(placed);
@@ -4831,23 +4840,26 @@ function renderNotes(f, show, typing) {
   if (ed && !ed._filled) { ed._filled = true; const c = list.find((c) => c.id === S.cmtEdit); ed.value = S.cmtEditText ?? (c?.thread.at(-1)?.body ?? c?.body) ?? ""; }
   if (rp && !rp._filled) { rp._filled = true; rp.value = S.cmtReplyText ?? ""; }
 }
-// The selected text in the open file, with its line: from the editor's selection, or from the rendered markdown.
+// The selected text in the open file, with its line: from the editor's selection, or from the rendered markdown or unified diff.
 function selectedQuote() {
   const f = S.file, sel = getSelection();
-  if (!f || f.mode === "diff" || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+  if (!f || !sel || sel.isCollapsed || !sel.rangeCount) return null;
   const node = sel.anchorNode, v = S.cm?.f === f ? S.cm.handle?.view : null;
   let quote, line = null;
   if (v?.dom.contains(node)) {
     const r = v.state.selection.main;
     if (!r.empty) { quote = v.state.sliceDoc(r.from, r.to); line = v.state.doc.lineAt(r.from).number; }
   } else if (!cmtRendered()?.contains(node)) return null;
+  else if (cmtRendered().id === "fileDiff") {
+    // Only the current file's lines count: a selection across removed lines quotes the lines around them.
+    const r = sel.getRangeAt(0), part = (n) => n.data.slice(n === r.startContainer ? r.startOffset : 0, n === r.endContainer ? r.endOffset : undefined);
+    quote = cmtNodes(cmtRendered()).filter((n) => r.intersectsNode(n)).map(part).filter(Boolean).join("\n");
+  }
   quote ??= sel.toString();
   if (!quote.trim()) return null;
   if (line == null) {
     // The same text can appear several times: count which match on screen is selected, and take that match in the source.
-    const nodes = [], w = document.createTreeWalker(cmtRendered(), NodeFilter.SHOW_TEXT);
-    while (w.nextNode()) nodes.push(w.currentNode);
-    const r = sel.getRangeAt(0), nth = Math.max(0, quoteMatches(quoteIndex(nodes.map((n) => n.data)), quote).findIndex((m) => r.comparePoint(nodes[m.from[0]], m.from[1]) >= 0));
+    const nodes = cmtNodes(cmtRendered()), r = sel.getRangeAt(0), nth = Math.max(0, quoteMatches(quoteIndex(nodes.map((n) => n.data)), quote).findIndex((m) => r.comparePoint(nodes[m.from[0]], m.from[1]) >= 0));
     const ms = quoteMatches(quoteIndex([f.text ?? ""]), quote), m = ms[Math.min(nth, ms.length - 1)];
     if (m) line = lineOf(f.text, m.from[1]);
   }
