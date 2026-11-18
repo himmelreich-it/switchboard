@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-18 · Comments tab
+- Where: Focus › tabs row, a "Comments" tab between Files and Terminal; its count is the number of comments not resolved.
+- Now: the tab lists every comment not resolved, grouped by file (file name, then its full path). Each card shows the file's lines around the commented text, 3 before and 3 after, with line numbers and the commented lines tinted amber. A comment whose text is no longer in the file shows "Outdated" with "The commented text is no longer in the file." and its quote struck through. Below come the state badge (Open / Replied), the line, the comment and its thread, and the buttons "Reply" (after an agent reply) or "Edit" (while the user wrote last), "Open in Files" and "Resolve". Reply and Edit open the same text box with Cancel and Reply / Save as in the file's Comments column. "Open in Files" opens the file on the Files tab with the Comments column shown and that comment active. The header reads "Open comments · N" with "Ask agent · N" when some are open. With none: "No open comments. Select text in a file on the Files tab to comment on it."
+- Why: the user wanted to see all outstanding comments across files in one place, with some context, and jump to the file.
+- Design question: should resolved comments be shown behind a toggle as in the file's Comments column, and does Delete belong on these cards too?
+
 ### 2026-11-18 · Word wrap toggle in the file view
 - Where: file view header, right side, before the Full screen button. Shown in Read and Edit of code files and in the Diff tab.
 - Now: an icon button (lines with a return arrow) turns word wrap on or off for all files at once. Pressed means wrap is on; the tooltip reads "Word wrap on · all files" or "Word wrap off · all files". The choice is kept across restarts. Off by default. Markdown files keep wrapping in their editor and show no button there.
