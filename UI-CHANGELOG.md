@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-18 · Comments tab
+- Where: Focus › tabs row, a "Comments" tab between Files and Terminal; its count is the number of comments not resolved.
+- Now: the tab lists every comment not resolved, grouped by file (file name, then its full path). Each card shows the file's lines around the commented text, 3 before and 3 after, with line numbers and the commented lines tinted amber. A comment whose text is no longer in the file shows "Outdated" with "The commented text is no longer in the file." and its quote struck through. Below come the state badge (Open / Replied), the line, the comment and its thread, and the buttons "Open in Files" and "Resolve". "Open in Files" opens the file on the Files tab with the Comments column shown and that comment active. The header reads "Open comments · N" with "Ask agent · N" when some are open. With none: "No open comments. Select text in a file on the Files tab to comment on it."
+- Why: the user wanted to see all outstanding comments across files in one place, with some context, and jump to the file.
+- Design question: should Reply and Edit also be possible right on the Comments tab, and should resolved comments be shown behind a toggle as in the file's Comments column?
+
 ### 2026-11-18 · Comments in Diff mode
 - Where: file view › Diff mode, both Unified and Side by side; the Comments column on the right.
 - Now: selecting text on the current side of a diff shows the "Comment" button, as in Read and Edit. In Unified that is the added and unchanged lines; in Side by side the right pane. Removed lines and the left pane show no button. A selection across removed lines quotes only the current lines around them. The Comments column and its "Comments · N" header button now show in Diff too, and commented text is highlighted amber on the current side; a click on it, or on its card, makes that comment active.
