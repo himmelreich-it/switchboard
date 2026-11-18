@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-18 · Word wrap toggle in the file view
+- Where: file view header, right side, before the Full screen button. Shown in Read and Edit of code files and in the Diff tab.
+- Now: an icon button (lines with a return arrow) turns word wrap on or off for all files at once. Pressed means wrap is on; the tooltip reads "Word wrap on · all files" or "Word wrap off · all files". The choice is kept across restarts. Off by default. Markdown files keep wrapping in their editor and show no button there.
+- Why: the user wanted long lines readable without scrolling sideways.
+- Design question: does the toggle belong in the header icon row, or next to the Read/Edit switch? Should markdown follow it too?
+
 ### 2026-11-18 · Comments in Diff mode
 - Where: file view › Diff mode, both Unified and Side by side; the Comments column on the right.
 - Now: selecting text on the current side of a diff shows the "Comment" button, as in Read and Edit. In Unified that is the added and unchanged lines; in Side by side the right pane. Removed lines and the left pane show no button. A selection across removed lines quotes only the current lines around them. The Comments column and its "Comments · N" header button now show in Diff too, and commented text is highlighted amber on the current side; a click on it, or on its card, makes that comment active.
