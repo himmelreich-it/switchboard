@@ -112,6 +112,7 @@ export type Handle = {
   view: EditorView;
   setDoc(text: string): void;
   setReadOnly(ro: boolean): void;
+  setWrap(wrap: boolean): void;
   focus(): void;
   search(): void;
   format(kind: string): void;
@@ -120,8 +121,8 @@ export type Handle = {
   destroy(): void;
 };
 
-function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: boolean; onChange?: (text: string) => void }): Handle {
-  const ro = new Compartment();
+function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: boolean; wrap?: boolean; onChange?: (text: string) => void }): Handle {
+  const ro = new Compartment(), wr = new Compartment();
   const md = isMarkdown(o.name);
   const roExt = (r: boolean) => [EditorState.readOnly.of(r), EditorView.editable.of(!r)];
   const view = new EditorView({
@@ -131,7 +132,7 @@ function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: 
       extensions: [
         lineNumbers(), highlightActiveLineGutter(),
         highlightSpecialChars(), history(), drawSelection(), indentOnInput(), bracketMatching(), highlightActiveLine(), highlightSelectionMatches(),
-        md ? EditorView.lineWrapping : [],
+        wr.of(md || o.wrap ? EditorView.lineWrapping : []),   // markdown always wraps
         md ? EditorView.editorAttributes.of({ class: "sb-md" }) : [],
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
         language(o.name), syntaxHighlighting(style), theme,
@@ -151,6 +152,7 @@ function create(parent: HTMLElement, o: { doc: string; name: string; readOnly?: 
         annotations: [external.of(true), Transaction.addToHistory.of(false)] });
     },
     setReadOnly(r) { if (r !== readOnly) { readOnly = r; view.dispatch({ effects: ro.reconfigure(roExt(r)) }); } },
+    setWrap(w) { if (!md) view.dispatch({ effects: wr.reconfigure(w ? EditorView.lineWrapping : []) }); },
     focus() { view.focus(); },
     search() { openSearchPanel(view); },
     format(kind) { formatMd(view, kind); view.focus(); },
@@ -170,19 +172,19 @@ const mergeTheme = EditorView.theme({
   "&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter": { background: "var(--accent-red)" },
   "&.cm-merge-b .cm-changedLineGutter": { background: "var(--status-success)" },
 });
-function merge(parent: HTMLElement, o: { a: string; b: string; name: string }): Handle {
+function merge(parent: HTMLElement, o: { a: string; b: string; name: string; wrap?: boolean }): Handle {
   const ext = [
     lineNumbers(), highlightSpecialChars(), drawSelection(), highlightSelectionMatches(),
     keymap.of([...defaultKeymap, ...searchKeymap]),
     language(o.name), syntaxHighlighting(style), theme, mergeTheme,
-    EditorState.readOnly.of(true),
+    EditorState.readOnly.of(true), o.wrap ? EditorView.lineWrapping : [],
   ];
   // Comments mark only the current side: their offsets are in the current text.
   const mv = new MergeView({ parent, a: { doc: o.a, extensions: ext }, b: { doc: o.b, extensions: [ext, marksField] }, gutter: true });
   const view = mv.b;
   return {
     view,
-    setDoc() {}, setReadOnly() {}, format() {},   // read-only; the app rebuilds it when the text changes
+    setDoc() {}, setReadOnly() {}, setWrap() {}, format() {},   // read-only; the app rebuilds it when the text or wrap changes
     setMarks(marks) { view.dispatch({ effects: setMarksFx.of(marks) }); },
     focus() { view.focus(); },
     search() { openSearchPanel(view); },
