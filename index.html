@@ -409,6 +409,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .mb-iconbtn:hover:not(:disabled) { background: var(--surface-2); color: var(--text-primary); }
 .mb-iconbtn--outline { background: var(--surface-1); border-color: var(--border-default); }
 .mb-iconbtn--outline:hover:not(:disabled) { border-color: var(--border-strong); }
+.mb-iconbtn[aria-pressed="true"] { background: var(--surface-3); color: var(--text-primary); }
 .mb-iconbtn:disabled { opacity: .45; cursor: not-allowed; }
 /* switch with a square knob (design: Events toggle) */
 .mb-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
@@ -951,6 +952,9 @@ pre.io.out { max-height: 240px; overflow: auto; color: var(--text-secondary); }
 .dr > .n { padding-right: 8px; text-align: right; color: var(--text-muted); user-select: none; }
 .dr > .s { text-align: center; user-select: none; }
 .dr > .x { white-space: pre; padding-right: 16px; }
+/* word wrap on: unified diff rows wrap at the view's width. shortcut: the right-edge ruler still counts one row per line, so marks drift on long wrapped lines; measure rows if that bites */
+#fileDiff.wrap > div { width: auto; }
+#fileDiff.wrap .dr > .x { white-space: pre-wrap; overflow-wrap: anywhere; }
 .dr.h { background: var(--surface-2); color: var(--text-muted); }
 .dr.add { background: var(--tint-success); color: var(--text-primary); }
 .dr.add > .s { color: var(--status-success); }
@@ -1790,6 +1794,7 @@ const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit
 const PREVIEW_LINKS = `<script>addEventListener("click", (e) => { const a = e.target.closest?.("a[href]"), h = a?.getAttribute("href"); if (e.defaultPrevented || !h) return;
 if (h.startsWith("#")) { e.preventDefault(); location.hash = h; } else if (/^(https?|mailto):/i.test(a.href)) { e.preventDefault(); open(a.href, "_blank"); } });</` + "script>";
 const previewDoc = (text) => text.replace(/^\s*(<!doctype[^>]*>)?/i, (m) => m + PREVIEW_LINKS);
+const WRAP_ICON = '<path d="M3 5h18"/><path d="M3 12h15a3 3 0 0 1 0 6h-4"/><polyline points="16 16 14 18 16 20"/><path d="M3 19h7"/>';
 const COPY_ICON ='<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>';
 const CHEV_R = '<path d="m9 18 6-6-6-6"/>', CHEV_D = '<path d="m6 9 6 6 6-6"/>';
 const RUNNING_LOCK = ["Read-only", "The agent is running. Edit unlocks when it stops."];
@@ -1956,6 +1961,8 @@ S.changedOnly = false; S.trees = {}; S.treeOpen = {};   // Changed filter; tree 
 S.mdView = "split";   // markdown editor: "write" | "split" | "preview"
 S.diffView = "split";   // Diff tab: "split" (side by side) | "unified", kept in localStorage
 try { if (localStorage.getItem("switchboard-diff-view") === "unified") S.diffView = "unified"; } catch (e) {}
+S.wrap = false;   // word wrap in code files and the Diff tab (markdown always wraps), kept in localStorage
+try { S.wrap = localStorage.getItem("switchboard-wrap") === "1"; } catch (e) {}
 S.terms = {}; S.termSel = {}; S.cform = null; S.termsUnsupported = null;   // terminals per TODO (item 111)
 S.termFocus = false;   // the Terminal tab was just opened: the selected terminal takes the keys once it has loaded
 try { S.termSel = JSON.parse(localStorage.getItem("switchboard-term-sel") || "{}"); } catch (e) {}   // TODO id -> selected terminal id; terminals outlive a reload
@@ -3823,7 +3830,7 @@ function renderFile(t) {
   const meta = show.diff ? (dstat ? statHtml(dstat) : "") : sizeText ? `<span class="meta">${sizeText}${words}</span>` : "";
   const iconBtn = (act, label, icon, dis) => `<span title="${label}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="${act}" data-fk="${act}" aria-label="${label}"${dis ? " disabled" : ""}>${SVG(icon, 15)}</button></span>`;
   setHtml($("fileHead"), `${seg}<span class="p" title="${esc(f.abs ?? shown)}"><bdi>${esc(shown)}</bdi></span>${m ? `<span class="mkl" style="color:${m[1]}">${m[0]}</span>` : ""}${dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}${f.byUser ? '<span class="notetag" title="Your note · editable while the agent runs">your note</span>' : ""}${locked ? `<span title="The agent may change this file. Edit opens when its run ends." style="display:flex">${badge("Read-only · agent running")}</span>` : ""}
-    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}${iconBtn("file-full", S.fileFull ? "Exit full screen · Esc" : "Full screen", S.fileFull ? MINIMIZE : MAXIMIZE)}
+    <span class="right">${views}${dirty && !locked && !f.deleted ? `${btn("Revert", "revert-file", { v: "ghost" })}<span class="kbd">${keys("⌘S")}</span>${btn("Save", "save-file", { v: "primary" })}` : meta}${cmtToggle(f, show)}${show.code || show.diff ? `<span title="${S.wrap ? "Word wrap on · all files" : "Word wrap off · all files"}" style="display:flex"><button type="button" class="mb-iconbtn" data-act="wrap-toggle" data-fk="wrap-toggle" aria-label="Word wrap" aria-pressed="${S.wrap}">${SVG(WRAP_ICON, 15)}</button></span>` : ""}${iconBtn("file-full", S.fileFull ? "Exit full screen · Esc" : "Full screen", S.fileFull ? MINIMIZE : MAXIMIZE)}
       ${iconBtn("copy-path", "Copy path", COPY_ICON, !f.abs)}${S.meta?.machine ? "" : iconBtn("open-folder", "Open folder", FOLDER, !f.abs)}${iconBtn("add-path", "Add the path to the message", CLIP, !f.abs)}${f.byUser ? iconBtn("delete-note", "Delete note", TRASH) : f.root === "todo" ? iconBtn("archive-file", locked ? "Archive opens when the agent's run ends" : "Archive file", ARCHIVE, locked) : ""}</span>`);
   $("fileRead").hidden = !show.read; $("fileMd").hidden = !show.md; $("fileCode").hidden = !show.code; $("fileDiff").hidden = !show.diff; $("fileMsg").hidden = !show.msg; $("fileHtml").hidden = !show.html;
   // Set only when the text changed: each set reloads the page and loses its scroll.
@@ -3841,6 +3848,7 @@ function renderFile(t) {
     $("mdSplit").className = "split" + (S.mdView === "write" ? " write" : S.mdView === "preview" ? " preview-only" : "");
     if (S.mdView !== "write" && !typing) setMd($("filePreview"), f.text);   // hidden in Write; Split and Preview get it at the pause
   }
+  $("fileDiff").classList.toggle("wrap", S.wrap);
   if (show.diff && dd && !dd.error && S.diffView === "split") mountMerge(f, dd.base, f.deleted ? "" : f.text);
   else if (show.diff) {
     destroyEditor();
@@ -3867,11 +3875,11 @@ const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 10240 ? `${(n / 1024).toFixed
 function mountEditor(f, host, rw, locked) {
   const key = `${fileKey(f)}:${host.id}:${rw}`;
   // Reused only for the same file object: its onChange writes into that object.
-  if (S.cm?.key === key && S.cm.f === f && S.cm.handle) { S.cm.handle.setReadOnly(locked || rw === "ro"); focusEditor(); return; }
+  if (S.cm?.key === key && S.cm.f === f && S.cm.handle) { S.cm.handle.setReadOnly(locked || rw === "ro"); S.cm.handle.setWrap(S.wrap); focusEditor(); return; }
   if (!window.SBEditor) { host.innerHTML = '<div style="padding:12px 16px" class="muted">Loading editor…</div>'; loadEditor().then(() => S.file === f && render(), (e) => toast("danger", "Editor not loaded", e.message)); return; }
   destroyEditor();
   host.innerHTML = "";
-  const handle = SBEditor.create(host, { doc: f.text ?? "", name: f.name, readOnly: locked || rw === "ro", onChange: (text) => {
+  const handle = SBEditor.create(host, { doc: f.text ?? "", name: f.name, readOnly: locked || rw === "ro", wrap: S.wrap, onChange: (text) => {
     const was = isDirty(f);
     f.text = text; syncEdit(f);
     clearTimeout(typingTimer);
@@ -3905,12 +3913,12 @@ function rulerMarks(rows, split) {
 }
 // Side-by-side diff: rebuilt when the file, its base or its text changes.
 function mountMerge(f, a, b) {
-  const host = $("fileDiff"), key = `${fileKey(f)}:merge`;
+  const host = $("fileDiff"), key = `${fileKey(f)}:merge:${S.wrap}`;
   if (S.cm?.key === key && S.cm.f === f && S.cm.a === a && S.cm.b === b) return;
   if (!window.SBEditor) { setHtml(host, '<div style="padding:8px 16px" class="muted">Loading…</div>'); loadEditor().then(() => S.file === f && render(), (e) => toast("danger", "Editor not loaded", e.message)); return; }
   destroyEditor();
   host.innerHTML = ""; host._html = null;   // Unified writes its rows again
-  S.cm = { key, handle: SBEditor.merge(host, { a, b, name: f.name }), f, a, b };
+  S.cm = { key, handle: SBEditor.merge(host, { a, b, name: f.name, wrap: S.wrap }), f, a, b };
 }
 // Edit asked for focus (⌘E, the Edit button, New note); done once the editor exists, which can be after its lazy load.
 function focusEditor() {
@@ -4616,6 +4624,7 @@ const ACTIONS = {
   "cform-start": () => { const f = S.cform, msg = $("cfMsg")?.value.trim() || claudeDefault(cur()); newTerm(f.kind, f.root, msg); },
   "md-view": (id) => { S.mdView = id; render(); },
   "diff-jump": (id) => { const h = $("fileDiff"); h.scrollTop = Number(id) * h.scrollHeight - h.clientHeight / 3; },   // the change a third down the view
+  "wrap-toggle": () => { S.wrap = !S.wrap; try { localStorage.setItem("switchboard-wrap", S.wrap ? "1" : "0"); } catch (e) {} render(); },
   "diff-view": (id) => { S.diffView = id; try { localStorage.setItem("switchboard-diff-view", id); } catch (e) {} render(); },
   "pick-files": (id) => { filePick.dataset.key = id === "new" ? "new" : draftKey(); filePick.click(); },
   "drop-upload": (id) => { const at = id.lastIndexOf("|"); uploads[id.slice(0, at)]?.splice(Number(id.slice(at + 1)), 1); render(); },
