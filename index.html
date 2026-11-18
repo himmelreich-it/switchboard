@@ -1141,6 +1141,16 @@ pre.cmd > .dollar { color: var(--accent-lime); }
 .fileview .dv { flex: 1; min-height: 0; border: 0; border-radius: 0; }
 .fileview .dv > div { padding: 4px 0; }
 .dv > .cm-mergeView { width: auto; padding: 0; }
+/* Diff tab: the changes of the whole file as marks on the right edge, like an editor's overview ruler */
+.dv-wrap { flex: 1; min-height: 0; display: flex; position: relative; }
+.dv-wrap:has(> #fileDiff[hidden]) { display: none; }
+.dv-wrap > .dv { min-width: 0; }
+.druler { position: absolute; top: 0; right: 0; bottom: 0; width: 12px; pointer-events: none; }
+.druler > i { position: absolute; left: 0; right: 0; min-height: 3px; }
+.druler > .add { background: var(--status-success); }
+.druler > .del { background: var(--accent-red); }
+.druler.split > .del { right: 50%; }
+.druler.split > .add { left: 50%; }
 .dv .cm-mergeView .cm-editor { height: auto; }
 .file-msg { flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 16px; background: var(--surface-inset); font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 .file-msg img { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -1364,7 +1374,7 @@ pre.cmd > .dollar { color: var(--accent-lime); }
                 </div>
               </div>
               <div id="fileCode" class="code-host" hidden></div>
-              <div id="fileDiff" class="dv" hidden></div>
+              <div class="dv-wrap"><div id="fileDiff" class="dv" hidden></div><div id="diffRuler" class="druler" aria-hidden="true"></div></div>
               <div id="fileMsg" class="file-msg" hidden></div>
               <!-- No allow-same-origin: the page's scripts run in an opaque origin, without the app's token or API. -->
               <iframe id="fileHtml" class="html-host" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" title="HTML preview" hidden></iframe>
@@ -3840,6 +3850,9 @@ function renderFile(t) {
       `<div class="dr${r.sign === "+" ? " add" : r.sign === "-" ? " del" : ""}"><span class="n">${r.a ?? ""}</span><span class="n">${r.b ?? ""}</span><span class="s">${r.sign === "-" ? "−" : r.sign === "+" ? "+" : ""}</span><span class="x">${esc(r.text)}</span></div>`).join("") + "</div>");
     else loadEditor().then(() => render());
   }
+  const split = S.diffView === "split", rl = show.diff && drows ? rulerMarks(drows, split) : null;
+  $("diffRuler").className = "druler" + (split ? " split" : "");
+  setHtml($("diffRuler"), rl ? rl.marks.map((m) => `<i class="${m.c}" style="top:${(100 * m.y / rl.total).toFixed(3)}%; height:${(100 * m.h / rl.total).toFixed(3)}%"></i>`).join("") : "");
   const base = f.diff?.base_sha ? f.diff.base_sha.slice(0, 7) : "";
   $("fileFoot").hidden = show.msg || !$("fileLocked").hidden;   // nothing to save, or the lock note says it already
   $("fileFoot").textContent = mode === "diff" ? `Diff · ${f.diff?.base_label ?? "merge-base"} ${base} (origin/HEAD) → ${dirty ? "your unsaved edits" : "on disk"} · read-only`
@@ -3874,6 +3887,21 @@ function mountEditor(f, host, rw, locked) {
   } });
   S.cm = { key, handle, f };
   focusEditor();
+}
+// Overview ruler marks in row units: Unified stacks removed over added lines, Side by side puts them on the same rows.
+function rulerMarks(rows, split) {
+  const marks = [];
+  let y = 0;
+  for (let k = 0; k < rows.length;) {
+    if (rows[k].sign === " ") { y++; k++; continue; }
+    let d = 0, a = 0;
+    while (rows[k]?.sign === "-") { d++; k++; }
+    while (rows[k]?.sign === "+") { a++; k++; }
+    if (d) marks.push({ c: "del", y, h: d });
+    if (a) marks.push({ c: "add", y: split ? y : y + d, h: a });
+    y += split ? Math.max(d, a) : d + a;
+  }
+  return { marks, total: Math.max(y, 1) };
 }
 // Side-by-side diff: rebuilt when the file, its base or its text changes.
 function mountMerge(f, a, b) {
