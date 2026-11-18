@@ -3204,6 +3204,9 @@ function renderFocus() {
   $("filesEmpty").hidden = fileOpen;
   $("termView").hidden = tab !== "terminal";
   $("cmtView").hidden = tab !== "comments";
+  // The edit and reply boxes have fixed ids: only the shown tab keeps its comment cards.
+  if (tab !== "comments") setHtml($("cmtView"), "");
+  if (tab !== "files") setHtml($("fileNotes"), "");
   if (tab === "chat") renderChat(t, d);
   else if (tab === "comments") renderCommentsTab(t, d);
   else if (tab === "files") { renderFileList(t, d); if (fileOpen) renderFile(t); else setHtml($("filesEmpty"), d ? "Pick a file on the left." : "Loading…"); }
@@ -4836,6 +4839,20 @@ document.addEventListener("keydown", (e) => {
 // The thread after the first text: the agent's replies as markdown, the user's answers as typed.
 const cmtTurn = (t) => t.by === "agent" ? `<div class="r"><span class="ml">Agent</span><div class="md">${md(t.body)}</div></div>`
   : `<div class="u"><span class="ml">You</span><div class="b">${esc(t.body)}</div></div>`;
+// Only the last text is edited, and only while it is the user's: an agent's reply is answered with Reply.
+const cmtEditable = (c) => c.thread.at(-1)?.by !== "agent";
+const cmtReplyEdit = (c) => (!cmtEditable(c) && c.state !== "resolved" ? btn("Reply", "cmt-reply", { v: "ghost", id: c.id }) : "") + (cmtEditable(c) ? btn("Edit", "cmt-edit", { v: "ghost", id: c.id }) : "");
+// Edit changes the user's last text, the thread before it stays shown.
+const cmtEditBox = (c) => `${c.thread.length ? `<div class="b">${esc(c.body)}</div>${c.thread.slice(0, -1).map(cmtTurn).join("")}` : ""}<textarea id="cmtEditIn" data-fk="cmt-edit-in:${c.id}" aria-label="Edit comment"></textarea>
+  <div class="acts">${btn("Cancel", "cmt-edit-cancel", { v: "ghost" })}${btn("Save", "cmt-edit-save", { v: "primary", id: c.id })}</div>`;
+const cmtReplyBox = (c) => `<textarea id="cmtReplyIn" data-fk="cmt-reply-in:${c.id}" placeholder="Reply · ⌘Enter sends" aria-label="Reply"></textarea>
+  <div class="acts">${btn("Cancel", "cmt-reply-cancel", { v: "ghost" })}${btn("Reply", "cmt-reply-save", { v: "primary", id: c.id })}</div>`;
+// A re-render (the agent replied meanwhile) rebuilds the boxes: what was typed comes back from S.
+function cmtFillBoxes(list) {
+  const ed = $("cmtEditIn"), rp = $("cmtReplyIn");
+  if (ed && !ed._filled) { ed._filled = true; const c = list.find((c) => c.id === S.cmtEdit); ed.value = S.cmtEditText ?? (c?.thread.at(-1)?.body ?? c?.body) ?? ""; }
+  if (rp && !rp._filled) { rp._filled = true; rp.value = S.cmtReplyText ?? ""; }
+}
 // The Comments tab: every comment not resolved, across the TODO's files, with a few lines of the file around its text.
 S.cmtText = {};   // `${todoId}:${root}:${rel}` -> the file's text, null while it loads, false when it can't be read
 const CMT_CTX = 3;   // lines shown before and after the commented text
@@ -4866,14 +4883,17 @@ function renderCommentsTab(t, d) {
   const card = (c) => {
     const text = cmtFileText(t.id, c);
     const ctx = text === null ? '<div class="ctx-msg">Loading…</div>' : text === false ? `<div class="ctx-msg">Can't show the file.</div><div class="q">${esc(c.quote)}</div>` : cmtContext(c, text);
-    return `<div class="cmt ${c.state}${text && placeComments({ text }, [c])[0].outdated ? " outdated" : ""}">${ctx}
+    const cls = `cmt ${c.state}${text && placeComments({ text }, [c])[0].outdated ? " outdated" : ""}`;
+    if (S.cmtEdit === c.id) return `<div class="${cls} on">${ctx}${cmtEditBox(c)}</div>`;
+    return `<div class="${cls}${S.cmtReply === c.id ? " on" : ""}">${ctx}
       <div class="st">${badge(STATE[c.state][0], STATE[c.state][1])}${c.line ? `<span>line ${c.line}</span>` : ""}</div>
       <div class="b">${esc(c.body)}</div>${c.thread.map(cmtTurn).join("")}
-      <div class="acts">${btn("Open in Files", "cmt-open", { v: "ghost", id: c.id })}${btn("Resolve", "cmt-tab-state", { v: "ghost", id: `${c.id}:resolved` })}</div></div>`;
+      ${S.cmtReply === c.id ? cmtReplyBox(c) : `<div class="acts">${cmtReplyEdit(c)}${btn("Open in Files", "cmt-open", { v: "ghost", id: c.id })}${btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}</div>`}</div>`;
   };
   const byFile = Map.groupBy(list, (c) => c.path);
   setHtml(box, `<div class="nh"><span class="ml">Open comments · ${list.length}</span>${nOpen ? btn(`Ask agent · ${nOpen}`, "cmt-ask") : ""}</div>
     ${[...byFile].map(([path, cs]) => `<section class="cfile"><div class="cf-h" title="${esc(path)}">${esc(basename(path))}<span class="meta">${esc(path)}</span></div>${cs.map(card).join("")}</section>`).join("")}`);
+  cmtFillBoxes(list);
 }
 // v10: the Comments column hides and shows from a button in the file header; a new comment shows it again.
 function cmtToggle(f, show) {
@@ -4900,31 +4920,23 @@ function renderNotes(f, show, typing) {
   const nResolved = list.filter((c) => c.state === "resolved").length, nOpen = list.filter((c) => c.state === "open").length;
   const STATE = { open: ["Open", "amber"], replied: ["Replied", "cyan"], resolved: ["Resolved", "neutral"] };
   const quote = (q) => `<div class="q">${esc(q)}</div>`;
-  const turn = cmtTurn;
-  // Only the last text is edited, and only while it is the user's: an agent's reply is answered with Reply.
-  const editable = (c) => c.thread.at(-1)?.by !== "agent";
   const card = (c) => {
     const p = where.get(c.id), line = p && !p.outdated ? p.line : c.line;
-    // Edit changes the user's last text, the thread before it stays shown.
-    if (S.cmtEdit === c.id) return `<div class="cmt on">${quote(c.quote)}${c.thread.length ? `<div class="b">${esc(c.body)}</div>${c.thread.slice(0, -1).map(turn).join("")}` : ""}<textarea id="cmtEditIn" data-fk="cmt-edit-in:${c.id}" aria-label="Edit comment"></textarea>
-      <div class="acts">${btn("Cancel", "cmt-edit-cancel", { v: "ghost" })}${btn("Save", "cmt-edit-save", { v: "primary", id: c.id })}</div></div>`;
+    if (S.cmtEdit === c.id) return `<div class="cmt on">${quote(c.quote)}${cmtEditBox(c)}</div>`;
     return `<div class="cmt${c.id === S.cmtOn ? " on" : ""}${p?.outdated ? " outdated" : ""} ${c.state}"${S.cmtReply === c.id ? "" : ` data-act="cmt-on" data-id="${c.id}"`}>${quote(c.quote)}
       <div class="st">${badge(STATE[c.state][0], STATE[c.state][1])}${p?.outdated ? badge("Outdated") : ""}${line ? `<span>line ${line}</span>` : ""}</div>
-      <div class="b">${esc(c.body)}</div>${c.thread.map(turn).join("")}
-      ${S.cmtReply === c.id ? `<textarea id="cmtReplyIn" data-fk="cmt-reply-in:${c.id}" placeholder="Reply · ⌘Enter sends" aria-label="Reply"></textarea>
-      <div class="acts">${btn("Cancel", "cmt-reply-cancel", { v: "ghost" })}${btn("Reply", "cmt-reply-save", { v: "primary", id: c.id })}</div>` : `
-      <div class="acts">${!editable(c) && c.state !== "resolved" ? btn("Reply", "cmt-reply", { v: "ghost", id: c.id }) : ""}${editable(c) ? btn("Edit", "cmt-edit", { v: "ghost", id: c.id }) : ""}${c.state === "resolved" ? btn("Reopen", "cmt-state", { v: "ghost", id: `${c.id}:open` }) : btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}${btn("Delete", "cmt-del", { v: "ghost", id: c.id })}</div>`}</div>`;
+      <div class="b">${esc(c.body)}</div>${c.thread.map(cmtTurn).join("")}
+      ${S.cmtReply === c.id ? cmtReplyBox(c) : `
+      <div class="acts">${cmtReplyEdit(c)}${c.state === "resolved" ? btn("Reopen", "cmt-state", { v: "ghost", id: `${c.id}:open` }) : btn("Resolve", "cmt-state", { v: "ghost", id: `${c.id}:resolved` })}${btn("Delete", "cmt-del", { v: "ghost", id: c.id })}</div>`}</div>`;
   };
   setHtml(box, `<div class="nh"><span class="ml">Comments · ${list.length - nResolved}</span>${nOpen ? btn(`Ask agent · ${nOpen}`, "cmt-ask") : ""}</div>
     ${nResolved ? `<button type="button" class="shr" data-act="cmt-resolved" data-fk="cmt-resolved">${S.cmtResolved ? "Hide" : "Show"} resolved (${nResolved})</button>` : ""}
     ${draft ? `<div class="cmt on">${quote(draft.quote)}<textarea id="cmtNewIn" data-fk="cmt-new-in" placeholder="Comment · ⌘Enter saves" aria-label="New comment"></textarea>
       <div class="acts">${btn("Cancel", "cmt-cancel", { v: "ghost" })}${btn("Comment", "cmt-save", { v: "primary" })}</div></div>` : ""}
     ${list.filter((c) => S.cmtResolved || c.state !== "resolved").map(card).join("")}`);
-  // A re-render (the agent replied meanwhile) rebuilds the boxes: what was typed comes back from S.
-  const nw = $("cmtNewIn"), ed = $("cmtEditIn"), rp = $("cmtReplyIn");
+  const nw = $("cmtNewIn");
   if (nw && !nw._filled) { nw._filled = true; nw.value = draft.text ?? ""; }
-  if (ed && !ed._filled) { ed._filled = true; const c = list.find((c) => c.id === S.cmtEdit); ed.value = S.cmtEditText ?? (c?.thread.at(-1)?.body ?? c?.body) ?? ""; }
-  if (rp && !rp._filled) { rp._filled = true; rp.value = S.cmtReplyText ?? ""; }
+  cmtFillBoxes(list);
 }
 // The selected text in the open file, with its line: from the editor's selection, or from the rendered markdown or unified diff.
 function selectedQuote() {
@@ -5000,7 +5012,7 @@ async function saveComment() {
 // A change to a comment shows at the click. The answer brings the TODO's comments; an error puts the old ones back,
 // unless a live update replaced them meanwhile.
 function cmtCall(id, method, body, title, failed, sub = "") {
-  const todoId = S.file.todoId, d = S.detail?.todo.id === todoId ? S.detail : null, before = d?.comments, cid = Number(id);
+  const todoId = S.sel, d = S.detail?.todo.id === todoId ? S.detail : null, before = d?.comments, cid = Number(id);
   if (d) {
     d.comments = method === "DELETE" ? before.filter((c) => c.id !== cid)
       : before.map((c) => c.id !== cid ? c : sub ? { ...c, thread: [...c.thread, { by: "user", body: body.body, at: new Date().toISOString() }], state: "open" }
@@ -5023,12 +5035,6 @@ Object.assign(ACTIONS, {
     if (S.tab !== "files" || !S.file) return;   // not opened: openFile showed why
     delete S.cmtHidden[fileKey(S.file)];
     showComment(c.id);
-  },
-  "cmt-tab-state": (v) => {
-    const [id, state] = v.split(":"), todoId = S.sel;
-    call("PATCH", `/api/todos/${todoId}/comments/${id}`, { state }).then(
-      (r) => { if (S.detail?.todo.id === todoId) { S.detail.comments = r.comments; render(); } },
-      (e) => toast("danger", "Comment not changed", e.message));
   },
   "cmt-save": saveComment,
   "cmt-cancel": () => { S.cmtDraft = null; render(); },
