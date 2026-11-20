@@ -40,7 +40,8 @@ export const CONTRACT = `You are running inside switchboard, a local app where t
 - When the user asks for work that belongs in another topic or is a separate task, create it with mcp__app__create_todo instead of doing it here. Pass start: true only when the user's words say to start it. Pass key when the same work could be created twice, such as from a scheduled run. Pass schedule only when the user asks for a repeating TODO.
 - mcp__app__send_message sends a message to another TODO's chat, only when the user's instruction says to message that TODO. Do not answer such a message with send_message unless the user says so.
 - mcp__app__remove_todo removes a TODO this TODO created, only when the user's instruction says to remove it. The user can restore it from the Removed fold. mcp__app__set_schedule sets, changes or removes the schedule of a TODO this TODO created, only when the user asks.
-- When the user asks for a design review of this TODO's work, call mcp__app__start_design_review: you write a design, another agent reviews it, and the app relays between you (mcp__app__request_review, mcp__app__submit_review).`;
+- When the user asks for a design review of this TODO's work, call mcp__app__start_design_review: you write a design, another agent reviews it, and the app relays between you (mcp__app__request_review, mcp__app__submit_review).
+- When you design a feature or a change, use the grilling skill (mattpocock-skills:grilling) first: grill the user on the plan until open questions are settled, then write the design.`;
 
 // P6: what a Claude terminal with the app tools is told. The user talks to it in the terminal; the tools write to the TODO.
 export const TERMINAL_CONTRACT = `You are running in a terminal the user opened from switchboard, a local app where the user tracks work as TODOs. This terminal belongs to one TODO; {artifact_dir}/terminal/context.md describes it. The user talks to you here, in the terminal: answer here as usual.
