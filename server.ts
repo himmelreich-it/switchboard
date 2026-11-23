@@ -1239,6 +1239,14 @@ async function api(req: Request, path: string): Promise<Response> {
     return why ? fail(`Not started: ${why}.`, 409) : json({});
   }
 
+  // The user renames a TODO, at any time; an agent's later set_title still replaces it.
+  if ((m = path.match(/^\/api\/todos\/(\d+)\/title$/)) && method === "PUT") {
+    const t = liveTodo(Number(m[1])), title = String(body.title ?? "").trim();
+    if (!title) return fail("the title is required");
+    if (title !== t.title) { setTodo(t.id, { title }, false); addEvent(t.id, "set_title", "user", title); }
+    return json((await summaries("t.id = ?", [t.id]))[0]);
+  }
+
   // Items 94-97: the first instruction and the agent can change until the TODO starts. The topic has its own route below.
   if ((m = path.match(/^\/api\/todos\/(\d+)\/edit$/)) && method === "POST") {
     const t = liveTodo(Number(m[1]));

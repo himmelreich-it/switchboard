@@ -6,6 +6,12 @@ Baseline: design v10 (`designs/Switchboard v10.html`, 2026-10-30).
 
 ## Open
 
+### 2026-11-23 · Rename a TODO
+- Where: Focus header › the TODO title, and the "…" menu above "Remove TODO".
+- Now: a click on the title, or "Rename" in the "…" menu, turns the title into a text field with the title selected. Enter or a click elsewhere saves; Escape cancels. The title's tooltip ends with "· click to rename". A failed save shows the toast "Title not changed" with the reason. A removed TODO cannot be renamed. An agent can still set a new title later.
+- Why: the user wanted to change a TODO's title by hand.
+- Design question: should the title show a pencil icon on hover to make the rename easier to find?
+
 ### 2026-11-18 · Comments tab
 - Where: Focus › tabs row, a "Comments" tab between Files and Terminal; its count is the number of comments not resolved.
 - Now: the tab lists every comment not resolved, grouped by file (file name, then its full path). Each card shows the file's lines around the commented text, 3 before and 3 after, with line numbers and the commented lines tinted amber. A comment whose text is no longer in the file shows "Outdated" with "The commented text is no longer in the file." and its quote struck through. Below come the state badge (Open / Replied), the line, the comment and its thread, and the buttons "Reply" (after an agent reply) or "Edit" (while the user wrote last), "Open in Files" and "Resolve". Reply and Edit open the same text box with Cancel and Reply / Save as in the file's Comments column. "Open in Files" opens the file on the Files tab with the Comments column shown and that comment active. The header reads "Open comments · N" with "Ask agent · N" when some are open. With none: "No open comments. Select text in a file on the Files tab to comment on it."
