@@ -2096,7 +2096,9 @@ const uploadChips = (key) => (uploads[key] ?? []).map((u, i) => {
     <button type="button" data-act="drop-upload" data-id="${esc(key)}|${i}" aria-label="Remove ${esc(u.name)}" title="Remove">×</button>
   </div>`;
 }).join("");
-function setHtml(el, html) { if (el._html !== html) { el.innerHTML = html; el._html = html; } }
+// Chrome fires focusout on a focused field that innerHTML removes; `rebuilding` tells that apart from a real blur.
+let rebuilding = false;
+function setHtml(el, html) { if (el._html !== html) { rebuilding = true; try { el.innerHTML = html; } finally { rebuilding = false; } el._html = html; } }
 // Paste and drop on `zone` add files to the list under keyOf(); keyOf() returns null where attachments are off (operator).
 function acceptFiles(zone, keyOf) {
   zone.addEventListener("paste", (e) => {
@@ -3330,7 +3332,7 @@ function renderFocusHead(t, d) {
   const wl = waitingList(), pos = wl.findIndex((x) => x.id === t.id);
   status += `<span class="vsep"></span><button type="button" class="navq${wl.length ? "" : " none"}" data-act="next" data-fk="next" title="${keys("Next waiting · ⌘J")}"><span class="sq"></span>${pos >= 0 ? `${pos + 1}/${wl.length}` : wl.length}${SVG(I.down, 13)}</button>`;
   const row1 = `<div class="fh1"><span title="${from} · Esc" style="display:flex"><button type="button" class="mb-iconbtn" data-act="back" data-fk="back" aria-label="Back to ${from.toLowerCase()}">${SVG(I.back, 16)}</button></span>
-    <span class="num" style="cursor:pointer" data-act="copy" data-id="${tNum(t)}" data-title="TODO" title="Copy ${tNum(t)}">${tNum(t)}</span>${S.renaming?.id === t.id ? `<label class="sr-only" for="renameTitle">Title</label><input id="renameTitle" class="mb-input rename" maxlength="200" value="${esc(S.renaming.text)}">` : `<h1 id="focusTitle" ${t.removed_at ? `title="${esc(t.title)}"` : `title="${esc(t.title)} · click to rename" data-act="rename" data-id="${t.id}"`}>${esc(t.title)}</h1>`}${agentsFound().length > 1 ? badge(agentLabel(t.agent)) : ""}<span class="status">${status}</span></div>`;
+    <span class="num" style="cursor:pointer" data-act="copy" data-id="${tNum(t)}" data-title="TODO" title="Copy ${tNum(t)}">${tNum(t)}</span>${S.renaming?.id === t.id ? `<label class="sr-only" for="renameTitle">Title</label><input id="renameTitle" class="mb-input rename" data-change="rename" maxlength="200" value="${esc(S.renaming.text)}">` : `<h1 id="focusTitle" ${t.removed_at ? `title="${esc(t.title)}"` : `title="${esc(t.title)} · click to rename" data-act="rename" data-id="${t.id}"`}>${esc(t.title)}</h1>`}${agentsFound().length > 1 ? badge(agentLabel(t.agent)) : ""}<span class="status">${status}</span></div>`;
 
   // Row 2: chips
   const g = gitHead(t), p = S.projects.find((x) => x.id === t.project_id), repoOpen = S.pop === "repo";
@@ -3389,13 +3391,9 @@ function renderFocusHead(t, d) {
   const steps = d ? d.events.length : 0;
   const tabsRow = `<div class="fh3"><div class="mb-tabs" role="tablist" aria-label="TODO sections">${tabs([["chat", "Chat", d ? d.messages.length : t.message_count], ["files", "Files", (d ? d.files.length : t.file_count) || undefined], ["comments", "Comments", d ? d.comments.filter((c) => c.state !== "resolved").length || undefined : undefined], ...(t.removed_at ? [] : [["terminal", "Terminal", termCount(t.id) || undefined]])], S.tab, "tab")}</div>
     ${S.tab === "chat" ? `<label class="mb-switch" title="Show every step the agent took, plus app events. Applies to every TODO."><input type="checkbox" data-act="events"${S.events ? " checked" : ""}><span class="mb-switch__track"><span class="mb-switch__knob"></span></span><span>Transcript · ${steps}</span></label>` : ""}</div>`;
-  // A live update rebuilds the header: the schedule popover's field being typed in keeps its text and focus.
+  // A live update rebuilds the header: a field being typed in (schedule popover, title rename) keeps its text, focus and caret.
   const a = document.activeElement, keep = a?.closest?.("#focusHead") && a.dataset.change ? { sel: `[data-change="${a.dataset.change}"]${a.dataset.i ? `[data-i="${a.dataset.i}"]` : ""}`, v: a.value, p: a.selectionStart } : null;
-  const renFocus = document.activeElement?.id === "renameTitle";
   setHtml($("focusHead"), row1 + `<div class="fh2">${chips}</div>` + ghLine + tabsRow);
-  const ri = $("renameTitle");   // the input is rebuilt with its starting text; put the typed text back
-  if (ri && ri.value !== S.renaming.text) ri.value = S.renaming.text;
-  if (ri && renFocus && document.activeElement !== ri) ri.focus();
   const b = keep && document.activeElement !== a && $("focusHead").querySelector(keep.sel);
   if (b) { b.value = keep.v; b.focus(); b.setSelectionRange?.(keep.p, keep.p); }
 }
@@ -5242,7 +5240,7 @@ document.addEventListener("change", (e) => {
   else if (el?.dataset.change === "todo-config") act(call("PUT", `/api/todos/${el.dataset.id}/config`, { id: el.dataset.cfg, value: el.value || null }).then(warn), "Setting not changed");
 });
 document.addEventListener("input", (e) => { if (e.target.id === "renameTitle" && S.renaming) S.renaming.text = e.target.value; });
-document.addEventListener("focusout", (e) => { if (e.target.id === "renameTitle" && S.renaming && e.target.isConnected && document.hasFocus()) saveRename(); });   // a rebuilt input is not a blur
+document.addEventListener("focusout", (e) => { if (e.target.id === "renameTitle" && S.renaming && !rebuilding && document.hasFocus()) saveRename(); });   // a rebuilt input is not a blur
 document.addEventListener("keydown", (e) => {
   if (e.target.id !== "renameTitle") return;
   if (e.key === "Enter") { e.preventDefault(); saveRename(); }
